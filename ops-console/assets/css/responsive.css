@@ -1,0 +1,114 @@
+/* 本产品不存在移动端；仅提供 1024px–1440px 桌面浏览器宽度容错。 */
+@media (min-width: 1024px) and (max-width: 1100px) {
+  .retrieval-result-summary--evaluation {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) and (max-width: 1260px) {
+  :root {
+    --sidebar-width: 196px;
+  }
+
+  .sidebar {
+    --sidebar-rail: 10px;
+    --sidebar-item-padding-x: 10px;
+  }
+
+  .brand {
+    padding-inline: 17px;
+  }
+
+  .brand__name {
+    font-size: 14px;
+  }
+
+  .page-header,
+  .page-content {
+    padding-right: 22px;
+    padding-left: 22px;
+  }
+
+  .metric-item {
+    grid-template-columns: 42px 1fr;
+    padding-inline: 17px;
+  }
+
+  .metric-item__icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .visualization-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .consumption-chart-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .policy-check-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .enterprise-database-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .retrieval-settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .retrieval-settings-section--system {
+    grid-column: auto;
+  }
+
+  .retrieval-hybrid-composition {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 0.78fr);
+    gap: 12px;
+  }
+
+  .retrieval-hybrid-card {
+    padding: 15px;
+  }
+
+  .retrieval-studio {
+    grid-template-columns: 300px minmax(0, 1fr);
+  }
+
+  .retrieval-studio__settings {
+    padding-inline: 16px;
+  }
+
+  .knowledge-benchmark-notice {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .knowledge-benchmark-notice__lock {
+    grid-column: 2;
+  }
+
+  .processing-profile-card__header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .processing-profile-card__header small {
+    width: 100%;
+    max-width: none;
+    text-align: left;
+  }
+
+  .processing-profile-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .processing-family-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .processing-method-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+}

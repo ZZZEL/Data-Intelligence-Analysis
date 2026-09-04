@@ -1,0 +1,10 @@
+{
+  "name": "data-intelligence-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "数据智能分析工具统一 Demo 项目",
+  "scripts": {
+    "serve": "python3 -m http.server 8780 --bind 127.0.0.1 --directory .",
+    "test": "node tests/project-check.mjs"
+  }
+}

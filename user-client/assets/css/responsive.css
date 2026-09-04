@@ -1,0 +1,79 @@
+@media (max-width: 1280px) {
+  :root {
+    --sidebar-width: 248px;
+    --content-width: 840px;
+  }
+
+  .thread {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+
+  .template-page {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+
+  .template-editor {
+    gap: 14px;
+    grid-template-columns: minmax(0, 1.08fr) minmax(285px, 0.92fr);
+    padding: 20px 22px 40px;
+  }
+
+  .template-editor-form {
+    padding: 18px;
+  }
+
+  .template-preview article {
+    margin: 10px;
+    padding: 24px 20px;
+  }
+
+  .plan-item strong {
+    font-size: 9px;
+    max-width: 80px;
+  }
+
+  .thinking-surface {
+    padding: 16px;
+  }
+
+  .analysis-flow-entry {
+    margin-left: 10px;
+  }
+
+  .thought-revision {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .thought-revision-edit {
+    align-self: flex-end;
+  }
+}
+
+@media (max-height: 760px) {
+  .sidebar {
+    padding-top: 12px;
+  }
+
+  .sidebar-primary-actions {
+    margin-bottom: 14px;
+    margin-top: 14px;
+  }
+
+  .thread {
+    padding-top: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
