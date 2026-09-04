@@ -35,8 +35,7 @@
       label: "能力管理",
       children: [
         { label: "Skill 目录", icon: "sparkles", route: "skills" },
-        { label: "可视化能力", icon: "chart-no-axes-combined", route: "visualizations" },
-        { label: "分析口径", icon: "list-checks", route: "definitions" }
+        { label: "可视化能力", icon: "chart-no-axes-combined", route: "visualizations" }
       ]
     },
     {

@@ -88,8 +88,22 @@
     return { effective: "success", failed: "danger", pending: "neutral", parsing: "info", chunking: "info", embedding: "info", indexing: "info" }[key] || "neutral";
   }
 
-  function findKnowledgeBase(state, id) {
+  function findKnowledgeBase(state, id, batchId) {
+    if (id === "local-documents") return actions.getLocalDocumentImportContext(batchId);
     return (state.knowledgeBases || []).find(function find(item) { return item.id === id; }) || null;
+  }
+
+  function importReturnRoute(id) {
+    return id === "local-documents" ? "local-documents" : "knowledge/" + id + "?tab=documents";
+  }
+
+  function importStepRoute(id, step, batchId, existingImport) {
+    var path = id === "local-documents" ? "local-documents/upload?step=" : "knowledge/" + id + "?onboarding=1&step=";
+    return path + step + (batchId ? "&batch=" + encodeURIComponent(batchId) : "") + (id !== "local-documents" && existingImport ? "&flow=import" : "");
+  }
+
+  function processingDraftKey(id, batchId) {
+    return id === "local-documents" ? id + ":" + (batchId || "new") : id;
   }
 
   function findIngestionProfile(state, id) {
@@ -121,6 +135,7 @@
       semantic: "语义切片",
       structure: "结构切片",
       separator: "分隔符切片",
+      recursive: "递归切块",
       fixed: "固定长度切片",
       page: "按页切片",
       whole_document: "整篇切片"
@@ -330,15 +345,16 @@
     return '<section class="panel knowledge-assets knowledge-chunk-quick">' + renderKnowledgeContentTabs("chunks") + '<div id="knowledge-chunks-panel" class="knowledge-assets__panel" role="tabpanel">' + toolbar + '<div class="knowledge-chunk-quick__body">' + body + "</div></div></section>";
   }
 
-  function renderCreationSteps(activeStep) {
+  function renderCreationSteps(activeStep, isLocalDocumentFlow) {
     var steps = [
       ["database", "定义知识库", "设置基础信息"],
       ["file-up", "导入文件", "添加知识文件"],
       ["scan-text", "文档解析", "提取文档内容"],
       ["blocks", "文档处理", "配置本次切片参数"]
     ];
-    return '<ol class="creation-steps" aria-label="新建知识库进度">' + steps.map(function map(step, index) {
-      var stepNumber = index + 1;
+    if (isLocalDocumentFlow) steps = steps.slice(1);
+    return '<ol class="creation-steps' + (isLocalDocumentFlow ? " creation-steps--documents" : "") + '" aria-label="' + (isLocalDocumentFlow ? "上传文档进度" : "新建知识库进度") + '">' + steps.map(function map(step, index) {
+      var stepNumber = index + (isLocalDocumentFlow ? 2 : 1);
       var className = stepNumber === activeStep ? " is-active" : (stepNumber < activeStep ? " is-complete" : "");
       return '<li class="creation-step' + className + '"><span class="creation-step__number">' + stepNumber + '</span><span class="creation-step__icon">' + dom.icon(step[0], 18) + '</span><span class="creation-step__copy"><strong>' + esc(step[1]) + '</strong><small>' + esc(step[2]) + '</small></span>' + (index < steps.length - 1 ? '<span class="creation-step__next" aria-hidden="true">' + dom.icon("chevron-right", 17) + "</span>" : "") + "</li>";
     }).join("") + "</ol>";
@@ -390,15 +406,15 @@
   }
 
   function renderKnowledgeUpload(state, kb, isOnboarding, isExistingImport) {
-    var backRoute = "knowledge/" + kb.id + "?tab=documents";
-    var canReceiveFiles = (isOnboarding && !isExistingImport) || knowledgeEmbeddingReady(state, kb);
+    var backRoute = importReturnRoute(kb.id);
+    var canReceiveFiles = kb.isLocalDocumentFlow || (isOnboarding && !isExistingImport) || knowledgeEmbeddingReady(state, kb);
     var modelError = canReceiveFiles ? "" : '<div class="notice notice--danger" style="margin-bottom:16px">' + dom.icon("circle-alert", 16) + '<div class="notice__content"><div class="notice__title">向量模型连接不可用</div>暂时不能启动新文件处理。' + dom.button("前往模型管理", { variant: "secondary", attrs: 'data-open-config="models"' }) + '</div></div>';
     var headerOptions = {
-      title: isExistingImport ? "导入文件" : (isOnboarding ? "新建知识库" : "导入文件"),
-      back: { label: isOnboarding && !isExistingImport ? "稍后导入并返回知识库" : "返回知识库", route: backRoute }
+      title: kb.isLocalDocumentFlow ? "上传文档" : (isExistingImport ? "导入文件" : (isOnboarding ? "新建知识库" : "导入文件")),
+      back: { label: kb.isLocalDocumentFlow ? "返回文档管理" : (isOnboarding && !isExistingImport ? "稍后导入并返回知识库" : "返回知识库"), route: backRoute }
     };
     return dom.pageHeader(headerOptions) + '<div class="page-content creation-page">' +
-      (isOnboarding ? '<div class="creation-page__top">' + renderCreationSteps(2) + "</div>" : "") +
+      (isOnboarding ? '<div class="creation-page__top">' + renderCreationSteps(2, kb.isLocalDocumentFlow) + "</div>" : "") +
       '<section class="panel creation-panel">' + (isOnboarding ? "" : '<div class="panel__header"><h2 class="panel__title">导入文件</h2></div>') +
       '<div class="panel__body">' + modelError + '<div class="file-drop-heading">' + dom.requiredLabel("文件", { tag: "div" }) + '</div><label class="file-drop" for="kb-upload-files" data-upload-drop>' + dom.icon("file-up", 30) + '<strong>点击选择文件，或将文件拖入此处</strong><span>支持 PDF、图片、Word、PPT、Excel 和 TXT，可多选</span><span class="btn btn--secondary file-drop__choose">选择文件</span><input id="kb-upload-files" class="sr-only" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt" required aria-required="true" data-upload-files' + (canReceiveFiles ? "" : " disabled") + ' /></label>' +
       '<div class="upload-file-list" data-upload-file-list hidden></div>' +
@@ -438,9 +454,9 @@
 
   function renderKnowledgeParse(state, kb, isExistingImport) {
     return dom.pageHeader({
-      title: isExistingImport ? "导入文件" : "新建知识库",
-      back: { label: "返回知识库", route: "knowledge/" + kb.id + "?tab=documents" }
-    }) + '<div class="page-content creation-page"><div class="creation-page__top">' + renderCreationSteps(3) + '</div><section class="panel creation-panel"><div class="panel__body">' +
+      title: kb.isLocalDocumentFlow ? "上传文档" : (isExistingImport ? "导入文件" : "新建知识库"),
+      back: { label: kb.isLocalDocumentFlow ? "返回文档管理" : "返回知识库", route: importReturnRoute(kb.id) }
+    }) + '<div class="page-content creation-page"><div class="creation-page__top">' + renderCreationSteps(3, kb.isLocalDocumentFlow) + '</div><section class="panel creation-panel"><div class="panel__body">' +
       parseConfigFields(kb) + '<div class="creation-actions">' + dom.button("取消", { variant: "secondary", attrs: 'data-onboarding-cancel="' + esc(kb.id) + '"' }) + dom.button("下一步", { variant: "primary", icon: "arrow-right", attrs: 'data-parse-next="' + esc(kb.id) + '"' }) + '</div></div></section></div>';
   }
 
@@ -459,7 +475,7 @@
     }).sort(function sort(left, right) {
       var leftGeneral = left.id === "ING-01" || String(left.name || "").indexOf("通用") >= 0;
       var rightGeneral = right.id === "ING-01" || String(right.name || "").indexOf("通用") >= 0;
-      return Number(rightGeneral) - Number(leftGeneral);
+      return Number(rightGeneral) - Number(leftGeneral) || Number(left.displayOrder || 99) - Number(right.displayOrder || 99);
     });
   }
 
@@ -470,7 +486,7 @@
 
   function processingCustomMethodForDraft(draft) {
     var mode = draft && draft.mode || "smart";
-    if (["structure", "separator", "fixed", "page", "whole_document"].indexOf(mode) >= 0) return mode;
+    if (["structure", "recursive", "separator", "page", "whole_document"].indexOf(mode) >= 0) return mode;
     return "structure";
   }
 
@@ -487,11 +503,11 @@
     var selectedFamily = processingFamilyForDraft(draft);
     var selectedMethod = processingCustomMethodForDraft(draft);
     var methodDefinitions = [
-      { value: "structure", title: "结构切片", summary: "按标题、段落、列表与表格等解析结构边界切分。", profile: structureProfile },
-      { value: "separator", title: "分隔符切片", summary: "选择一种明确的换行或句末符号作为切片边界。", profile: separatorProfile },
-      { value: "fixed", title: "固定长度", summary: "按统一字符长度切分，适合结构较弱、内容连续的文本。", profile: profileForMode("fixed") },
-      { value: "page", title: "按页", summary: "以原文页为边界，适合页码引用和版面定位要求较高的材料。", profile: profileForMode("page") },
-      { value: "whole_document", title: "整篇", summary: "将整篇文件作为单一切片，仅适合内容短小且需整体理解的材料。", profile: profileForMode("whole_document") }
+      { value: "structure", title: "结构切片", summary: "依据解析得到的标题、段落、列表和表格等内容块切分，适合结构清晰的文档。", profile: structureProfile },
+      { value: "recursive", title: "递归切块", summary: "按段落、换行、句末标点等边界逐级拆分超长内容，尽量保留完整句段。", profile: profileForMode("recursive") },
+      { value: "separator", title: "分隔符切片", summary: "按选定的一种换行或标点符号匹配边界，适合分隔规则明确的文本。", profile: separatorProfile },
+      { value: "page", title: "按页切片", summary: "按原文连续页分组，适合需要保留页面整体内容的 PDF 或演示文稿。", profile: profileForMode("page") },
+      { value: "whole_document", title: "整篇切片", summary: "将短文档整体保留为一个切片；超长时按所选方式处理。", profile: profileForMode("whole_document") }
     ].filter(function filterMethod(method) { return !!method.profile; });
     if (!methodDefinitions.some(function some(method) { return method.value === selectedMethod; })) selectedMethod = methodDefinitions.length ? methodDefinitions[0].value : "";
 
@@ -506,7 +522,7 @@
     var familyDefinitions = [
       smartProfile && { value: "smart", title: "自动切片", summary: smartProfile.description || "自动组合解析结构、递归拆分与长度兜底。", profile: smartProfile, recommended: true },
       semanticProfile && { value: "semantic", title: "语义切片", summary: semanticProfile.description || "在主题切换处生成边界，适合结构不明显的长文本。", profile: semanticProfile, semantic: true },
-      methodDefinitions.length && { value: "custom", title: "自定义切片", summary: "明确指定结构、分隔符、长度或页面边界，适合已知文档形态。", profile: null }
+      methodDefinitions.length && { value: "custom", title: "自定义切片", summary: "明确选择结构、递归、分隔符、按页或整篇处理，适合已知文档形态。", profile: null }
     ].filter(Boolean);
     var familyCards = familyDefinitions.map(function mapFamily(family) {
       return renderProfileCard({
@@ -539,7 +555,7 @@
     return ["low", "balanced", "high"].indexOf(value) >= 0 ? value : "balanced";
   }
 
-  function createProcessingDraft(knowledgeBaseId, profile) {
+  function createProcessingDraft(knowledgeBaseId, profile, batchId) {
     var chunking = profile.chunking || {};
     var indexContent = profile.indexContent || {};
     var mode = chunking.mode || "smart";
@@ -555,36 +571,37 @@
       profileId: profile.id,
       mode: mode,
       maxChars: Number(chunking.maxChars || 1200),
+      maxDocumentChars: Number(chunking.maxDocumentChars || chunking.maxChars || 20000),
       overlapPercent: Number(chunking.overlapPercent || 0),
       semanticSensitivity: normalizedSemanticSensitivity(chunking.semanticSensitivity),
       separatorType: separatorType,
       pagesPerChunk: Number(chunking.pagesPerChunk || 1),
       longDocumentFallback: chunking.longDocumentFallback || "smart",
       mergeShortChunks: chunking.mergeShortChunks !== false,
-      includeContext: chunking.includeContext !== false,
+      includeContext: mode !== "whole_document" && chunking.includeContext !== false,
       documentName: indexContent.documentName !== false,
       headingPath: indexContent.headingPath !== false,
       pageNumber: indexContent.pageNumber !== false,
       tableText: indexContent.tableText !== false,
       imageText: indexContent.imageText === true
     };
-    onboardingProcessingDrafts[knowledgeBaseId] = draft;
+    onboardingProcessingDrafts[processingDraftKey(knowledgeBaseId, batchId)] = draft;
     return draft;
   }
 
   function renderProcessingParameters(draft) {
     if (!draft) return "";
     var mode = draft.mode || "smart";
-    var sizeFields = '<div class="form-field">' + dom.requiredLabel("切片最大字符", { forId: "processing-max-chars" }) + '<div class="field-with-suffix"><input id="processing-max-chars" class="field" type="number" min="200" max="10000" step="100" value="' + esc(draft.maxChars) + '" data-processing-param="maxChars" required aria-required="true"><span>字符</span></div></div>' +
-      '<div class="form-field">' + dom.requiredLabel("切片重叠率", { forId: "processing-overlap" }) + '<div class="field-with-suffix"><input id="processing-overlap" class="field" type="number" min="0" max="50" step="1" value="' + esc(draft.overlapPercent) + '" data-processing-param="overlapPercent" required aria-required="true"><span>%</span></div></div>';
+    var sizeFields = '<div class="form-field">' + dom.requiredLabel("切片最大字符", { forId: "processing-max-chars" }) + '<div class="field-with-suffix"><input id="processing-max-chars" class="field" type="number" min="200" max="10000" step="1" value="' + esc(draft.maxChars) + '" data-processing-param="maxChars" required aria-required="true" aria-describedby="processing-max-help"><span>字符</span></div><div id="processing-max-help" class="form-help">每片的长度上限，不要求每片等长；200–10000 个字符。</div></div>' +
+      '<div class="form-field">' + dom.requiredLabel("切片重叠率", { forId: "processing-overlap" }) + '<div class="field-with-suffix"><input id="processing-overlap" class="field" type="number" min="0" max="50" step="1" value="' + esc(draft.overlapPercent) + '" data-processing-param="overlapPercent" required aria-required="true" aria-describedby="processing-overlap-help"><span>%</span></div><div id="processing-overlap-help" class="form-help">按最大字符数计算重复正文的目标量；0 表示不重叠。</div></div>';
     var strategyFields = "";
     if (mode === "smart") strategyFields = sizeFields + '<div class="processing-strategy-note" role="note"><strong>系统自动编排</strong><span>依次按解析结构 → 递归拆分 → 长度上限兜底生成切片，不调用语义模型，不产生语义边界判断消耗。</span></div>';
-    if (mode === "fixed") strategyFields = sizeFields;
-    if (mode === "semantic") strategyFields = '<div class="form-field">' + dom.requiredLabel("切片最大字符", { forId: "processing-max-chars" }) + '<div class="field-with-suffix"><input id="processing-max-chars" class="field" type="number" min="200" max="10000" step="100" value="' + esc(draft.maxChars) + '" data-processing-param="maxChars" required aria-required="true" aria-describedby="processing-semantic-max-help"><span>字符</span></div><div id="processing-semantic-max-help" class="form-help">仅作为安全上限；超过上限时仍优先在完整句段边界处拆分。</div></div>' +
+    if (mode === "recursive") strategyFields = sizeFields + '<div class="form-field form-field--full"><div class="form-help">依次按段落 → 换行 → 句末标点 → 空格拆分，仅对超长片段继续递归，最后按字符兜底；不调用语义模型。重叠率为上限，优先保留完整边界。</div></div>';
+    if (mode === "semantic") strategyFields = '<div class="form-field">' + dom.requiredLabel("切片最大字符", { forId: "processing-max-chars" }) + '<div class="field-with-suffix"><input id="processing-max-chars" class="field" type="number" min="200" max="10000" step="1" value="' + esc(draft.maxChars) + '" data-processing-param="maxChars" required aria-required="true" aria-describedby="processing-semantic-max-help"><span>字符</span></div><div id="processing-semantic-max-help" class="form-help">仅作为安全上限；超过上限时仍优先在完整句段边界处拆分。</div></div>' +
       '<div class="form-field">' + dom.requiredLabel("语义切分敏感度", { forId: "processing-semantic-sensitivity" }) + '<select id="processing-semantic-sensitivity" class="select-field" data-processing-param="semanticSensitivity" required aria-required="true" aria-describedby="processing-semantic-sensitivity-help"><option value="low"' + (draft.semanticSensitivity === "low" ? " selected" : "") + '>低 · 较少切分</option><option value="balanced"' + (draft.semanticSensitivity === "balanced" ? " selected" : "") + '>均衡 · 推荐</option><option value="high"' + (draft.semanticSensitivity === "high" ? " selected" : "") + '>高 · 较多切分</option></select><div id="processing-semantic-sensitivity-help" class="form-help">敏感度越高，越容易在较小的主题变化处切分，切片和索引条目通常越多。</div></div>';
-    if (mode === "structure") strategyFields = sizeFields;
+    if (mode === "structure") strategyFields = sizeFields + '<div class="form-field form-field--full"><div class="form-help">依据上一阶段的解析结构，不是匹配换行符；长度上限用于限制过大的内容块，不能保证任意表格都完整放入一片。</div></div>';
     if (mode === "separator") {
-      var separatorHelp = "每次仅使用一种边界规则拆分；超长内容仍会按字符上限处理。";
+      var separatorHelp = "仅匹配所选分隔符，不智能识别句子；例如英文句点也可能匹配小数和缩写。没有匹配或片段超长时，仍需按字符上限兜底。";
       var separatorOptions = [
         { value: "paragraph", token: "\\n\\n", name: "段落 / 空行" },
         { value: "newline", token: "\\n", name: "每次换行" },
@@ -607,13 +624,13 @@
       }).join("");
       strategyFields = sizeFields + '<div class="form-field form-field--full processing-separator-field" data-processing-separator-picker>' + dom.requiredLabel("拆分依据", { tag: "div", attrs: 'id="processing-separator-label"' }) + '<div class="processing-separator-control"><select id="processing-separator-type" hidden data-processing-param="separatorType" data-processing-separator-source>' + separatorSourceOptions + '</select><button type="button" class="processing-separator-trigger" role="combobox" aria-required="true" aria-haspopup="listbox" aria-expanded="false" aria-controls="processing-separator-listbox" aria-labelledby="processing-separator-label processing-separator-value" aria-describedby="processing-separator-help" data-processing-separator-trigger><span id="processing-separator-value" data-processing-separator-value>' + separatorChoiceMarkup(selectedSeparator) + '</span>' + dom.icon("chevron-down", 15) + '</button><div id="processing-separator-listbox" class="processing-separator-listbox" role="listbox" aria-labelledby="processing-separator-label" data-processing-separator-listbox hidden>' + separatorListOptions + '</div></div><div id="processing-separator-help" class="form-help">' + esc(separatorHelp) + '</div></div>';
     }
-    if (mode === "page") strategyFields = '<div class="form-field">' + dom.requiredLabel("每个切片页数", { forId: "processing-pages" }) + '<div class="field-with-suffix"><input id="processing-pages" class="field" type="number" min="1" max="10" step="1" value="' + esc(draft.pagesPerChunk) + '" data-processing-param="pagesPerChunk" required aria-required="true" aria-describedby="processing-pages-help"><span>页</span></div><div id="processing-pages-help" class="form-help">保留原文页码边界，适合扫描 PDF、PPT 与需按页引用的文档。</div></div>';
-    if (mode === "whole_document") strategyFields = '<div class="form-field">' + dom.requiredLabel("超长文档处理", { forId: "processing-long-document" }) + '<select id="processing-long-document" class="select-field" data-processing-param="longDocumentFallback" required aria-required="true" aria-describedby="processing-whole-help"><option value="smart"' + (draft.longDocumentFallback === "smart" ? " selected" : "") + '>自动改用自动切片</option><option value="stop"' + (draft.longDocumentFallback === "stop" ? " selected" : "") + '>停止处理并提示</option></select><div id="processing-whole-help" class="form-help">仅建议用于内容短小且必须整体理解的文档。</div></div>';
+    if (mode === "page") strategyFields = '<div class="form-field form-field--full">' + dom.requiredLabel("每个切片页数", { forId: "processing-pages" }) + '<div class="field-with-suffix"><input id="processing-pages" class="field" type="number" min="1" max="10" step="1" value="' + esc(draft.pagesPerChunk) + '" data-processing-param="pagesPerChunk" required aria-required="true" aria-describedby="processing-pages-help"><span>页</span></div><div id="processing-pages-help" class="form-help">需解析结果包含原文分页信息；每片包含指定数量的连续页，尾片可不足该页数。页数不能替代模型输入长度校验。</div></div>';
+    if (mode === "whole_document") strategyFields = '<div class="form-field form-field--full">' + dom.requiredLabel("超长文档处理", { forId: "processing-long-document" }) + '<select id="processing-long-document" class="select-field" data-processing-param="longDocumentFallback" required aria-required="true" aria-describedby="processing-whole-help"><option value="smart"' + (draft.longDocumentFallback === "smart" ? " selected" : "") + '>改用自动切片</option><option value="stop"' + (draft.longDocumentFallback === "stop" ? " selected" : "") + '>停止处理并提示</option></select><div id="processing-whole-help" class="form-help">Demo 预置整篇上限为 ' + number(draft.maxDocumentChars) + ' 字符；超长处理选项目前仅保存配置。正式接入时还需按向量模型的 Token 上限校验。</div></div>';
     return '<section class="processing-parameters">' +
       '<div class="processing-parameter-grid' + (mode === "semantic" ? " processing-parameter-grid--semantic" : "") + '">' + strategyFields + '</div>' +
       (mode === "semantic" ? '<div class="vector-cost-notice semantic-cost-notice" role="note">' + dom.icon("circle-alert", 15) + '<span>语义边界效果需用真实问题集验证；入库时会增加句段 Embedding 消耗与处理耗时，查询阶段不会新增这类切片模型调用。</span></div>' : "") +
       '<div class="processing-parameter-groups"><fieldset><legend>关联信息</legend><div class="processing-parameter-toggles">' +
-      '<label><input type="checkbox" data-processing-param="includeContext"' + (draft.includeContext ? " checked" : "") + '><span>相邻切片上下文</span></label>' +
+      (mode !== "whole_document" ? '<label><input type="checkbox" data-processing-param="includeContext"' + (draft.includeContext ? " checked" : "") + '><span>相邻切片上下文</span></label>' : "") +
       '<label><input type="checkbox" data-processing-param="documentName"' + (draft.documentName ? " checked" : "") + '><span>文件名</span></label>' +
       '<label><input type="checkbox" data-processing-param="headingPath"' + (draft.headingPath ? " checked" : "") + '><span>标题路径</span></label>' +
       '<label><input type="checkbox" data-processing-param="pageNumber"' + (draft.pageNumber ? " checked" : "") + '><span>页码</span></label></div></fieldset>' +
@@ -622,17 +639,20 @@
 
   function renderKnowledgeProcessing(state, kb, isExistingImport) {
     var profiles = availableProcessingProfiles(state);
-    var existingDraft = onboardingProcessingDrafts[kb.id];
+    var existingDraft = onboardingProcessingDrafts[processingDraftKey(kb.id, kb.importBatchId)];
     var preferredProfileId = existingDraft && existingDraft.profileId || kb.currentIngestionProfileId;
     var selectedProfile = profiles.find(function find(profile) { return profile.id === preferredProfileId; }) || profiles[0] || null;
-    var processingDraft = selectedProfile && (!existingDraft || existingDraft.profileId !== selectedProfile.id) ? createProcessingDraft(kb.id, selectedProfile) : existingDraft;
+    var savedProfile = kb.processingProfileSnapshot;
+    var draftProfile = savedProfile && selectedProfile && (savedProfile.sourceProfileId || savedProfile.id) === selectedProfile.id ? savedProfile : selectedProfile;
+    var processingDraft = selectedProfile && (!existingDraft || existingDraft.profileId !== selectedProfile.id) ? createProcessingDraft(kb.id, draftProfile, kb.importBatchId) : existingDraft;
     return dom.pageHeader({
-      title: isExistingImport ? "导入文件" : "新建知识库",
-      back: { label: "返回知识库", route: "knowledge/" + kb.id + "?tab=documents" }
-    }) + '<div class="page-content creation-page"><div class="creation-page__top">' + renderCreationSteps(4) + '</div><section class="panel creation-panel"><div class="panel__body">' +
+      title: kb.isLocalDocumentFlow ? "上传文档" : (isExistingImport ? "导入文件" : "新建知识库"),
+      back: { label: kb.isLocalDocumentFlow ? "返回文档管理" : "返回知识库", route: importReturnRoute(kb.id) }
+    }) + '<div class="page-content creation-page"><div class="creation-page__top">' + renderCreationSteps(4, kb.isLocalDocumentFlow) + '</div><section class="panel creation-panel"><div class="panel__body">' +
       '<div class="processing-section-label">' + dom.requiredLabel("切片策略", { tag: "div" }) + '<p>先选择切片类型；如需精确控制，再在自定义切片中选择具体方法。</p></div><div class="processing-profile-picker">' + processingProfileCards(state, kb, processingDraft) + '</div>' +
       '<div data-processing-draft>' + renderProcessingParameters(processingDraft) + '</div>' +
-      '<div class="vector-cost-notice">' + dom.icon("circle-alert", 15) + '<span>完成后将为本次导入内容生成向量并写入索引，产生 Embedding Token 消耗。</span></div>' +
+      '<div class="form-help" role="note">Demo 说明：当前仅递归切块对已读取文本执行实际拆分；其他策略用于配置演示，预览结果不代表对应算法已接入。</div>' +
+      '<div class="vector-cost-notice">' + dom.icon("circle-alert", 15) + '<span>' + (kb.isLocalDocumentFlow ? "完成后保存解析内容与切片，可在文档管理中预览。" : "完成后将为本次导入内容生成向量并写入索引，产生 Embedding Token 消耗。") + '</span></div>' +
       '<div class="creation-actions">' + dom.button("取消", { variant: "secondary", attrs: 'data-onboarding-cancel="' + esc(kb.id) + '"' }) + dom.button("上一步", { variant: "secondary", icon: "arrow-left", attrs: 'data-processing-back="' + esc(kb.id) + '"' }) + dom.button("完成", { variant: "primary", icon: "check", disabled: !processingDraft, attrs: 'data-processing-finish="' + esc(kb.id) + '" data-existing-import="' + (isExistingImport ? "true" : "false") + '"' }) + '</div></div></section></div>';
   }
   function renderChunkCards(state, item) {
@@ -705,14 +725,31 @@
     return renderKnowledgeList(state);
   }
 
+  function localImportRoute(route) {
+    return Object.assign({}, route, { id: "local-documents", query: Object.assign({}, route.query, { onboarding: "1", flow: "local-documents" }) });
+  }
+
+  function renderLocalImport(route, state) {
+    var sharedRoute = localImportRoute(route);
+    var context = findKnowledgeBase(state, sharedRoute.id, sharedRoute.query.batch);
+    if (!context || (sharedRoute.query.step !== "upload" && sharedRoute.query.step && !sharedRoute.query.batch)) {
+      return dom.pageHeader({ title: "上传文档", back: { label: "返回文档管理", route: "local-documents" } }) + '<div class="page-content">' + dom.empty("上传记录已失效", "请返回文档管理重新上传文件。", "file-x") + "</div>";
+    }
+    return renderKnowledgeDetail(state, sharedRoute, context);
+  }
+
+  function mountLocalImport(root, route, state) {
+    mount(root, localImportRoute(route), state);
+  }
+
   function confirmToggle(kb, enabled) {
     overlay.confirm({
       title: enabled ? "启用检索" : "关闭检索",
       confirmLabel: enabled ? "确认启用" : "确认关闭",
       confirmVariant: enabled ? "primary" : "danger",
-      body: '<div class="notice">' + dom.icon(enabled ? "play" : "pause", 16) + '<div class="notice__content"><div class="notice__title">影响范围</div>' +
-        (enabled ? "允许符合访问等级的 Agent 检索该知识库；权限校验仍会在每次检索时执行。" : "停止新的检索请求；文件、索引和访问等级设置继续保留，之后可再次启用。") +
-        '</div></div><dl class="detail-list" style="margin-top:16px">' + detailRow("知识库", esc(kb.name)) + detailRow("访问等级", esc(kb.minAccessLevel)) + detailRow("可检索文件", number(kb.documentCounts.searchable)) + "</dl>",
+      body: '<div class="notice' + (enabled ? '' : ' notice--warning') + '">' + dom.icon(enabled ? "play" : "triangle-alert", 16) + '<div class="notice__content">' +
+        (enabled ? "启用后，该知识库将恢复提供检索服务。确认启用检索？" : "关闭后，该知识库将停止响应新的检索请求。确认关闭检索？") +
+        '</div></div>',
       onConfirm: function onConfirm() {
         var result = actions.setKnowledgeBaseEnabled(kb.id, enabled);
         if (!result) {
@@ -805,7 +842,7 @@
   function openAddChunk(knowledgeBaseId, documentId, originTab) {
     overlay.open({
       title: "新增切片",
-      confirmLabel: "生成向量并保存",
+      confirmLabel: "创建切片",
       wide: true,
       body: '<div class="stack"><div class="form-field">' + dom.requiredLabel("切片内容", { forId: "new-chunk-content" }) + '<textarea id="new-chunk-content" class="textarea-field chunk-content-editor" maxlength="5000" placeholder="输入需要纳入检索的内容" data-chunk-content required aria-required="true"></textarea></div><div class="vector-cost-notice">' + dom.icon("circle-alert", 15) + '<span>保存后会重新生成该文件的向量索引，产生 Embedding Token 消耗；完成前该切片不可检索。</span></div></div>',
       onConfirm: function onConfirm(scope) {
@@ -1054,12 +1091,19 @@
       });
       renderUploadFiles();
       if (pendingEntries.length) {
-        window.setTimeout(function finishLocalImport() {
-          pendingEntries.forEach(function each(entry) {
-            if (selectedFiles.indexOf(entry) >= 0) entry.status = "imported";
+        pendingEntries.forEach(function readFile(entry) {
+          var readText = /\.txt$/i.test(entry.file.name) && typeof entry.file.text === "function" ? entry.file.text() : Promise.resolve("");
+          readText.then(function received(text) {
+            entry.sourcePreview = text;
+            window.setTimeout(function finishLocalImport() {
+              if (selectedFiles.indexOf(entry) >= 0) entry.status = "imported";
+              renderUploadFiles();
+            }, 520);
+          }).catch(function failed() {
+            entry.status = "error";
+            renderUploadFiles();
           });
-          renderUploadFiles();
-        }, 520);
+        });
       }
       if (rejectedCount) overlay.toast("部分文件未加入", "请选择 PDF、图片、Word、PPT、Excel 或 TXT 文件。", "warning");
     }
@@ -1103,7 +1147,8 @@
         isUploading = true;
         renderUploadFiles();
         window.setTimeout(function completeUpload() {
-          var batch = actions.startKnowledgeImport(knowledgeBaseId, { files: selectedFiles.map(function map(entry) { return entry.file; }), deferred: isOnboardingImport });
+          if (!root.isConnected || !uploadStart.isConnected) return;
+          var batch = actions.startKnowledgeImport(knowledgeBaseId, { files: selectedFiles.map(function map(entry) { return { name: entry.file.name, size: entry.file.size, type: entry.file.type, lastModified: entry.file.lastModified, sourceFile: entry.file, sourcePreview: entry.sourcePreview }; }), deferred: isOnboardingImport });
           if (!batch) {
             isUploading = false;
             selectedFiles.forEach(function each(entry) { entry.status = "error"; });
@@ -1114,9 +1159,8 @@
           isUploading = false;
           renderUploadFiles();
           if (isOnboardingImport || batch.status === "pending_configuration") {
-            var flowQuery = uploadStart.dataset.existingImport === "true" ? "&flow=import" : "";
             overlay.toast("文件已接收", "文件已暂存，完成后续步骤后开始处理。", "success");
-            router.navigate("knowledge/" + knowledgeBaseId + "?onboarding=1&step=parse&batch=" + batch.id + flowQuery);
+            router.navigate(importStepRoute(knowledgeBaseId, "parse", batch.id, uploadStart.dataset.existingImport === "true"));
           } else {
             openDocumentReplacementConfirmation(batch, knowledgeBaseId, function finishImport() {
               if (batch.successCount) overlay.toast("文件已导入", "文件已完成解析、向量化和索引构建。", "success");
@@ -1128,12 +1172,13 @@
     }
     root.querySelectorAll("[data-upload-cancel]").forEach(function bind(button) {
       button.addEventListener("click", function handle() {
-        router.navigate("knowledge/" + button.dataset.uploadCancel + "?tab=documents");
+        router.navigate(importReturnRoute(button.dataset.uploadCancel));
       });
     });
     root.querySelectorAll("[data-onboarding-cancel]").forEach(function bind(button) {
       button.addEventListener("click", function handle() {
-        router.navigate("knowledge/" + button.dataset.onboardingCancel + "?tab=documents");
+        delete onboardingProcessingDrafts[processingDraftKey(button.dataset.onboardingCancel, route.query.batch)];
+        router.navigate(importReturnRoute(button.dataset.onboardingCancel));
       });
     });
     var parseRecognition = root.querySelector("#parse-recognition");
@@ -1151,7 +1196,7 @@
       syncVisualUnderstanding();
     }
     if (route.id && ((route.query.onboarding === "1" && route.query.step === "parse") || route.query.settings === "parse")) {
-      var activeKb = findKnowledgeBase(state, route.id);
+      var activeKb = findKnowledgeBase(state, route.id, route.query.batch);
       var activeParseConfig = (activeKb && activeKb.mineruParseConfig) || {};
       if (parseRecognition) parseRecognition.value = activeParseConfig.parseMethod || "auto";
     }
@@ -1180,7 +1225,7 @@
     var parseNext = root.querySelector("[data-parse-next]");
     if (parseNext) parseNext.addEventListener("click", function handle() {
       var currentState = OpsDemo.core.store.getState();
-      var currentKb = findKnowledgeBase(currentState, parseNext.dataset.parseNext);
+      var currentKb = findKnowledgeBase(currentState, parseNext.dataset.parseNext, route.query.batch);
       var nextParseConfig = readParseConfig();
       var compatibility = parseCompatibilityFor(currentKb, nextParseConfig);
       if (!compatibility.compatible) {
@@ -1188,10 +1233,11 @@
         return;
       }
       var configured = actions.setKnowledgeBaseOnboardingConfig(parseNext.dataset.parseNext, {
-        mineruParseConfig: nextParseConfig
+        mineruParseConfig: nextParseConfig,
+        batchId: route.query.batch || null
       });
       if (!configured) return;
-      router.navigate("knowledge/" + parseNext.dataset.parseNext + "?onboarding=1&step=processing" + (route.query.batch ? "&batch=" + encodeURIComponent(route.query.batch) : "") + (route.query.flow === "import" ? "&flow=import" : ""));
+      router.navigate(importStepRoute(parseNext.dataset.parseNext, "processing", route.query.batch, route.query.flow === "import"));
     });
     var parseSettingsCancel = root.querySelector("[data-parse-settings-cancel]");
     var parseSettingsSave = root.querySelector("[data-parse-settings-save]");
@@ -1220,7 +1266,7 @@
     var processingDraftRoot = root.querySelector("[data-processing-draft]");
     var processingMethodPicker = root.querySelector("[data-processing-method-picker]");
     var processingDraftCache = {};
-    var initialProcessingDraft = processingFinish && onboardingProcessingDrafts[processingFinish.dataset.processingFinish];
+    var initialProcessingDraft = processingFinish && onboardingProcessingDrafts[processingDraftKey(processingFinish.dataset.processingFinish, route.query.batch)];
     if (initialProcessingDraft && initialProcessingDraft.profileId) processingDraftCache[initialProcessingDraft.profileId] = initialProcessingDraft;
 
     function bindProcessingSeparatorPicker() {
@@ -1331,7 +1377,7 @@
       if (!processingDraftRoot || !processingFinish) return;
       processingDraftRoot.querySelectorAll("[data-processing-param]").forEach(function bind(input) {
         input.addEventListener("change", function handle() {
-          var draft = onboardingProcessingDrafts[processingFinish.dataset.processingFinish];
+          var draft = onboardingProcessingDrafts[processingDraftKey(processingFinish.dataset.processingFinish, route.query.batch)];
           if (!draft) return;
           var key = input.dataset.processingParam;
           if (input.type === "checkbox") draft[key] = input.checked;
@@ -1340,7 +1386,7 @@
         });
         if (input.type === "number" || input.type === "text") {
           input.addEventListener("input", function handle() {
-            var draft = onboardingProcessingDrafts[processingFinish.dataset.processingFinish];
+            var draft = onboardingProcessingDrafts[processingDraftKey(processingFinish.dataset.processingFinish, route.query.batch)];
             if (!draft) return;
             draft[input.dataset.processingParam] = input.type === "number" ? Number(input.value) : input.value;
           });
@@ -1355,14 +1401,14 @@
         return null;
       }
       var knowledgeBaseId = processingFinish.dataset.processingFinish;
-      var currentDraft = onboardingProcessingDrafts[knowledgeBaseId];
+      var currentDraft = onboardingProcessingDrafts[processingDraftKey(knowledgeBaseId, route.query.batch)];
       if (currentDraft && currentDraft.profileId) processingDraftCache[currentDraft.profileId] = currentDraft;
       var draft = processingDraftCache[profile.id];
       if (!draft) {
-        draft = createProcessingDraft(knowledgeBaseId, profile);
+        draft = createProcessingDraft(knowledgeBaseId, profile, route.query.batch);
         processingDraftCache[profile.id] = draft;
       } else {
-        onboardingProcessingDrafts[knowledgeBaseId] = draft;
+        onboardingProcessingDrafts[processingDraftKey(knowledgeBaseId, route.query.batch)] = draft;
       }
       processingDraftRoot.innerHTML = renderProcessingParameters(draft);
       dom.hydrateIcons(processingDraftRoot);
@@ -1405,14 +1451,14 @@
     });
     bindProcessingDraftInputs();
     if (processingBack) processingBack.addEventListener("click", function handle() {
-      router.navigate("knowledge/" + processingBack.dataset.processingBack + "?onboarding=1&step=parse" + (route.query.batch ? "&batch=" + encodeURIComponent(route.query.batch) : "") + (route.query.flow === "import" ? "&flow=import" : ""));
+      router.navigate(importStepRoute(processingBack.dataset.processingBack, "parse", route.query.batch, route.query.flow === "import"));
     });
     if (processingFinish) processingFinish.addEventListener("click", function handle() {
       var currentState = OpsDemo.core.store.getState();
-      var currentKb = findKnowledgeBase(currentState, processingFinish.dataset.processingFinish);
-      var processingDraft = onboardingProcessingDrafts[processingFinish.dataset.processingFinish];
+      var currentKb = findKnowledgeBase(currentState, processingFinish.dataset.processingFinish, route.query.batch);
+      var processingDraft = onboardingProcessingDrafts[processingDraftKey(processingFinish.dataset.processingFinish, route.query.batch)];
       var currentProfile = processingDraft && findIngestionProfile(currentState, processingDraft.profileId);
-      if (!knowledgeEmbeddingReady(currentState, currentKb)) {
+      if (!currentKb || (!currentKb.isLocalDocumentFlow && !knowledgeEmbeddingReady(currentState, currentKb))) {
         overlay.toast("暂时无法开始文件处理", "请先在模型管理中恢复已绑定向量模型的连接。", "warning");
         return;
       }
@@ -1420,16 +1466,16 @@
         overlay.toast("请选择切片策略", "请选择代码中预置的处理方案，并确认本次处理参数。", "warning");
         return;
       }
-      if ((processingDraft.mode === "smart" || processingDraft.mode === "semantic" || processingDraft.mode === "structure" || processingDraft.mode === "fixed" || processingDraft.mode === "separator") && (!Number.isFinite(processingDraft.maxChars) || processingDraft.maxChars < 200 || processingDraft.maxChars > 10000)) {
-        overlay.toast("切片参数有误", "切片最大字符需在 200–10000 之间。", "warning");
+      if ((processingDraft.mode === "smart" || processingDraft.mode === "semantic" || processingDraft.mode === "structure" || processingDraft.mode === "recursive" || processingDraft.mode === "separator") && (!Number.isInteger(processingDraft.maxChars) || processingDraft.maxChars < 200 || processingDraft.maxChars > 10000)) {
+        overlay.toast("切片参数有误", "切片最大字符需为 200–10000 之间的整数。", "warning");
         return;
       }
       if (processingDraft.mode === "semantic" && ["low", "balanced", "high"].indexOf(processingDraft.semanticSensitivity) < 0) {
         overlay.toast("语义切片参数有误", "请选择低、均衡或高敏感度。", "warning");
         return;
       }
-      if (!Number.isFinite(processingDraft.overlapPercent) || processingDraft.overlapPercent < 0 || processingDraft.overlapPercent > 50) {
-        overlay.toast("切片参数有误", "切片重叠率需在 0%–50% 之间。", "warning");
+      if (["smart", "structure", "recursive", "separator"].indexOf(processingDraft.mode) >= 0 && (!Number.isInteger(processingDraft.overlapPercent) || processingDraft.overlapPercent < 0 || processingDraft.overlapPercent > 50)) {
+        overlay.toast("切片参数有误", "切片重叠率需为 0–50 之间的整数。", "warning");
         return;
       }
       if (processingDraft.mode === "page" && (!Number.isInteger(processingDraft.pagesPerChunk) || processingDraft.pagesPerChunk < 1 || processingDraft.pagesPerChunk > 10)) {
@@ -1468,13 +1514,13 @@
       }
       var completionRoute = function completionRoute() {
         var existingImport = processingFinish.dataset.existingImport === "true";
-        delete onboardingProcessingDrafts[processingFinish.dataset.processingFinish];
-        overlay.toast(existingImport ? "文件已导入" : "知识库已完成创建", "文件已按本次解析与处理设置完成索引。", "success");
-        router.navigate("knowledge/" + processingFinish.dataset.processingFinish + "?tab=documents");
+        delete onboardingProcessingDrafts[processingDraftKey(processingFinish.dataset.processingFinish, route.query.batch)];
+        overlay.toast(currentKb.isLocalDocumentFlow ? "文档已处理" : (existingImport ? "文件已导入" : "知识库已完成创建"), currentKb.isLocalDocumentFlow ? "文件已完成解析与切块，可在文档管理中预览。" : "文件已按本次解析与处理设置完成索引。", "success");
+        router.navigate(importReturnRoute(processingFinish.dataset.processingFinish));
       };
       var completedState = OpsDemo.core.store.getState();
       var completedBatch = route.query.batch && (completedState.importBatches || []).find(function find(batch) { return batch.id === route.query.batch; });
-      if (completedBatch) openDocumentReplacementConfirmation(completedBatch, processingFinish.dataset.processingFinish, completionRoute);
+      if (completedBatch && !currentKb.isLocalDocumentFlow) openDocumentReplacementConfirmation(completedBatch, processingFinish.dataset.processingFinish, completionRoute);
       else completionRoute();
     });
     root.querySelectorAll("[data-test-kb]").forEach(function bind(button) {
@@ -1593,6 +1639,8 @@
 
   OpsDemo.pages.knowledge = {
     render: render,
-    mount: mount
+    mount: mount,
+    renderLocalImport: renderLocalImport,
+    mountLocalImport: mountLocalImport
   };
 })(window.OpsDemo);

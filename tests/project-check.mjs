@@ -31,7 +31,7 @@ const launcher = readFileSync(resolve(projectRoot, 'index.html'), 'utf8');
 const userApp = readFileSync(resolve(projectRoot, 'user-client/src/app.js'), 'utf8');
 const opsApp = readFileSync(resolve(projectRoot, 'ops-console/src/app.js'), 'utf8');
 
-assert.match(launcher, /\.\/user-client\/#\/chat\/copper-decision/);
+assert.match(launcher, /\.\/user-client\/#\/chat\/new/);
 assert.doesNotMatch(launcher, /\.\/ops-console\//);
 assert.match(userApp, /\.\.\/ops-console\/#\/knowledge/);
 assert.match(opsApp, /\.\.\/user-client\/#\/chat\/copper-decision/);

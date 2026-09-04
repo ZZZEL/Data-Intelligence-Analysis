@@ -10,19 +10,28 @@
     sessions: [
       {
         id: 'copper-decision',
-        title: '铜采购中标后的签约决策'
+        title: '铜采购中标后的签约决策',
+        pinned: true
       },
       {
-        id: 'supplier-compare',
-        title: '电解铜供应商对比分析'
+        id: 'general-qa',
+        title: '通用问答',
+        messages: [
+          { role: 'user', text: '做一份业务数据分析，开始前需要准备什么？' },
+          { role: 'assistant', text: '可以先准备三类信息：\n\n1. **分析目标**：希望解决什么问题，结果用于支持哪项决定。\n2. **相关数据**：例如销售、采购或库存明细，并说明每个字段的含义。\n3. **分析范围**：时间区间、业务范围，以及希望比较的对象。\n\n如果还没有整理好，可以先描述问题，再逐步补充。' },
+          { role: 'user', text: '如果数据里有空值或重复记录，应该怎么处理？' },
+          { role: 'assistant', text: '先保留一份原始数据，再检查问题的来源。\n\n- **空值**：确认是未采集、不适用还是遗漏，再决定保留、补充或剔除。\n- **重复记录**：根据业务主键和时间判断是否为同一条记录，避免误删合法的多次交易。\n\n处理后记录采用的规则，并核对记录数和关键汇总值，方便后续追溯。' }
+        ]
       },
       {
-        id: 'copper-trend',
-        title: '铜价趋势与采购时机评估'
-      },
-      {
-        id: 'inventory-risk',
-        title: '采购库存风险识别'
+        id: 'report-reading-qa',
+        title: '分析结果解读',
+        messages: [
+          { role: 'user', text: '看一份数据分析报告时，应该先关注哪些内容？' },
+          { role: 'assistant', text: '可以按这个顺序阅读：\n\n1. **问题与结论**：报告在回答什么问题，核心发现是什么。\n2. **依据与范围**：结论用了哪些数据，覆盖哪个时间段，是否存在缺失。\n3. **对比与变化**：与什么基准比较，变化是否集中在某个产品、地区或阶段。\n4. **建议与限制**：有哪些可执行的下一步，还有什么需要补充验证。\n\n先理解结论的适用范围，再判断它是否足以支持当前决定。' },
+          { role: 'user', text: '图表里两个指标一起上涨，就能说明一个导致另一个吗？' },
+          { role: 'assistant', text: '不能仅凭同时上涨就判断因果关系。两者可能受到季节、业务规模或促销活动等共同因素的影响，也可能只是短期巧合。\n\n可以先检查时间顺序、样本范围和其他可能的解释，再按地区、产品或时间段拆分比较。证据不足时，报告应描述为“存在关联”，并说明需要进一步验证。' }
+        ]
       }
     ],
     outputProfiles: [
@@ -30,7 +39,6 @@
         id: 'OUT-01',
         name: '供应商风险研判报告',
         description: '用于评估供应商交付能力、履约表现与潜在经营风险。',
-        isDefault: true,
         sections: [
           { title: '摘要', includeChart: false },
           { title: '关键事实', includeChart: false },
@@ -45,7 +53,6 @@
         id: 'OUT-02',
         name: '政策影响快报',
         description: '用于快速梳理关税及贸易政策变化对业务的影响。',
-        isDefault: false,
         sections: [
           { title: '政策摘要', includeChart: false },
           { title: '变化点', includeChart: false },
@@ -59,7 +66,6 @@
         id: 'OUT-03',
         name: '供应商履约复盘报告',
         description: '用于复盘供应商履约过程、关键风险信号与改进建议。',
-        isDefault: false,
         sections: [
           { title: '摘要', includeChart: false },
           { title: '关键事实', includeChart: false },
@@ -75,7 +81,6 @@
     scenario: {
       id: 'copper-decision',
       title: '铜采购中标后的签约决策',
-      createdAt: '今天 10:26',
       originalQuestion: '我司刚刚中标华东某大型铜加工企业的年度电解铜采购项目，首批供货量为 2,000 吨，中标价为 68,500 元/吨，须在 5 个工作日内签约。若不签约，将损失 200 万元保证金，并暂停未来 2 年的投标资格。为锁定成本，我们已买入 400 手 CU2401 合约，成交均价 68,440 元/吨。但签约前华东现货供应突然收紧，贸易商最新报盘已经超过 69,500 元/吨，部分规格断档；同期 CU2401 仅上涨至 68,500 元/吨。请结合上传材料和市场信息，比较按原价签约、放弃签约、先协商调整条款三种方案，并给出最终建议。如果关键事实不足，请先向我确认。',
       attachments: [
         { name: '中标通知书.pdf', size: '1.2 MB', type: 'pdf' },

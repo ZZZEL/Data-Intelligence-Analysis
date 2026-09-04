@@ -105,7 +105,6 @@ const apiAccessPage = fs.readFileSync(path.join(demoRoot, "src", "pages", "api-a
 const modelsPage = fs.readFileSync(path.join(demoRoot, "src", "pages", "models.js"), "utf8");
 const consumptionPage = fs.readFileSync(path.join(demoRoot, "src", "pages", "consumption.js"), "utf8");
 const ragPage = fs.readFileSync(path.join(demoRoot, "src", "pages", "rag.js"), "utf8");
-const judgmentPage = fs.readFileSync(path.join(demoRoot, "src", "pages", "judgment.js"), "utf8");
 const appSource = fs.readFileSync(path.join(demoRoot, "src", "app.js"), "utf8");
 const routerSource = fs.readFileSync(path.join(demoRoot, "src", "core", "router.js"), "utf8");
 const actionsSource = fs.readFileSync(path.join(demoRoot, "src", "core", "actions.js"), "utf8");
@@ -137,8 +136,11 @@ const systemConfigNavigationSource = appSource.slice(appSource.indexOf('id: "sys
 if (!/label:\s*"系统配置"[\s\S]*label:\s*"模型管理"[\s\S]*route:\s*"models"/.test(systemConfigNavigationSource) || /route:\s*"models"/.test(retrievalNavigationSource)) {
   fail("运营端侧栏应将模型管理放在独立的系统配置分组下");
 }
-if (!/label:\s*"能力管理"[\s\S]*route:\s*"skills"[\s\S]*route:\s*"visualizations"[\s\S]*route:\s*"definitions"/.test(capabilitiesNavigationSource) || /analysisOutput|分析与输出/.test(appSource) || !/definitions:\s*\{[^}]*group:\s*"capabilities"/.test(routerSource)) {
-  fail("运营端侧栏应将 Skill、可视化能力和分析口径统一归入能力管理，不保留独立的分析与输出分组");
+if (!/label:\s*"能力管理"[\s\S]*route:\s*"skills"[\s\S]*route:\s*"visualizations"/.test(capabilitiesNavigationSource) || /analysisOutput|分析与输出/.test(appSource)) {
+  fail("运营端能力管理分组应保留 Skill 与可视化能力入口");
+}
+if (/route:\s*"definitions"|分析口径/.test(appSource) || /definitions:\s*\{/.test(routerSource) || /src\/pages\/judgment\.js/.test(indexHtml) || fs.existsSync(path.join(demoRoot, "src", "pages", "judgment.js"))) {
+  fail("已移除的分析口径不应保留导航、页面路由、脚本引用或页面文件");
 }
 if (!/models:\s*\{\s*page:\s*"models",\s*title:\s*"模型管理",\s*group:\s*"systemConfig"/.test(routerSource)) {
   fail("模型管理路由应归属系统配置分组");
@@ -159,8 +161,8 @@ if (!/OpsDemo\.pages\.localDocuments/.test(localDocumentsPage) || !/data-local-d
 if (!/state\.documents/.test(localDocumentsPage) || /state\.(?:enterpriseConnections|externalInformation)/.test(localDocumentsPage)) {
   fail("本地文档页面只能聚合本地上传文件，不得读取企业连接或外部信源内容");
 }
-if (!/knowledge\/"\s*\+\s*select\.value\s*\+\s*"\?onboarding=1&step=upload&flow=import"/.test(localDocumentsPage) || !/actions\.deleteLocalDocumentAsset/.test(localDocumentsPage)) {
-  fail("本地文档上传必须复用知识库完整导入流程，删除必须覆盖该原文件的全部知识库处理实例");
+if (/local-document-target-kb|目标知识库|继续上传|data-local-upload-files|actions\.uploadLocalDocuments/.test(localDocumentsPage) || !/pages\.knowledge\.renderLocalImport/.test(localDocumentsPage) || !/pages\.knowledge\.mountLocalImport/.test(localDocumentsPage) || !/actions\.deleteLocalDocumentAsset/.test(localDocumentsPage)) {
+  fail("文档管理应从上传步骤直接复用知识库导入页及事件，不保留目标知识库选择或独立上传弹窗；删除覆盖全部处理实例");
 }
 if (!/sourceType\s*=\s*input\.sourceType\s*\|\|\s*"local_upload"/.test(actionsSource) || !/localAssetId:\s*input\.localAssetId\s*\|\|\s*documentId/.test(actionsSource) || !/TEMPLATE\.documents\.forEach[\s\S]*localAssetId\s*=\s*item\.localAssetId\s*\|\|\s*item\.id[\s\S]*sourceType\s*=\s*"local_upload"/.test(seedSource)) {
   fail("种子与新增文件都应以 localAssetId 标识本地原文件，并显式排除信源引用");
@@ -371,11 +373,15 @@ const retiredOutputProfileRoute = globalThis.OpsDemo.core.router.parse();
 if (retiredOutputProfileRoute.name !== "knowledge" || retiredOutputProfileRoute.page !== "knowledge" || retiredOutputProfileRoute.path !== "knowledge" || retiredOutputProfileRoute.id !== null) {
   fail("已下线的报告模板深链必须安全回到知识库首页，不能误入知识库新建页");
 }
+globalThis.location.hash = "#/definitions/new";
+const retiredDefinitionRoute = globalThis.OpsDemo.core.router.parse();
+if (retiredDefinitionRoute.name !== "knowledge" || retiredDefinitionRoute.page !== "knowledge" || retiredDefinitionRoute.path !== "knowledge" || retiredDefinitionRoute.id !== null) {
+  fail("已移除的分析口径深链必须安全回到知识库首页，不能误入知识库新建页");
+}
 
 [
   ["导航", appSource],
   ["路由", routerSource],
-  ["页面", judgmentPage],
   ["动作", actionsSource],
   ["种子数据", seedSource],
   ["样式", pagesStyles],
@@ -385,13 +391,8 @@ if (retiredOutputProfileRoute.name !== "knowledge" || retiredOutputProfileRoute.
   }
 });
 
-const definitionSeedStart = seedSource.indexOf("analysisDefinitions:");
-const definitionSeedSource = seedSource.slice(definitionSeedStart, seedSource.indexOf("\n    apiAccess:", definitionSeedStart));
-if (/\bcode:\s*|\bversion:\s*/.test(definitionSeedSource) || /item\.code|item\.version/.test(judgmentPage)) {
-  fail("分析口径的数据层和可见列表不应包含英文 code 或版本字段");
-}
-if (!["createDefinition", "updateDefinition", "setDefinitionEnabled", "deleteDefinition"].every((name) => new RegExp(`function\\s+${name}`).test(actionsSource))) {
-  fail("分析口径动作层应提供完整管理闭环");
+if (/analysisDefinitions|definitionIds|analysis_definition|createDefinition|updateDefinition|setDefinitionEnabled|deleteDefinition|data-definition-|definition-card|definition-editor/.test(sourceFiles.map((file) => fs.readFileSync(file, "utf8")).join("\n") + pagesStyles)) {
+  fail("分析口径的数据、Skill 依赖、管理动作、配置记录回滚分支与专属样式应完整移除");
 }
 
 if (/tab=versions|知识版本/.test(knowledgePage)) {
@@ -462,6 +463,9 @@ if (/toolCode:\s*["']generate_spreadsheet["']|toolCode:\s*["']generate_gauge_cha
 if (/RAG 模型台账|服务信息边界|引用配置|查看引用|模型 ID|版本 \/ 规格|服务来源/.test(modelsPage)) {
   fail("模型管理不应展示版本、内部 ID、服务来源或引用关系等技术台账信息");
 }
+if (/model-summary/.test(modelsPage + pagesStyles)) {
+  fail("模型名称下方不应保留预览说明小字或其专属样式");
+}
 if (!/data-model-group="' \+ group\.kind \+ '"/.test(modelsPage) || !/向量模型/.test(modelsPage) || !/Rerank 模型/.test(modelsPage) || /title:\s*"LLM"|kind:\s*"parser"|文档解析服务（非模型）/.test(modelsPage)) {
   fail("模型管理应只将向量模型与 Rerank 模型分为上下两个独立表格板块");
 }
@@ -531,7 +535,7 @@ if (!/"today"[\s\S]*"yesterday"[\s\S]*"last7"[\s\S]*"last30"[\s\S]*"week"[\s\S]*
 }
 
 const creationStepLabels = ["定义知识库", "导入文件", "文档解析", "文档处理"];
-if (!creationStepLabels.every((label) => knowledgePage.includes(label)) || ![1, 2, 3, 4].every((step) => knowledgePage.includes(`renderCreationSteps(${step})`))) {
+if (!creationStepLabels.every((label) => knowledgePage.includes(label)) || ![1, 2, 3, 4].every((step) => new RegExp(`renderCreationSteps\\(${step}(?:,|\\))`).test(knowledgePage))) {
   fail("知识库创建应提供四个全页步骤并共用唯一进度组件");
 }
 if (!/creation-model-row[\s\S]*kb-vector[\s\S]*kb-vector-dimension/.test(knowledgePage) || !/data-create-cancel/.test(knowledgePage) || !/data-create-only/.test(knowledgePage) || !/data-create-and-import/.test(knowledgePage)) {
@@ -594,13 +598,13 @@ const processingStepSource = knowledgePage.slice(knowledgePage.indexOf("function
 if (!/function\s+createProcessingDraft/.test(processingStepSource) || !/group:\s*"processing-family"/.test(processingStepSource) || !/group:\s*"processing-method"/.test(processingStepSource) || !/data-processing-param="maxChars"[\s\S]*data-processing-param="overlapPercent"[\s\S]*关联信息[\s\S]*索引内容/.test(processingStepSource)) {
   fail("文档处理必须只在知识库导入流程中完整保留策略选择与本次参数编辑");
 }
-if (!["smart", "semantic", "structure", "separator", "fixed", "page", "whole_document"].every((mode) => processingStepSource.includes(mode)) || !/data-processing-param="separatorType"/.test(processingStepSource) || !/data-processing-param="pagesPerChunk"/.test(processingStepSource) || !/data-processing-param="semanticSensitivity"/.test(processingStepSource)) {
-  fail("流程内文档处理应完整覆盖自动、语义及自定义下的结构、分隔符、固定长度、按页和整篇方案");
+if (!["smart", "semantic", "structure", "recursive", "separator", "page", "whole_document"].every((mode) => processingStepSource.includes(mode)) || !/data-processing-param="separatorType"/.test(processingStepSource) || !/data-processing-param="pagesPerChunk"/.test(processingStepSource) || !/data-processing-param="semanticSensitivity"/.test(processingStepSource)) {
+  fail("流程内文档处理应完整覆盖自动、语义及自定义下的结构、递归、分隔符、按页和整篇方案");
 }
 if (!/class="vector-cost-notice semantic-cost-notice" role="note">[\s\S]*语义边界效果需用真实问题集验证[\s\S]*入库时会增加句段 Embedding 消耗与处理耗时[\s\S]*查询阶段不会新增这类切片模型调用/.test(processingStepSource) || /semantic-impact|semantic-impact__item|效果与消耗说明/.test(processingStepSource)) {
   fail("语义切片只应使用一行轻提示说明效果验证、入库 Embedding 消耗和查询阶段边界");
 }
-if (!/flow=import/.test(knowledgePage) || !/data-existing-import/.test(knowledgePage) || !/step=parse[\s\S]*flow=import/.test(knowledgePage)) {
+if (!/flow=import/.test(knowledgePage) || !/data-existing-import/.test(knowledgePage) || !/importStepRoute\([^\n]*"parse"/.test(knowledgePage)) {
   fail("向已有知识库新增文件也应统一经过导入、解析和可编辑的文档处理步骤");
 }
 const knowledgeDocumentsSource = knowledgePage.slice(knowledgePage.indexOf("function renderDocumentsTab"), knowledgePage.indexOf("function renderCreationSteps"));
@@ -724,8 +728,25 @@ if (/processingTableRows|renderProcessingStrategies|data-processing-(?:new|detai
 if (/function\s+(?:createDocumentProcessingProfile|updateDocumentProcessingProfile|cloneDocumentProcessingProfile|setDocumentProcessingProfileEnabled|applyDocumentProcessingProfile)|(?:createDocumentProcessingProfile|updateDocumentProcessingProfile|cloneDocumentProcessingProfile|setDocumentProcessingProfileEnabled|applyDocumentProcessingProfile)\s*:/.test(actionsSource)) {
   fail("动作层不得再向运营人员暴露文档处理策略的创建、编辑、复制、启停或反向应用能力");
 }
-if (!/\["smart", "semantic", "structure", "separator", "fixed", "page", "whole_document"\]/.test(actionsSource) || !/function\s+getProcessingProfileCompatibility/.test(actionsSource)) {
-  fail("动作层仍应校验自动、语义及五种自定义切片方式与解析产物兼容性");
+const processingModesSource = actionsSource.match(/var PROCESSING_MODES\s*=\s*\[([^\]]+)\]/)?.[1] || "";
+if (!["smart", "semantic", "structure", "separator", "recursive", "fixed", "page", "whole_document"].every((mode) => processingModesSource.includes('"' + mode + '"')) || !/function\s+getProcessingProfileCompatibility/.test(actionsSource)) {
+  fail("动作层应校验新递归模式与既有方案，并继续读取历史 fixed 模式");
+}
+if (!/value:\s*"recursive",\s*title:\s*"递归切块"/.test(processingStepSource) || /value:\s*"fixed"/.test(processingStepSource)) {
+  fail("自定义方法卡片必须以递归切块替代固定长度");
+}
+const customProcessingMethods = Array.from(processingStepSource.matchAll(/value:\s*"(structure|recursive|separator|page|whole_document)",\s*title:\s*"([^"]+)"/g), (match) => [match[1], match[2]]);
+if (JSON.stringify(customProcessingMethods) !== JSON.stringify([["structure", "结构切片"], ["recursive", "递归切块"], ["separator", "分隔符切片"], ["page", "按页切片"], ["whole_document", "整篇切片"]])) {
+  fail("自定义方法定义必须按结构、递归、分隔符、按页、整篇排序，并使用完整名称");
+}
+if (!/<input\b(?=[^>]*\bdata-processing-param="maxChars")(?=[^>]*\bmin="200")(?=[^>]*\bmax="10000")(?=[^>]*\bstep="1")[^>]*>/.test(processingStepSource) || !/重叠率为上限[\s\S]*完整边界/.test(processingStepSource)) {
+  fail("字符上限控件应支持整数步长，并保留递归重叠率上限和完整边界提示");
+}
+const legacyFixedPresetStart = seedSource.indexOf('id: "ING-FIXED"');
+const legacyFixedPresetEnd = seedSource.indexOf('\n          id:', legacyFixedPresetStart + 1);
+const legacyFixedPresetSource = seedSource.slice(legacyFixedPresetStart, legacyFixedPresetEnd < 0 ? undefined : legacyFixedPresetEnd);
+if (legacyFixedPresetStart < 0 || !/mode:\s*"fixed"/.test(legacyFixedPresetSource) || !/visible:\s*false/.test(legacyFixedPresetSource) || !/displayGroup:\s*"internal"/.test(legacyFixedPresetSource)) {
+  fail("ING-FIXED 必须保留原模式并隐藏，仅供历史记录兼容");
 }
 if (!/class="processing-profile-list processing-family-list"[\s\S]*data-processing-family-list/.test(knowledgePage) || !/data-processing-method-picker/.test(knowledgePage) || !/value:\s*"custom"[\s\S]*title:\s*"自定义切片"/.test(processingStepSource) || /processing-profile-more|更多策略/.test(processingStepSource)) {
   fail("文档处理步骤应以自动、语义、自定义为第一层，并仅在自定义下展示具体方法");
@@ -742,6 +763,15 @@ if (!/\.processing-family-list\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s
 const processingSeparatorBranchStart = processingStepSource.indexOf('if (mode === "separator")');
 const processingSeparatorBranchEnd = processingStepSource.indexOf('if (mode === "page")', processingSeparatorBranchStart);
 const processingSeparatorRadioSource = processingStepSource.slice(processingSeparatorBranchStart, processingSeparatorBranchEnd);
+const processingWholeBranchStart = processingStepSource.indexOf('if (mode === "whole_document")', processingSeparatorBranchEnd);
+const processingPageParameterSource = processingStepSource.slice(processingSeparatorBranchEnd, processingWholeBranchStart);
+const processingWholeParameterSource = processingStepSource.slice(processingWholeBranchStart, processingStepSource.indexOf("return '<section", processingWholeBranchStart));
+if (processingWholeBranchStart < 0 || !/data-processing-param="pagesPerChunk"/.test(processingPageParameterSource) || /data-processing-param="(?:maxChars|overlapPercent)"/.test(processingPageParameterSource) || !/连续/.test(processingPageParameterSource) || !/解析/.test(processingPageParameterSource)) {
+  fail("按页切片应提供专用连续页数参数和解析分页前提，不显示字符上限或重叠率");
+}
+if (!/data-processing-param="longDocumentFallback"/.test(processingWholeParameterSource) || !/value="smart"[\s\S]*value="stop"/.test(processingWholeParameterSource) || !/maxDocumentChars/.test(processingWholeParameterSource) || /data-processing-param="(?:maxChars|overlapPercent|pagesPerChunk)"/.test(processingWholeParameterSource)) {
+  fail("整篇切片应解释已有文档长度阈值，并只提供自动切片或停止的超长处理选项");
+}
 const processingSeparatorOptionValues = Array.from(processingSeparatorRadioSource.matchAll(/\{\s*value:\s*"([^"]+)",\s*token:/g), (match) => match[1]);
 const expectedProcessingSeparatorValues = ["paragraph", "newline", "zh_period", "zh_exclamation", "zh_question", "en_period", "en_exclamation", "en_question"];
 if (processingSeparatorBranchStart < 0 || processingSeparatorBranchEnd < 0 || JSON.stringify(processingSeparatorOptionValues) !== JSON.stringify(expectedProcessingSeparatorValues) || !/<select id="processing-separator-type" hidden data-processing-param="separatorType"[\s\S]*?data-processing-separator-source/.test(processingSeparatorRadioSource) || !/data-processing-separator-trigger/.test(processingSeparatorRadioSource) || !/role="combobox"[\s\S]*?aria-required="true"/.test(processingSeparatorRadioSource) || !/role="listbox"/.test(processingSeparatorRadioSource)) {

@@ -28,7 +28,6 @@ require(path.join(demoRoot, "src/pages/data-access.js"));
 require(path.join(demoRoot, "src/pages/models.js"));
 require(path.join(demoRoot, "src/pages/rag.js"));
 require(path.join(demoRoot, "src/pages/capabilities.js"));
-require(path.join(demoRoot, "src/pages/judgment.js"));
 require(path.join(demoRoot, "src/pages/api-access.js"));
 require(path.join(demoRoot, "src/pages/consumption.js"));
 
@@ -185,6 +184,7 @@ const modelsHtml = pages.models.render({ name: "models", id: null, query: {} }, 
 assert.match(modelsHtml, /page-header__top[\s\S]*page-header__actions[\s\S]*data-model-search[\s\S]*data-model-create/, "模型新增、搜索与筛选应共同位于单行 PageHeader 右侧");
 assert.doesNotMatch(modelsHtml, /page-header__toolbar|page-header--has-toolbar/, "模型管理不应生成第二层 Header 工具栏");
 assert.doesNotMatch(modelsHtml, /模型 ID|版本 \/ 规格|服务来源|引用配置|查看引用/, "模型列表不应暴露版本、ID、来源或引用关系");
+assert.doesNotMatch(modelsHtml, /model-summary|class="model-identity"[^>]*>[\s\S]*?class="table-primary"[^>]*>[^<]*<\/div>\s*<(?:span|small)/, "模型名称下方不应显示预览说明小字");
 assert.equal((modelsHtml.match(/<colgroup><col class="models-table__col models-table__col--name"><col class="models-table__col models-table__col--dimension"><col class="models-table__col models-table__col--connection"><col class="models-table__col models-table__col--actions"><\/colgroup>/g) || []).length, 2, "向量与 Rerank 两个表格应复用同一列宽组件契约");
 const embeddingModelsHtml = modelsHtml.slice(modelsHtml.indexOf('data-model-group="embedding"'), modelsHtml.indexOf('data-model-group="reranker"'));
 const rerankerModelsHtml = modelsHtml.slice(modelsHtml.indexOf('data-model-group="reranker"'));
@@ -218,7 +218,7 @@ assert.match(retrievalQuestionTag, /aria-required="true"/, "检索问题输入�
 const retrievalComposerHtml = retrievalWorkspaceHtml.match(/<footer class="retrieval-composer"[\s\S]*?<\/footer>/)?.[0] || "";
 assert.doesNotMatch(retrievalComposerHtml, /<label[^>]*for="test-question-v2"|>\s*检索问题\s*</, "检索输入区不应重复显示“检索问题”标签");
 assert.doesNotMatch(retrievalWorkspaceHtml, /id="test-profile"|检索配置<\/label>/, "V2 检索测试应直接使用全局检索设置，不再选择配置版本");
-assert.match(retrievalWorkspaceHtml, /测试参数[\s\S]*id="test-kb-v2"[\s\S]*检索方式[\s\S]*混合检索（系统默认）[\s\S]*关键词 45% · 语义 55%[\s\S]*>Rerank<[\s\S]*data-test-rerank-toggle[\s\S]*id="test-reranker-model"[\s\S]*企业语义重排模型[\s\S]*id="test-final-topk"[^>]*value="10"[\s\S]*id="test-relevance"[^>]*type="range"[^>]*min="0\.4" max="0\.9" step="0\.1"[^>]*value="0\.6"[^>]*aria-labelledby="test-relevance-label"[^>]*aria-valuetext="最低相关度 0\.6，均衡"/, "检索测试应展示混合权重并复用 Rerank、Top K 与相关性 Slider");
+assert.match(retrievalWorkspaceHtml, /测试参数[\s\S]*id="test-kb-v2"[\s\S]*检索方式[\s\S]*混合检索（系统默认）[\s\S]*关键词 45% · 语义 55%[\s\S]*>Rerank<[\s\S]*data-test-rerank-toggle[\s\S]*id="test-reranker-model"[\s\S]*Qwen3-Reranker-0\.6B[\s\S]*id="test-final-topk"[^>]*value="10"[\s\S]*id="test-relevance"[^>]*type="range"[^>]*min="0\.4" max="0\.9" step="0\.1"[^>]*value="0\.6"[^>]*aria-labelledby="test-relevance-label"[^>]*aria-valuetext="最低相关度 0\.6，均衡"/, "检索测试应展示混合权重并复用 Rerank、Top K 与相关性 Slider");
 assert.doesNotMatch(retrievalWorkspaceHtml, /retrieval-relevance-cards|相关度分数区间说明/, "检索测试不应重复展示检索配置页已有的三张相关度区间说明卡");
 assert.doesNotMatch(retrievalWorkspaceHtml, /测试范围|召回与结果|data-test-settings-source|data-use-online-settings|恢复全局设置|本次调整/, "检索测试不应展示冗余小标题、参数来源或恢复入口");
 assert.match(retrievalComposerHtml, /^<footer class="retrieval-composer"><textarea[\s\S]*id="test-question-v2"[\s\S]*<\/textarea><button[\s\S]*data-run-test-v2[\s\S]*<\/button><\/footer>$/, "检索输入区应由单层 footer 直接承载输入框与按钮");
@@ -326,11 +326,16 @@ const noRerankEvaluationRun = actions.runRetrievalTest({
 });
 assert.ok(Math.abs(noRerankEvaluationRun.evaluationMetrics.mrrAtK - 53 / 90) < 1e-9, "关闭 Rerank 后 MRR@K 应按固定融合排序精确重算，而非使用硬编码分数");
 
-const processingModes = ["smart", "semantic", "structure", "separator", "fixed", "page", "whole_document"];
+const processingModes = ["smart", "semantic", "structure", "recursive", "separator", "page", "whole_document"];
 const visibleProcessingPresets = state.rag.ingestionProfiles.filter((profile) => profile.visible !== false && profile.chunking);
-assert.ok(processingModes.every((mode) => visibleProcessingPresets.some((profile) => profile.chunking.mode === mode)), "代码预置方案应覆盖自动、语义及结构、分隔符、固定长度、按页和整篇五种自定义方式");
+assert.ok(processingModes.every((mode) => visibleProcessingPresets.some((profile) => profile.chunking.mode === mode)), "代码预置方案应覆盖自动、语义及结构、递归、分隔符、按页和整篇五种自定义方式");
 assert.equal(visibleProcessingPresets.length, 7, "新流程应提供两个顶层方案与五个自定义方法对应的七个代码预置");
-assert.deepEqual(visibleProcessingPresets.slice().sort((left, right) => left.displayOrder - right.displayOrder).map((profile) => profile.id), ["ING-01", "ING-SEMANTIC", "ING-STRUCTURE", "ING-SEPARATOR", "ING-FIXED", "ING-PAGE", "ING-WHOLE"], "七个可见预置应使用稳定顺序支撑 3+5 信息层级");
+assert.deepEqual(visibleProcessingPresets.slice().sort((left, right) => left.displayOrder - right.displayOrder).map((profile) => profile.id), ["ING-01", "ING-SEMANTIC", "ING-STRUCTURE", "ING-RECURSIVE", "ING-SEPARATOR", "ING-PAGE", "ING-WHOLE"], "七个可见预置应使用稳定顺序支撑 3+5 信息层级");
+assert.deepEqual(processingModes.slice(2).map((mode) => visibleProcessingPresets.find((profile) => profile.chunking.mode === mode).displayOrder), [3, 4, 5, 6, 7], "五个自定义预置应依次使用 displayOrder 3–7");
+const legacyFixedPreset = state.rag.ingestionProfiles.find((profile) => profile.id === "ING-FIXED");
+assert.ok(legacyFixedPreset && legacyFixedPreset.chunking.mode === "fixed", "ING-FIXED 应保留原固定长度模式，不能把历史记录解释为递归切块");
+assert.equal(legacyFixedPreset.displayGroup, "internal", "固定长度旧预置应移入内部兼容组");
+assert.equal(legacyFixedPreset.visible, false, "固定长度旧预置不得进入新的策略选择界面");
 const legacyLongDocumentPreset = state.rag.ingestionProfiles.find((profile) => profile.id === "ING-02");
 assert.equal(legacyLongDocumentPreset.displayGroup, "internal", "ING-02 应明确标记为内部兼容预置");
 assert.equal(visibleProcessingPresets.some((profile) => profile.id === "ING-02"), false, "ING-02 应保留既有数据兼容，但不进入新流程候选");
@@ -381,16 +386,32 @@ assert.doesNotMatch(processingCatalogHtml, /文档处理策略|data-processing-(
 assert.equal(typeof actions.applyDocumentProcessingProfile, "undefined", "处理策略不得提供从策略目录反向应用到知识库的动作");
 assert.equal(kb3Seed.currentIngestionProfileId, kb3SeedProfile.id, "访问旧地址不得改变知识库已绑定的代码预置方案");
 
-assert.ok(state.rag.modelCatalog.embeddingModels.length >= 3, "种子数据应预置至少 3 个向量模型");
-assert.ok(state.rag.modelCatalog.rerankerModels.length >= 3, "种子数据应预置至少 3 个 Rerank 模型");
+const expectedEmbeddingPresets = [
+  { id: "MODEL-EMBEDDING-PRIMARY", alias: "Qwen3-Embedding-8B", dimension: 4096 },
+  { id: "MODEL-EMBEDDING-MULTILINGUAL", alias: "Qwen3-Embedding-4B", dimension: 2560 },
+  { id: "MODEL-EMBEDDING-LONGTEXT", alias: "bge-m3", dimension: 1024 },
+];
+assert.deepEqual(state.rag.modelCatalog.embeddingModels.map(({ id, alias, dimension }) => ({ id, alias, dimension })), expectedEmbeddingPresets, "种子向量模型应使用确认后的官方名称及默认维度");
+assert.deepEqual(state.rag.modelCatalog.rerankerModels.map((item) => item.alias), ["Qwen3-Reranker-0.6B", "Qwen3-Reranker-4B", "bge-reranker-v2-m3", "jina-reranker-v3.5"], "种子 Rerank 模型应使用指定版本，并保留 Qwen 官方型号的大写 B");
 const allSeedModels = state.rag.modelCatalog.embeddingModels.concat(state.rag.modelCatalog.rerankerModels);
-assert.ok(allSeedModels.every((item) => !/v\d+/i.test(item.alias) && !Object.prototype.hasOwnProperty.call(item, "version")), "模型名称与数据契约均不应携带版本");
+assert.ok(allSeedModels.every((item) => !Object.prototype.hasOwnProperty.call(item, "version")), "官方型号中的版本名应完整保留，数据契约不应另设版本字段");
+assert.ok(allSeedModels.every((item) => item.connectionStatus === "available"), "七个预置模型默认均应可用于演示配置");
 assert.ok(state.rag.modelCatalog.embeddingModels.every((item) => Number.isFinite(item.dimension) && item.dimension > 0), "每个向量模型都应明确向量维度");
 assert.ok(state.rag.modelCatalog.rerankerModels.every((item) => !Object.prototype.hasOwnProperty.call(item, "dimension") && !Object.prototype.hasOwnProperty.call(item, "capability")), "Rerank 模型不应保留向量维度、规格或用途字段");
 assert.ok(state.rag.modelCatalog.embeddingModels.concat(state.rag.modelCatalog.rerankerModels).every((item) => {
   const keys = Object.keys(item.apiConfig || {}).sort();
   return keys.join(",") === "apiKeyMasked,endpoint" && item.connectionStatus && Object.prototype.hasOwnProperty.call(item, "lastTestAt");
 }), "向量与 Rerank API 配置仅保存地址和脱敏 API Key，连接结果统一使用 connectionStatus 与 lastTestAt");
+
+expectedEmbeddingPresets.forEach((expected) => {
+  const preset = state.rag.modelCatalog.embeddingModels.find((item) => item.id === expected.id);
+  const testedPreset = actions.testRagModelDraft({ id: preset.id, apiConfig: preset.apiConfig });
+  assert.equal(testedPreset.dimension, expected.dimension, `${preset.alias} 编辑测试应保留正确维度`);
+  const testedNewEndpoint = actions.testRagModelDraft({ kind: "embedding", apiConfig: { endpoint: preset.apiConfig.endpoint, apiKey: "preset-dimension-check" } });
+  assert.equal(testedNewEndpoint.dimension, expected.dimension, `${preset.alias} 的服务地址应能独立识别维度`);
+  const savedPreset = actions.saveRagModel({ id: preset.id, name: preset.alias, apiConfig: preset.apiConfig });
+  assert.equal(savedPreset.dimension, expected.dimension, `${preset.alias} 编辑保存后不得回退到其他维度`);
+});
 
 const embeddingDraftPayload = {
   kind: "embedding",
@@ -644,7 +665,7 @@ const createdKnowledgeBase = actions.createKnowledgeBase({
 });
 assert.equal(createdKnowledgeBase.currentIngestionProfileId, null, "新建知识库不应预绑默认文档处理策略，第 4 步必须显式选择");
 assert.equal(createdKnowledgeBase.boundEmbeddingModelId, "MODEL-EMBEDDING-PRIMARY", "知识库应独立固化第 1 步选择的向量模型");
-assert.equal(createdKnowledgeBase.boundVectorDimension, 1024, "知识库应独立固化向量维度");
+assert.equal(createdKnowledgeBase.boundVectorDimension, 4096, "知识库应独立固化向量维度");
 assert.equal(createdKnowledgeBase.mineruParseConfig.returnImages, true, "新建知识库应默认保存原图且不依赖页面选项");
 assert.ok(createdKnowledgeBase.createdAt && createdKnowledgeBase.updatedAt, "新建知识库应写入创建与更新时间");
 assert.equal(state.rag.ingestionProfiles.some((item) => (item.usedByKnowledgeBaseIds || []).includes(createdKnowledgeBase.id)), false, "完成第 4 步前不应回写任何文档处理策略引用");
@@ -674,9 +695,10 @@ assert.doesNotMatch(processingHtml, /creation-section-intro"><h2>/, "第 4 步�
 const renderedProcessingFamilies = Array.from(processingHtml.matchAll(/<input\b(?=[^>]*\bname="processing-family")(?=[^>]*\bvalue="([^"]+)")[^>]*>/g), (match) => match[1]);
 const renderedCustomMethods = Array.from(processingHtml.matchAll(/<input\b(?=[^>]*\bname="processing-method")(?=[^>]*\bvalue="([^"]+)")[^>]*>/g), (match) => match[1]);
 assert.deepEqual(renderedProcessingFamilies, ["smart", "semantic", "custom"], "文档处理首层应且仅应提供自动、语义和自定义三个 family");
-assert.deepEqual(renderedCustomMethods, ["structure", "separator", "fixed", "page", "whole_document"], "自定义 family 应按稳定顺序提供结构、分隔符、固定长度、按页和整篇五种 method");
+assert.deepEqual(renderedCustomMethods, ["structure", "recursive", "separator", "page", "whole_document"], "自定义 family 应按稳定顺序提供结构、递归、分隔符、按页和整篇五种 method");
 assert.match(processingHtml, /data-processing-family-list[\s\S]*value="smart"[\s\S]*<strong>自动切片<\/strong>[\s\S]*value="semantic"[\s\S]*<strong>语义切片<\/strong>[\s\S]*value="custom"[\s\S]*<strong>自定义切片<\/strong>/, "三个首层 family 应展示普通用户名称并保持顺序");
-assert.match(processingHtml, /data-processing-method-list[\s\S]*value="structure"[\s\S]*<strong>结构切片<\/strong>[\s\S]*value="separator"[\s\S]*<strong>分隔符切片<\/strong>[\s\S]*value="fixed"[\s\S]*<strong>固定长度<\/strong>[\s\S]*value="page"[\s\S]*<strong>按页<\/strong>[\s\S]*value="whole_document"[\s\S]*<strong>整篇<\/strong>/, "五个自定义 method 应展示独立、可理解的普通名称");
+assert.match(processingHtml, /data-processing-method-list[\s\S]*value="structure"[\s\S]*<strong>结构切片<\/strong>[\s\S]*value="recursive"[\s\S]*<strong>递归切块<\/strong>[\s\S]*value="separator"[\s\S]*<strong>分隔符切片<\/strong>[\s\S]*value="page"[\s\S]*<strong>按页切片<\/strong>[\s\S]*value="whole_document"[\s\S]*<strong>整篇切片<\/strong>/, "五个自定义 method 应按顺序展示完整、可理解的普通名称");
+assert.doesNotMatch(processingHtml, /value="fixed"|data-processing-profile-id="ING-FIXED"|<strong>固定长度<\/strong>/, "新建流程中递归切块应完全替代固定长度选项");
 assert.match(processingHtml, /name="processing-family" value="smart"[^>]*data-processing-profile-id="ING-01"[^>]*checked/, "进入文档处理步骤应默认选中自动 family");
 assert.match(processingHtml, /class="processing-method-picker" data-processing-method-picker hidden/, "默认选中自动 family 时应保持自定义 method 区隐藏");
 assert.doesNotMatch(processingHtml, /data-processing-group=|processing-profile-more|更多策略|data-processing-profile-id="ING-02"/, "新信息架构不应残留旧的单层分组、更多策略或 ING-02 候选");
@@ -690,6 +712,7 @@ assert.match(processingCardsHtml, /data-processing-family="semantic"[\s\S]*语�
 assert.doesNotMatch(processingHtml, /本次处理参数/, "参数区不应重复显示无信息量的标题");
 assert.doesNotMatch(processingHtml, /向量模型不匹配/, "文档处理策略不应再绑定或按向量模型过滤");
 assert.doesNotMatch(processingHtml, /processing-profile-card is-disabled|name="processing-(?:family|method)"[^>]*disabled/, "解析产物缺项不应让已启用 family 或 method 整卡不可选");
+assert.match(processingHtml, /Demo 说明[\s\S]*仅递归切块[\s\S]*实际拆分[\s\S]*其他策略[\s\S]*配置演示/, "处理页应明确当前实际拆分与配置演示的能力边界");
 
 const semanticProfile = state.rag.ingestionProfiles.find((item) => item.id === "ING-SEMANTIC");
 assert.ok(semanticProfile && semanticProfile.chunking.mode === "semantic", "语义切片应作为代码预置方案进入真实处理数据模型");
@@ -738,6 +761,80 @@ assert.equal(semanticDocument.chunkingEstimate.extraEmbeddingCostLabel, "较高"
 assert.equal(semanticDocument.chunkingEstimate.chunkCount, semanticDocument.chunkCount, "文档切片数应由语义模式的估算结果生成");
 assert.equal(actions.deleteKnowledgeBase(semanticKnowledgeBase.id), semanticKnowledgeBase, "闭环测试完成后应能删除未启用的语义测试库");
 
+const recursiveProfile = state.rag.ingestionProfiles.find((item) => item.id === "ING-RECURSIVE");
+const expectedRecursiveBoundaries = ["paragraph", "newline", "sentence", "whitespace", "character"];
+assert.ok(recursiveProfile && recursiveProfile.chunking.mode === "recursive", "递归切块应使用独立的 ING-RECURSIVE 预置与 recursive 模式");
+assert.equal(recursiveProfile.chunking.strategy, "recursive_character", "递归预置不能残留固定长度算法");
+assert.deepEqual(recursiveProfile.chunking.recursiveBoundaries, expectedRecursiveBoundaries, "递归预置应按由粗到细的内置边界逐级拆分");
+assert.equal(recursiveProfile.chunking.keepSeparator, true, "递归拆分必须保留原分隔符");
+assert.equal(recursiveProfile.chunking.usesSemanticModel, false, "递归切块不得启用语义边界模型");
+const recursiveProfileBefore = structuredClone(recursiveProfile);
+const recursiveKnowledgeBase = actions.createKnowledgeBase({
+  name: "递归切块闭环测试库",
+  purpose: "验证参数固化、内置边界和历史固定长度兼容。",
+  embeddingModelId: "MODEL-EMBEDDING-PRIMARY",
+  minAccessLevel: "L1",
+});
+for (const invalidParameters of [{ maxChars: 199 }, { maxChars: 10001 }, { maxChars: 1000.5 }, { maxChars: Infinity }, { overlapPercent: -1 }, { overlapPercent: 51 }, { overlapPercent: 10.5 }]) {
+  assert.equal(actions.setKnowledgeBaseOnboardingConfig(recursiveKnowledgeBase.id, {
+    ingestionProfileId: "ING-RECURSIVE",
+    processingParameters: { mode: "recursive", maxChars: 1000, overlapPercent: 10, ...invalidParameters },
+  }), null, "递归模式必须复用最大字符与重叠率的有效范围校验");
+}
+const recursiveConfigured = actions.setKnowledgeBaseOnboardingConfig(recursiveKnowledgeBase.id, {
+  ingestionProfileId: "ING-RECURSIVE",
+  processingParameters: {
+    mode: "recursive", maxChars: 1400, overlapPercent: 12,
+    recursiveBoundaries: ["character"], keepSeparator: false, usesSemanticModel: true,
+  },
+  completed: true,
+});
+assert.ok(recursiveConfigured, "递归模式应能保存并完成知识库文档处理配置");
+assert.equal(recursiveConfigured.processingParametersSnapshot.mode, "recursive", "知识库参数快照应写入递归模式");
+assert.equal(recursiveConfigured.processingParametersSnapshot.maxChars, 1400, "知识库参数快照应保存本次字符上限");
+assert.equal(recursiveConfigured.processingParametersSnapshot.overlapPercent, 12, "知识库参数快照应保存本次重叠率");
+for (const snapshot of [recursiveConfigured.processingProfileSnapshot.chunking, recursiveConfigured.processingParametersSnapshot]) {
+  assert.deepEqual(snapshot.recursiveBoundaries, expectedRecursiveBoundaries, "内置递归边界必须固化且不可被外部参数改写");
+  assert.equal(snapshot.keepSeparator, true, "两种快照均应固化保留分隔符行为");
+  assert.equal(snapshot.usesSemanticModel, false, "两种快照均应明确无语义模型计算");
+  assert.equal(Object.hasOwn(snapshot, "semanticSensitivity"), false, "递归快照不得残留语义敏感度参数");
+}
+assert.deepEqual(recursiveProfile, recursiveProfileBefore, "本次递归参数不能改写共享代码预置");
+const recursiveProcessingHtml = pages.knowledge.render({ name: "knowledge", id: recursiveKnowledgeBase.id, query: { onboarding: "1", step: "processing" } }, state);
+assert.match(recursiveProcessingHtml, /name="processing-family" value="custom"[^>]*checked/, "递归模式应回显自定义一级类型");
+assert.match(recursiveProcessingHtml, /name="processing-method" value="recursive"[^>]*data-processing-profile-id="ING-RECURSIVE"[^>]*checked/, "递归模式应回显独立方法卡片");
+assert.match(recursiveProcessingHtml, /data-processing-param="maxChars"[\s\S]*data-processing-param="overlapPercent"/, "递归参数区应提供最大字符和重叠率");
+assert.match(recursiveProcessingHtml, /<input\b(?=[^>]*\bdata-processing-param="maxChars")(?=[^>]*\bmin="200")(?=[^>]*\bmax="10000")(?=[^>]*\bstep="1")[^>]*>/, "递归字符上限应以整数步长覆盖 200–10000 的有效范围");
+assert.doesNotMatch(recursiveProcessingHtml, /data-processing-param="(?:separatorType|customSeparator|semanticSensitivity|recursiveBoundaries|pagesPerChunk)"/, "递归模式不得暴露无关参数或要求手工配置内置边界");
+assert.match(recursiveProcessingHtml, /段落[\s\S]*换行[\s\S]*句[\s\S]*空[\s\S]*字符/, "递归说明应展示由粗到细的边界顺序");
+assert.match(recursiveProcessingHtml, /不调用语义模型/, "递归说明应明确不会产生语义边界模型调用");
+assert.match(recursiveProcessingHtml, /重叠率为上限[\s\S]*完整边界/, "递归说明应继续明确重叠率是上限并优先保留完整边界");
+const recursiveBatch = actions.startKnowledgeImport(recursiveKnowledgeBase.id, {
+  files: [{ name: "递归处理批次.txt", size: 5600, characterCount: 2800 }],
+});
+assert.deepEqual(recursiveBatch.processingParametersSnapshot, OpsDemo.utils.clone(recursiveConfigured.processingParametersSnapshot), "普通导入批次应继承完整递归参数快照");
+assert.equal(recursiveBatch.items[0].processingEstimate.extraEmbeddingCostLevel, "none", "递归切块不得误报额外语义边界 Embedding 消耗");
+assert.notEqual(recursiveBatch.processingProfileSnapshot.chunking.recursiveBoundaries, recursiveConfigured.processingProfileSnapshot.chunking.recursiveBoundaries, "批次内置边界列表应独立克隆");
+const savedRecursiveBatch = structuredClone(recursiveBatch.processingProfileSnapshot);
+const legacyFixedConfigured = actions.setKnowledgeBaseOnboardingConfig(recursiveKnowledgeBase.id, {
+  ingestionProfileId: "ING-FIXED",
+  processingParameters: { mode: "fixed", maxChars: 880, overlapPercent: 7 },
+  completed: true,
+});
+assert.ok(legacyFixedConfigured, "历史 ING-FIXED 配置仍应被动作层读取");
+assert.equal(legacyFixedConfigured.processingProfileSnapshot.chunking.strategy, "fixed_length", "历史固定长度快照不能被重标为递归算法");
+const legacyFixedSnapshot = structuredClone(legacyFixedConfigured.processingProfileSnapshot);
+const legacyFixedParameters = structuredClone(legacyFixedConfigured.processingParametersSnapshot);
+pages.knowledge.render({ name: "knowledge", id: recursiveKnowledgeBase.id, query: { onboarding: "1", step: "processing", flow: "import" } }, state);
+assert.deepEqual(legacyFixedConfigured.processingProfileSnapshot, legacyFixedSnapshot, "打开新导入界面不得改写已固化的固定长度历史快照");
+const legacyFixedBatch = actions.startKnowledgeImport(recursiveKnowledgeBase.id, {
+  files: [{ name: "沿用历史固定长度.txt", size: 8000, characterCount: 4000 }],
+});
+assert.deepEqual(legacyFixedBatch.processingProfileSnapshot, legacyFixedSnapshot, "普通导入仍应能继承旧 fixed 处理快照");
+assert.deepEqual(legacyFixedBatch.processingParametersSnapshot, legacyFixedParameters, "旧模式参数不能在新批次中被静默迁移");
+assert.deepEqual(recursiveBatch.processingProfileSnapshot, savedRecursiveBatch, "切换知识库当前策略不能改写既有递归批次");
+assert.equal(actions.deleteKnowledgeBase(recursiveKnowledgeBase.id), recursiveKnowledgeBase, "递归闭环测试完成后应清理测试知识库");
+
 const structureProfile = state.rag.ingestionProfiles.find((item) => item.id === "ING-STRUCTURE");
 const separatorProfile = state.rag.ingestionProfiles.find((item) => item.id === "ING-SEPARATOR");
 assert.ok(structureProfile && structureProfile.chunking.mode === "structure" && structureProfile.chunking.separatorType === "structure", "ING-STRUCTURE 应是独立的解析结构 method 预置");
@@ -777,6 +874,7 @@ assert.equal(separatorConfigured.processingParametersSnapshot.separatorType, "pa
 const separatorProcessingHtml = pages.knowledge.render({ name: "knowledge", id: separatorMethodKnowledgeBase.id, query: { onboarding: "1", step: "processing" } }, state);
 assert.match(separatorProcessingHtml, /name="processing-family" value="custom"[^>]*checked/, "使用分隔符 method 时首层应回显自定义 family");
 assert.match(separatorProcessingHtml, /name="processing-method" value="separator"[^>]*data-processing-profile-id="ING-SEPARATOR"[^>]*checked/, "使用分隔符 method 时应回显独立的 ING-SEPARATOR 选项");
+assert.match(separatorProcessingHtml, /仅匹配所选分隔符[\s\S]*不智能识别句子[\s\S]*小数[\s\S]*缩写/, "分隔符提示应说明逐字符匹配边界，不把标点匹配宣传成语义分句");
 const separatorSelectHtml = separatorProcessingHtml.match(/<select\b(?=[^>]*\bdata-processing-param="separatorType")[^>]*>[\s\S]*?<\/select>/)?.[0] || "";
 const separatorSelectValues = Array.from(separatorSelectHtml.matchAll(/<option\b[^>]*\bvalue="([^"]+)"[^>]*>/g), (match) => match[1]);
 const expectedSeparatorChoices = [
@@ -834,6 +932,128 @@ const emptyLegacyCustomRule = actions.setKnowledgeBaseOnboardingConfig(separator
 assert.equal(emptyLegacyCustomRule.processingParametersSnapshot.separatorType, "paragraph", "空的历史 custom 值应安全回退为段落边界，不再阻断保存");
 assert.equal(actions.deleteKnowledgeBase(customMethodKnowledgeBase.id), customMethodKnowledgeBase, "闭环测试完成后应能删除未启用的结构 method 测试库");
 assert.equal(actions.deleteKnowledgeBase(separatorMethodKnowledgeBase.id), separatorMethodKnowledgeBase, "闭环测试完成后应能删除未启用的分隔符 method 测试库");
+
+const pageProfile = state.rag.ingestionProfiles.find((item) => item.id === "ING-PAGE");
+const wholeDocumentProfile = state.rag.ingestionProfiles.find((item) => item.id === "ING-WHOLE");
+const pageProfileBefore = structuredClone(pageProfile);
+const wholeDocumentProfileBefore = structuredClone(wholeDocumentProfile);
+const pageMethodKnowledgeBase = actions.createKnowledgeBase({
+  name: "按页切片参数闭环测试库",
+  purpose: "验证连续分页参数、界面边界和零重叠快照。",
+  embeddingModelId: "MODEL-EMBEDDING-PRIMARY",
+  minAccessLevel: "L1",
+});
+for (const pagesPerChunk of [0, 11, 1.5, Infinity]) {
+  assert.equal(actions.setKnowledgeBaseOnboardingConfig(pageMethodKnowledgeBase.id, {
+    ingestionProfileId: "ING-PAGE",
+    processingParameters: { mode: "page", pagesPerChunk },
+  }), null, "按页切片应拒绝 1–10 以外或非整数的每片页数");
+}
+const pageConfigured = actions.setKnowledgeBaseOnboardingConfig(pageMethodKnowledgeBase.id, {
+  ingestionProfileId: "ING-PAGE",
+  processingParameters: { mode: "page", pagesPerChunk: 3, overlapPercent: 17, includeContext: true, separatorType: "paragraph", semanticSensitivity: "inactive", longDocumentFallback: "inactive" },
+  completed: true,
+});
+assert.ok(pageConfigured, "按页切片应能保存专用页数参数");
+for (const snapshot of [pageConfigured.processingProfileSnapshot.chunking, pageConfigured.processingParametersSnapshot]) {
+  assert.equal(snapshot.mode, "page", "按页快照应保留独立模式");
+  assert.equal(snapshot.pagesPerChunk, 3, "按页快照应保存每片连续页数");
+  assert.equal(snapshot.overlapPercent, 0, "按页快照应规范化为零字符重叠，不继承无效重叠参数");
+  assert.equal(snapshot.includeContext, true, "按页切片仍可选择关联相邻切片上下文");
+  assert.equal(snapshot.separatorType, "literal", "按页快照应恢复字面分页边界类型，不继承其他模式的段落选项");
+  assert.equal(snapshot.separator, "\f", "按页快照应固定分页符，不被隐藏下拉的段落值污染");
+}
+const pageProcessingHtml = pages.knowledge.render({ name: "knowledge", id: pageMethodKnowledgeBase.id, query: { onboarding: "1", step: "processing" } }, state);
+assert.match(pageProcessingHtml, /name="processing-method" value="page"[^>]*data-processing-profile-id="ING-PAGE"[^>]*checked/, "按页模式应回显对应方法卡片");
+assert.match(pageProcessingHtml, /<input\b(?=[^>]*\bdata-processing-param="pagesPerChunk")(?=[^>]*\bmin="1")(?=[^>]*\bmax="10")(?=[^>]*\bstep="1")(?=[^>]*\bvalue="3")[^>]*>/, "按页编辑区应以 1–10 的整数页数控件回显已保存参数");
+assert.doesNotMatch(pageProcessingHtml, /data-processing-param="(?:maxChars|overlapPercent|separatorType|semanticSensitivity|longDocumentFallback)"/, "按页编辑区不得混入字符切片或整篇专用参数");
+assert.match(pageProcessingHtml, /data-processing-param="includeContext" checked/, "按页切片应保留可配置的相邻上下文关联");
+const pageProcessingHelp = pageProcessingHtml.match(/id="processing-pages-help"[^>]*>([\s\S]*?)<\/div>/)?.[1] || "";
+assert.match(pageProcessingHelp, /连续/, "按页提示应解释按连续页面组成切片");
+assert.match(pageProcessingHelp, /解析/, "按页提示应交代依赖解析结果的分页信息");
+assert.match(pageProcessingHelp, /分页|页码/, "按页提示应明确依赖分页或页码边界");
+assert.deepEqual(pageProfile, pageProfileBefore, "本次按页参数不得改写共享代码预置");
+assert.equal(actions.deleteKnowledgeBase(pageMethodKnowledgeBase.id), pageMethodKnowledgeBase, "按页参数测试后应清理测试库");
+
+for (const longDocumentFallback of ["smart", "stop"]) {
+  const wholeMethodKnowledgeBase = actions.createKnowledgeBase({
+    name: `整篇切片参数闭环测试库-${longDocumentFallback}`,
+    purpose: "验证整篇阈值提示、超长处理选项与不适用参数隔离。",
+    embeddingModelId: "MODEL-EMBEDDING-PRIMARY",
+    minAccessLevel: "L1",
+  });
+  assert.equal(actions.setKnowledgeBaseOnboardingConfig(wholeMethodKnowledgeBase.id, {
+    ingestionProfileId: "ING-WHOLE",
+    processingParameters: { mode: "whole_document", longDocumentFallback: "truncate" },
+  }), null, "整篇切片不得接受自动切片或停止以外的超长处理值");
+  const wholeConfigured = actions.setKnowledgeBaseOnboardingConfig(wholeMethodKnowledgeBase.id, {
+    ingestionProfileId: "ING-WHOLE",
+    processingParameters: { mode: "whole_document", longDocumentFallback, overlapPercent: 17, includeContext: true, separatorType: "paragraph", semanticSensitivity: "inactive", pagesPerChunk: 0 },
+    completed: true,
+  });
+  assert.ok(wholeConfigured, `${longDocumentFallback} 超长处理选项应可保存`);
+  for (const snapshot of [wholeConfigured.processingProfileSnapshot.chunking, wholeConfigured.processingParametersSnapshot]) {
+    assert.equal(snapshot.mode, "whole_document", "整篇快照应保留独立模式");
+    assert.equal(snapshot.longDocumentFallback, longDocumentFallback, "整篇快照应保存所选超长处理方式");
+    assert.equal(snapshot.overlapPercent, 0, "整篇快照必须为零重叠，不继承字符切片的重叠参数");
+    assert.equal(snapshot.includeContext, false, "整篇快照必须关闭不存在的相邻切片上下文");
+    assert.equal(snapshot.separatorType, "literal", "整篇快照应使用独立字面边界类型");
+    assert.equal(snapshot.separator, "", "整篇快照必须保留空分隔符，不被隐藏下拉的段落值污染");
+  }
+  assert.equal(wholeConfigured.processingProfileSnapshot.chunking.maxDocumentChars, 20000, "整篇处理应保留 20000 字符的现有文档阈值");
+  const wholeProcessingHtml = pages.knowledge.render({ name: "knowledge", id: wholeMethodKnowledgeBase.id, query: { onboarding: "1", step: "processing" } }, state);
+  assert.match(wholeProcessingHtml, /name="processing-method" value="whole_document"[^>]*data-processing-profile-id="ING-WHOLE"[^>]*checked/, "整篇模式应回显对应方法卡片");
+  const wholeFallbackSelect = wholeProcessingHtml.match(/<select\b(?=[^>]*\bdata-processing-param="longDocumentFallback")[^>]*>[\s\S]*?<\/select>/)?.[0] || "";
+  assert.deepEqual(Array.from(wholeFallbackSelect.matchAll(/<option\b[^>]*\bvalue="([^"]+)"/g), (match) => match[1]), ["smart", "stop"], "整篇超长处理下拉应且仅应保留自动切片与停止两项");
+  assert.match(wholeFallbackSelect, new RegExp('<option\\b[^>]*value="' + longDocumentFallback + '"[^>]*\\bselected\\b'), "整篇超长处理应正确回显已保存的选项");
+  assert.doesNotMatch(wholeProcessingHtml, /data-processing-param="(?:maxChars|overlapPercent|pagesPerChunk|separatorType|semanticSensitivity|includeContext)"/, "整篇编辑区不得展示不适用的切片参数和相邻上下文开关");
+  assert.match(wholeProcessingHtml, /data-processing-param="documentName"[\s\S]*data-processing-param="headingPath"[\s\S]*data-processing-param="pageNumber"[\s\S]*data-processing-param="tableText"/, "整篇模式应继续保留文件关联信息和索引内容配置");
+  assert.match(wholeProcessingHtml, /20,?000\s*字符/, "整篇编辑区应显示现有 20000 字符阈值，解释超长处理的触发条件");
+  assert.equal(actions.deleteKnowledgeBase(wholeMethodKnowledgeBase.id), wholeMethodKnowledgeBase, "整篇参数测试后应清理测试库");
+}
+assert.deepEqual(wholeDocumentProfile, wholeDocumentProfileBefore, "本次整篇参数不得改写共享代码预置");
+
+const parameterIsolationKnowledgeBase = actions.createKnowledgeBase({
+  name: "切片参数隔离闭环测试库",
+  purpose: "验证整数参数、无关字段隔离与旧 Token 设置兼容。",
+  embeddingModelId: "MODEL-EMBEDDING-PRIMARY",
+  minAccessLevel: "L1",
+});
+for (const profile of visibleProcessingPresets) {
+  const mode = profile.chunking.mode;
+  assert.equal(actions.setKnowledgeBaseOnboardingConfig(parameterIsolationKnowledgeBase.id, {
+    ingestionProfileId: profile.id,
+    processingParameters: { mode, maxChars: 1000.5 },
+  }), null, `${mode} 新方案必须拒绝非整数的字符上限`);
+  if (["smart", "structure", "recursive", "separator"].includes(mode)) {
+    assert.equal(actions.setKnowledgeBaseOnboardingConfig(parameterIsolationKnowledgeBase.id, {
+      ingestionProfileId: profile.id,
+      processingParameters: { mode, maxChars: 1000, overlapPercent: 10.5 },
+    }), null, `${mode} 新方案必须拒绝非整数的重叠百分比`);
+  }
+  const normalizedConfiguration = actions.setKnowledgeBaseOnboardingConfig(parameterIsolationKnowledgeBase.id, {
+    ingestionProfileId: profile.id,
+    processingParameters: {
+      mode, maxChars: 1001, overlapPercent: 10,
+      semanticSensitivity: mode === "semantic" ? "balanced" : "inactive",
+      pagesPerChunk: mode === "page" ? 2 : 0,
+      longDocumentFallback: mode === "whole_document" ? "smart" : "inactive",
+    },
+  });
+  assert.ok(normalizedConfiguration, `${mode} 应接受整数参数并忽略其他模式的无关字段`);
+  for (const snapshot of [normalizedConfiguration.processingProfileSnapshot.chunking, normalizedConfiguration.processingParametersSnapshot]) {
+    assert.equal(snapshot.maxChars, 1001, `${mode} 应保存非百位整数上限，不能只支持步长 100`);
+    for (const key of ["targetTokens", "maxTokens", "overlapTokens"]) assert.equal(Object.hasOwn(snapshot, key), false, `${mode} 规范化快照不得残留旧 ${key} 设置`);
+  }
+  if (mode === "whole_document") assert.equal(normalizedConfiguration.processingProfileSnapshot.chunking.maxDocumentChars, 1001, "整篇文档阈值应与其字符上限保持一致");
+}
+const legacyFractionalConfiguration = actions.setKnowledgeBaseOnboardingConfig(parameterIsolationKnowledgeBase.id, {
+  ingestionProfileId: "ING-FIXED",
+  processingParameters: { mode: "fixed", maxChars: 1000.5, overlapPercent: 10.5 },
+});
+assert.ok(legacyFractionalConfiguration, "历史 fixed 小数参数不应被新方案的整数要求阻断");
+for (const key of ["targetTokens", "maxTokens", "overlapTokens"]) assert.equal(legacyFractionalConfiguration.processingProfileSnapshot.chunking[key], legacyFixedPreset.chunking[key], `历史 fixed 应继续保留原 ${key} 设置`);
+assert.equal(actions.deleteKnowledgeBase(parameterIsolationKnowledgeBase.id), parameterIsolationKnowledgeBase, "参数隔离测试后应清理测试库");
 
 const existingImportUploadHtml = pages.knowledge.render({ name: "knowledge", id: "KB-001", query: { onboarding: "1", step: "upload", flow: "import" } }, state);
 const existingImportParseHtml = pages.knowledge.render({ name: "knowledge", id: "KB-001", query: { onboarding: "1", step: "parse", flow: "import" } }, state);
@@ -910,7 +1130,7 @@ assert.equal(onboardingConfigured.processingParametersSnapshot.indexContent.docu
 assert.equal(onboardingConfigured.processingParametersSnapshot.indexContent.tableText, true, "知识库应固化本次表格索引内容设置");
 assert.deepEqual(state.rag.ingestionProfiles.find((item) => item.id === "ING-01").chunking, sharedIng01BeforeOnboarding, "本次处理参数不得修改共享文档处理策略");
 assert.equal(onboardingConfigured.boundEmbeddingModelId, "MODEL-EMBEDDING-PRIMARY", "切换文档处理策略不得改变知识库绑定的向量模型");
-assert.equal(onboardingConfigured.boundVectorDimension, 1024, "切换文档处理策略不得改变知识库向量维度");
+assert.equal(onboardingConfigured.boundVectorDimension, 4096, "切换文档处理策略不得改变知识库向量维度");
 createdKnowledgeBase.mineruParseConfig.returnImages = false;
 const createdImportBatch = actions.startKnowledgeImport(createdKnowledgeBase.id, { fileNames: ["长文档示例.pdf"] });
 assert.equal(createdKnowledgeBase.mineruParseConfig.returnImages, true, "直接导入应迁移旧配置并恢复系统默认原图保存");
@@ -1108,24 +1328,14 @@ actions.setKnowledgeBaseEnabled(kb2.id, true);
 assert.equal(kb2.retrievalStatus, "available", "知识库重新启用后应恢复接收符合权限的检索请求");
 assert.equal(kb2.enabledStateLabel, "检索已启用", "开关状态应明确表达为检索已启用");
 
-assert.ok(state.analysisDefinitions.every((item) => !Object.prototype.hasOwnProperty.call(item, "code") && !Object.prototype.hasOwnProperty.call(item, "version")), "分析口径数据层不应保留英文 code 或版本字段");
-const createdDefinition = actions.createDefinition({
-  name: "临时质量口径",
-  definition: "统计有效样本中通过质检的比例。",
-  formula: "通过数 ÷ 总数 × 100%",
-  statisticalPeriod: "自然月",
-  unit: "%",
-  thresholdLabel: "高风险",
-  thresholdCondition: "< 90%",
+assert.equal(Object.prototype.hasOwnProperty.call(state, "analysisDefinitions"), false, "运营端状态不应保留分析口径数据");
+assert.equal(Object.prototype.hasOwnProperty.call(pages, "definitions"), false, "运营端不应注册分析口径页面");
+assert.ok(state.skills.every((item) => !Object.prototype.hasOwnProperty.call(item.dependencies || {}, "definitionIds")), "Skill 依赖不应保留分析口径引用字段");
+["createDefinition", "updateDefinition", "setDefinitionEnabled", "deleteDefinition"].forEach((name) => {
+  assert.equal(typeof actions[name], "undefined", `运营端动作层不应保留 ${name}`);
 });
-assert.ok(createdDefinition && createdDefinition.enabled, "分析口径应支持直接新建并默认启用");
-actions.updateDefinition(createdDefinition.id, { thresholdCondition: "< 92%" });
-assert.equal(createdDefinition.thresholds[0].condition, "< 92%", "分析口径应支持编辑阈值");
-actions.setDefinitionEnabled(createdDefinition.id, false);
-assert.equal(createdDefinition.enabled, false, "分析口径应支持停用");
-state.skills.find((item) => item.id === "SK-03").dependencies.definitionIds.push(createdDefinition.id);
-assert.equal(actions.deleteDefinition(createdDefinition.id), createdDefinition, "分析口径应支持删除");
-assert.equal(state.skills.find((item) => item.id === "SK-03").dependencies.definitionIds.includes(createdDefinition.id), false, "删除口径应同步移除 Skill 引用");
+assert.equal(state.configurationRecords.some((item) => item.objectType === "analysis_definition"), false, "运营端变更记录不应保留分析口径对象");
+assert.doesNotMatch(JSON.stringify(state.managementFlows), /definitions|分析口径/, "运营端管理流程不应保留分析口径配置入口");
 
 assert.equal(Object.prototype.hasOwnProperty.call(state, "outputProfiles"), false, "运营端状态不应保留报告模板数据");
 assert.equal(Object.prototype.hasOwnProperty.call(pages, "outputProfiles"), false, "运营端页面注册不应保留报告模板页面");
@@ -1449,5 +1659,134 @@ assert.equal(resetState.knowledgeBases.find((item) => item.id === "KB-003").docu
 const deletedLocalAssetRecord = resetState.configurationRecords.find((item) => item.objectType === "local_document" && item.objectId === "DOC-004" && item.action === "deleted");
 assert.deepEqual(deletedLocalAssetRecord.before.knowledgeBaseIds.sort(), ["KB-001", "KB-003"], "本地原文件删除留痕应记录全部受影响知识库");
 
+const localUploadSource = { name: "文档管理上传资料.txt", type: "text/plain" };
+const localUploadInput = { name: localUploadSource.name, size: 39, type: localUploadSource.type, lastModified: 1234, sourceFile: localUploadSource, sourcePreview: "待整理的本地原文件内容。" };
+const knowledgeCountsBeforeLocalUpload = resetState.knowledgeBases.map((item) => structuredClone(item.documentCounts));
+const knowledgeVersionsBeforeLocalUpload = structuredClone(resetState.knowledgeVersions);
+const chunksBeforeLocalUpload = resetState.chunks.length;
+const localImportUploadHtml = pages.localDocuments.render({ name: "local-documents", id: "upload", query: { step: "upload" } }, resetState);
+assert.match(localImportUploadHtml, /creation-steps[\s\S]*data-upload-files[\s\S]*data-upload-start="local-documents"/, "文档管理应从知识库流程的上传界面开始");
+assert.doesNotMatch(localImportUploadHtml, /目标知识库|data-local-upload-files|kb-definition|向量模型未连接/, "文档管理上传无需定义、选择或绑定知识库");
+const standaloneUpload = actions.startKnowledgeImport("local-documents", { files: [localUploadInput], deferred: true });
+assert.equal(standaloneUpload.status, "pending_configuration", "文档管理上传后应暂存文件，继续解析和切块配置");
+assert.equal(standaloneUpload.knowledgeBaseId, null, "上传批次不得静默关联任意知识库");
+assert.equal(standaloneUpload.processingScope, "local-documents", "上传批次应与知识库导入范围隔离");
+assert.equal(standaloneUpload.items[0].documentId, null, "完成配置前不得提前产生处理结果");
+assert.equal(resetState.chunks.length, chunksBeforeLocalUpload, "暂存文件尚不生成切片");
+const secondLocalBatch = actions.startKnowledgeImport("local-documents", { files: [{ ...localUploadInput, name: "另一批次.txt" }], deferred: true });
+const secondLocalContextBefore = structuredClone(actions.getLocalDocumentImportContext(secondLocalBatch.id));
+const localImportParseHtml = pages.localDocuments.render({ name: "local-documents", id: "upload", query: { step: "parse", batch: standaloneUpload.id } }, resetState);
+assert.match(localImportParseHtml, /parse-recognition[\s\S]*parse-visual-understanding[\s\S]*data-parse-next="local-documents"/, "文档管理应复用原有文档解析界面和下一步事件");
+assert.ok(actions.setKnowledgeBaseOnboardingConfig("local-documents", { batchId: standaloneUpload.id, mineruParseConfig: { parseMethod: "auto", imageAnalysisEnabled: true } }), "文档管理应复用解析配置保存动作");
+const localImportProcessingHtml = pages.localDocuments.render({ name: "local-documents", id: "upload", query: { step: "processing", batch: standaloneUpload.id } }, resetState);
+assert.match(localImportProcessingHtml, /name="processing-family"[\s\S]*data-processing-method-list[\s\S]*data-processing-finish="local-documents"/, "文档管理应复用既有切片方案与完成动作");
+assert.ok(actions.setKnowledgeBaseOnboardingConfig("local-documents", { batchId: standaloneUpload.id, ingestionProfileId: "ING-01", processingParameters: { maxChars: 1200, overlapPercent: 8 }, completed: true }), "文档管理应完成上传、解析、切块的同一配置流程");
+assert.equal(standaloneUpload.status, "completed", "完成配置后本批文件应已处理");
+assert.equal(secondLocalBatch.status, "pending_configuration", "完成一批不得自动处理另一个文档管理批次");
+assert.deepEqual(actions.getLocalDocumentImportContext(secondLocalBatch.id), secondLocalContextBefore, "本批解析和切块参数不得改写另一批次");
+const standaloneDocument = resetState.documents.find((item) => item.id === standaloneUpload.items[0].documentId);
+assert.ok(standaloneDocument, "完成配置应创建文档管理中的处理结果");
+assert.equal(standaloneDocument.knowledgeBaseId, null, "文档处理结果不得静默关联任意知识库");
+assert.equal(standaloneDocument.status, "processed", "文档管理处理完成后应显示已切块状态");
+assert.equal(standaloneDocument.searchable, false, "未关联知识库的原文件不得误报为可检索");
+assert.equal(standaloneDocument.pendingVectorization, false, "文档管理切块不得进入无目标的向量化队列");
+assert.equal(standaloneDocument.sourceFile, localUploadSource, "完成处理后应保留原文件供预览和下载");
+assert.equal(standaloneDocument.sourcePreview, localUploadInput.sourcePreview, "完成处理后应保留读取的原文内容");
+const standaloneChunks = resetState.chunks.filter((item) => item.documentId === standaloneDocument.id);
+assert.ok(standaloneChunks.length > 0 && standaloneChunks.every((item) => item.knowledgeBaseId === null), "处理结果应包含归属于该文档的本地切块");
+assert.equal(standaloneChunks.map((item) => item.content).join(""), localUploadInput.sourcePreview, "文本切块预览应使用读取的原文");
+assert.deepEqual(standaloneUpload.items[0].pipeline.map((item) => item.key), ["receive", "mineru", "chunk"], "文档管理仅执行接收、解析、切块，不执行知识库向量化或索引");
+assert.deepEqual(resetState.knowledgeVersions, knowledgeVersionsBeforeLocalUpload, "文档管理处理不得创建或修改知识库索引版本");
+assert.deepEqual(resetState.knowledgeBases.map((item) => item.documentCounts), knowledgeCountsBeforeLocalUpload, "文档管理处理不得影响现有知识库文件计数");
+assert.equal(actions.addDocumentChunk(standaloneDocument.id, { content: "未关联知识库，不允许向量化" }), null, "原文件必须进入明确知识库后才能新增索引切片");
+const standaloneListHtml = pages.localDocuments.render({ name: "local-documents", id: null, query: {} }, resetState);
+assert.match(standaloneListHtml, new RegExp('data-local-document-id="' + standaloneDocument.id + '" data-local-document-status="processed"'), "处理后的文件应出现在文档管理并可按已切块筛选");
+const standalonePreviewHtml = pages.localDocuments.render({ name: "local-documents", id: standaloneDocument.id, query: {} }, resetState);
+assert.match(standalonePreviewHtml, /待整理的本地原文件内容。/, "文档管理预览应展示上传原文");
+assert.match(standalonePreviewHtml, /全部切片（1）/, "文档管理预览应展示本次切块结果");
+assert.doesNotMatch(standalonePreviewHtml, /data-local-preview-kb-select|data-local-preview-chunk-add/, "未入库原文件不应生成虚构的知识库或切片管理控件");
+assert.equal(actions.startKnowledgeImport("local-documents", { files: [localUploadInput], deferred: true }).skippedCount, 1, "重复上传相同文件应跳过，不制造重复资产");
+assert.equal(actions.startKnowledgeImport("local-documents", { files: [] }), null, "空上传不得自动制造演示文档");
+const explicitKnowledgeImport = actions.startKnowledgeImport("KB-002", { files: [localUploadInput] });
+assert.ok(explicitKnowledgeImport && explicitKnowledgeImport.successCount === 1, "本地处理后的文件仍可在明确知识库中完成既有导入处理");
+const importedStandaloneDocument = resetState.documents.find((item) => item.knowledgeBaseId === "KB-002" && item.name === localUploadInput.name);
+assert.equal(importedStandaloneDocument.localAssetId, standaloneDocument.localAssetId, "知识库后续导入应复用已上传原文件标识");
+const deletedStandalone = actions.deleteLocalDocumentAsset(standaloneDocument.localAssetId);
+assert.equal(deletedStandalone.deletedDocumentIds.length, 2, "删除原文件应一并删除后续明确入库的处理实例");
+assert.deepEqual(resetState.knowledgeBases.map((item) => item.documentCounts), knowledgeCountsBeforeLocalUpload, "显式导入再删除后知识库计数应恢复");
+const availableKnowledgeBases = resetState.knowledgeBases;
+resetState.knowledgeBases = [];
+const uploadWithoutKnowledgeBases = actions.startKnowledgeImport("local-documents", { files: [{ ...localUploadInput, name: "无知识库也能上传.txt" }], deferred: true });
+assert.ok(actions.setKnowledgeBaseOnboardingConfig("local-documents", { batchId: uploadWithoutKnowledgeBases.id, ingestionProfileId: "ING-01", completed: true }), "没有任何知识库时也应允许完成原文件解析和切块");
+resetState.knowledgeBases = availableKnowledgeBases;
+assert.ok(actions.deleteLocalDocumentAsset(uploadWithoutKnowledgeBases.items[0].documentId), "未关联知识库的原文件应可独立删除");
+
+const knowledgeCountsBeforeRecursiveUploads = structuredClone(resetState.knowledgeBases.map((item) => item.documentCounts));
+const knowledgeVersionsBeforeRecursiveUploads = structuredClone(resetState.knowledgeVersions);
+function importRecursivePreview(name, sourcePreview, overlapPercent = 0) {
+  const batch = actions.startKnowledgeImport("local-documents", {
+    files: [{ name: `递归验收-${name}.txt`, size: sourcePreview.length * 2, sourcePreview }],
+    deferred: true,
+  });
+  assert.ok(batch && batch.status === "pending_configuration", `${name} 应暂存为独立文档管理批次`);
+  const configured = actions.setKnowledgeBaseOnboardingConfig("local-documents", {
+    batchId: batch.id,
+    ingestionProfileId: "ING-RECURSIVE",
+    processingParameters: { mode: "recursive", maxChars: 200, overlapPercent },
+    completed: true,
+  });
+  assert.ok(configured && batch.status === "completed", `${name} 应使用递归模式完成本地切块`);
+  const documentItem = resetState.documents.find((item) => item.id === batch.items[0].documentId);
+  const chunks = resetState.chunks.filter((item) => item.documentId === documentItem.id).sort((left, right) => left.index - right.index);
+  assert.ok(chunks.length > 0, `${name} 应生成可预览的实际切片`);
+  assert.ok(chunks.every((chunk) => chunk.content.length > 0 && chunk.content.length <= 200), `${name} 的所有切片必须非空且不超过字符上限`);
+  assert.ok(chunks.every((chunk) => chunk.characterCount === chunk.content.length), `${name} 的字符计数必须与实际内容一致`);
+  assert.ok(chunks.every((chunk) => !/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/.test(chunk.content)), `${name} 的字符兜底不能拆开 emoji 代理对`);
+  assert.equal(documentItem.chunkCount, chunks.length, `${name} 的文档切片数应等于实际预览卡片数`);
+  assert.equal(documentItem.sourcePreview, sourcePreview, `${name} 应保留原文供预览和下载`);
+  assert.equal(batch.processingParametersSnapshot.mode, "recursive", `${name} 应保存独立递归批次模式`);
+  assert.deepEqual(batch.processingParametersSnapshot.recursiveBoundaries, expectedRecursiveBoundaries, `${name} 应固化内置边界顺序`);
+  assert.equal(documentItem.processingProfileSnapshot.chunking.mode, "recursive", `${name} 的文档实例应保留递归策略快照`);
+  assert.deepEqual(batch.items[0].pipeline.map((item) => item.key), ["receive", "mineru", "chunk"], `${name} 本地处理不得执行向量化或索引`);
+  if (overlapPercent === 0) assert.equal(chunks.map((chunk) => chunk.content).join(""), sourcePreview, `${name} 零重叠时拼接切片必须完整复原原文与全部分隔符`);
+  return { batch, documentItem, chunks };
+}
+const recursivePreviewCases = [
+  { name: "段落边界", source: "甲".repeat(120) + "\r\n\r\n" + "乙".repeat(120) + "\n\n" + "丙".repeat(120), endBoundary: /(?:\r?\n){2}$/, count: 3 },
+  { name: "换行边界", source: "甲".repeat(120) + "\r\n" + "乙".repeat(120) + "\n" + "丙".repeat(120), endBoundary: /\r?\n$/, count: 3 },
+  { name: "中英文句末", source: "甲".repeat(110) + "。" + "b".repeat(110) + "! " + "丙".repeat(110) + "？" + "d".repeat(110) + ".", endBoundary: /[。！？.!?]$/, count: 4 },
+  { name: "空白边界", source: Array.from({ length: 90 }, (_, index) => `word${String(index).padStart(3, "0")}\t`).join(""), endBoundary: /\s$/ },
+  { name: "纯空白保留", source: (" \t\r\n\n").repeat(70) },
+  { name: "无分隔符长文", source: "无分隔字符".repeat(131) },
+  { name: "emoji兜底", source: "前" + "😀🧠".repeat(180) + "尾" },
+  { name: "恰好达到上限", source: "边".repeat(200), count: 1 },
+];
+for (const example of recursivePreviewCases) {
+  const result = importRecursivePreview(example.name, example.source);
+  if (example.count) assert.equal(result.chunks.length, example.count, `${example.name} 应按有效的大粒度边界拆分，不额外按固定长度切碎`);
+  if (example.endBoundary) assert.ok(result.chunks.slice(0, -1).every((chunk) => example.endBoundary.test(chunk.content)), `${example.name} 应优先在对应边界结束切片`);
+  assert.ok(actions.deleteLocalDocumentAsset(result.documentItem.localAssetId), `${example.name} 测试原文件应可清理`);
+}
+const recursiveOverlapSource = Array.from({ length: 120 }, (_, index) => `token${String(index).padStart(3, "0")} `).join("");
+const recursiveOverlapResult = importRecursivePreview("边界重叠", recursiveOverlapSource, 25);
+let recursiveConsumed = 0;
+let sawRecursiveOverlap = false;
+for (const chunk of recursiveOverlapResult.chunks) {
+  const matchingOverlap = Array.from({ length: Math.min(50, recursiveConsumed) + 1 }, (_, value) => value).find((overlap) => {
+    const start = recursiveConsumed - overlap;
+    return chunk.content.length > overlap && recursiveOverlapSource.slice(start, start + chunk.content.length) === chunk.content;
+  });
+  assert.notEqual(matchingOverlap, undefined, "递归重叠切片必须源于原文且重叠字符数不能超过配置上限");
+  if (matchingOverlap > 0) sawRecursiveOverlap = true;
+  const start = recursiveConsumed - matchingOverlap;
+  assert.ok(start === 0 || /\s/.test(recursiveOverlapSource[start - 1]), "存在可用单词边界时，重叠起点不能从单词中间截取");
+  recursiveConsumed += chunk.content.length - matchingOverlap;
+}
+assert.equal(recursiveConsumed, recursiveOverlapSource.length, "移除相邻重叠后应恰好覆盖全部原文，不丢失或额外重复内容");
+assert.equal(sawRecursiveOverlap, true, "边界允许时非零重叠率必须生成实际上下文重叠");
+assert.ok(actions.deleteLocalDocumentAsset(recursiveOverlapResult.documentItem.localAssetId), "重叠测试原文件应可清理");
+assert.deepEqual(resetState.knowledgeBases.map((item) => item.documentCounts), knowledgeCountsBeforeRecursiveUploads, "本地递归切块不得修改知识库文件计数");
+assert.deepEqual(resetState.knowledgeVersions, knowledgeVersionsBeforeRecursiveUploads, "本地递归切块不得生成知识库索引版本");
+
 assert.ok(state.configurationRecords.length > initialRecordCount, "重要配置动作必须自动留痕");
-console.log("管理闭环检查通过：知识库、文档解析与切片、RAG 检索、向量/Rerank 模型、企业数据、检索服务、Skill、分析口径、可视化、API 密钥与消耗统计均已联动。")
+console.log("管理闭环检查通过：知识库、文档解析与切片、RAG 检索、向量/Rerank 模型、企业数据、检索服务、Skill、可视化、API 密钥与消耗统计均已联动。")

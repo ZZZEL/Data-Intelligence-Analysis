@@ -13,7 +13,6 @@
     "retrieval-test": { page: "retrievalTest", title: "检索测试", group: "retrieval" },
     skills: { page: "skills", title: "Skill 目录", group: "capabilities" },
     visualizations: { page: "visualizations", title: "可视化能力", group: "capabilities" },
-    definitions: { page: "definitions", title: "分析口径", group: "capabilities" },
     "api-access": { page: "apiAccess", title: "API 密钥", group: "api-access" },
     consumption: { page: "consumption", title: "消耗统计", group: "consumption" }
   };

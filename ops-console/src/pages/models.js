@@ -112,7 +112,7 @@
         ? '<td class="models-table__dimension"><div class="table-primary">' + dom.escape(model.dimension ? dom.formatNumber(model.dimension) + " 维" : "—") + "</div></td>"
         : '<td class="models-table__dimension" aria-label="不适用"></td>';
       return '<tr data-model-row data-model-kind="' + group.kind + '" data-model-id="' + dom.escape(model.id) + '">' +
-        '<td><div class="capability-name"><span class="capability-icon">' + dom.icon(group.icon, 16) + '</span><div class="table-primary">' + dom.escape(text(model.alias || model.name, "未命名模型")) + "</div></div></td>" +
+        '<td><div class="capability-name"><span class="capability-icon">' + dom.icon(group.icon, 16) + '</span><div class="model-identity"><div class="table-primary">' + dom.escape(text(model.alias || model.name, "未命名模型")) + '</div></div></div></td>' +
         dimensionCell +
         '<td>' + connectionCell(model) + "</td>" +
         '<td>' + rowActions(group.kind, model) + "</td>" +

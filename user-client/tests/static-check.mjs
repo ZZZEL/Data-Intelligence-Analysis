@@ -63,7 +63,6 @@ const required = [
   [files.app, 'renderTemplateShell'],
   [files.app, 'syncTemplateEditor'],
   [files.app, 'saveTemplate'],
-  [files.app, 'setDefaultTemplate'],
   [files.app, 'requestDeleteTemplate'],
   [files.app, 'data-template-editor'],
   [files.app, 'data-template-preview-sections'],

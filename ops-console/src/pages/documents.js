@@ -7,6 +7,7 @@
   var router = OpsDemo.core.router;
   var store = OpsDemo.core.store;
   var actions = OpsDemo.core.actions;
+  var sourcePreviewUrl = null;
 
   function esc(value) { return dom.escape(value); }
   function number(value) { return dom.formatNumber(value); }
@@ -76,6 +77,8 @@
   function itemStatus(item) {
     var status = item && item.status || "indexing";
     var label = item && (item.statusLabel || item.lifecycleStatusLabel) || "等待处理";
+    if (status === "uploaded") return { key: "uploaded", label: label, tone: "neutral" };
+    if (status === "processed") return { key: "processed", label: label, tone: "success" };
     if (status === "ready") return { key: "ready", label: label, tone: "success" };
     if (status === "failed") return { key: "failed", label: label, tone: "danger" };
     return { key: "processing", label: label, tone: "info" };
@@ -83,15 +86,15 @@
 
   function assetStatus(asset) {
     var failed = asset.instances.find(function find(item) { return item.status === "failed"; });
-    var processing = asset.instances.find(function find(item) { return item.status !== "ready"; });
+    var processing = asset.instances.find(function find(item) { return item.status !== "ready" && item.status !== "uploaded" && item.status !== "processed"; });
     var ready = asset.instances.some(function some(item) { return item.status === "ready"; });
     if (failed) return { key: "failed", label: asset.instances.length > 1 ? "存在处理失败" : itemStatus(failed).label, tone: "danger" };
     if (processing && ready) return { key: "processing", label: "部分处理中", tone: "info" };
-    return itemStatus(processing || asset.representative);
+    return itemStatus(processing || asset.instances.find(function find(item) { return item.status === "ready"; }) || asset.instances.find(function find(item) { return item.status === "processed"; }) || asset.representative);
   }
 
   function hasPreview(state, asset) {
-    return asset.instances.some(function some(item) { return documentChunks(state, item).length > 0; });
+    return asset.instances.some(function some(item) { return item.status === "uploaded" || documentChunks(state, item).length > 0; });
   }
 
   function renderRow(state, asset) {
@@ -111,7 +114,7 @@
   function renderList(state) {
     var assets = localDocumentAssets(state);
     var rows = assets.map(function map(asset) { return renderRow(state, asset); }).join("");
-    var statusFilter = '<select class="select-field local-documents__status-filter" data-local-document-status-filter aria-label="筛选文件状态"><option value="all">全部状态</option><option value="ready">可检索</option><option value="processing">处理中</option><option value="failed">处理失败</option></select>';
+    var statusFilter = '<select class="select-field local-documents__status-filter" data-local-document-status-filter aria-label="筛选文件状态"><option value="all">全部状态</option><option value="uploaded">已上传</option><option value="processed">已切块</option><option value="ready">可检索</option><option value="processing">处理中</option><option value="failed">处理失败</option></select>';
     return dom.pageHeader({
       title: "文档管理",
       actions: dom.button("上传文档", { variant: "primary", icon: "upload", attrs: "data-local-document-upload" }),
@@ -121,13 +124,13 @@
       }
     }) + '<div class="page-content"><section class="panel local-documents">' +
       '<div class="table-wrap" data-local-document-table-wrap' + (assets.length ? "" : " hidden") + '><table class="data-table knowledge-table local-documents-table"><thead><tr><th>文档</th><th>状态</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead><tbody data-local-document-table>' + rows + "</tbody></table></div>" +
-      '<div class="local-documents__empty" data-local-document-empty' + (assets.length ? " hidden" : "") + '>' + dom.empty("暂无文档", "上传到知识库的文档会集中显示在这里。", "files") + "</div>" +
+      '<div class="local-documents__empty" data-local-document-empty' + (assets.length ? " hidden" : "") + '>' + dom.empty("暂无文档", "上传文档后，可在这里统一预览和管理。", "files") + "</div>" +
       '<div class="table-footer local-documents__footer"><span data-local-document-count>共 ' + number(assets.length) + ' 个文档</span><span class="local-documents__scope">不包含企业数据和检索服务引用</span></div>' +
       "</section></div>";
   }
 
   function renderChunkCards(chunks, item) {
-    if (!chunks.length) return dom.empty("暂无切片", "该文件在当前知识库完成文档处理后，切片会显示在这里。", "blocks");
+    if (!chunks.length) return dom.empty("暂无切片", "该文件完成文档处理后，切片会显示在这里。", "blocks");
     return '<div class="chunk-preview-list">' + chunks.map(function map(chunk, index) {
       var content = chunk.content || chunk.text || "";
       var characterCount = chunk.characterCount == null ? content.length : chunk.characterCount;
@@ -146,6 +149,12 @@
 
   function renderDocumentSource(state, asset) {
     var item = asset.representative;
+    if (item.sourceFile && /^(application\/pdf|image\/)/.test(item.mimeType)) {
+      sourcePreviewUrl = URL.createObjectURL(item.sourceFile);
+      if (item.mimeType === "application/pdf") return '<iframe class="local-document-source__pdf" src="' + esc(sourcePreviewUrl) + '" title="' + esc(item.name) + '原文件预览"></iframe>';
+      return '<div class="local-document-source__image"><img src="' + esc(sourcePreviewUrl) + '" alt="' + esc(item.name) + '" /></div>';
+    }
+    if (item.status === "uploaded" && !sourceText(state, asset) && !/\.txt$/i.test(item.name)) return dom.empty("原文件已上传", "此格式暂不支持在线预览，请下载原文件查看。", "file-text");
     return '<article class="document-source-preview"><div class="document-source-preview__page"><div class="document-source-preview__file">' + dom.icon("file-text", 17) + '<span>' + esc(item.name) + '</span></div><div class="document-source-preview__content">' + esc(sourceText(state, asset) || "暂无可预览的源内容。") + "</div></div></article>";
   }
 
@@ -164,9 +173,9 @@
     }
     var bindings = assetBindings(state, asset);
     var selectedBinding = bindings.find(function find(binding) { return binding.knowledgeBase.id === route.query.knowledgeBaseId; }) || bindings[0] || null;
-    var selectedDocument = selectedBinding && selectedBinding.document;
+    var selectedDocument = selectedBinding ? selectedBinding.document : asset.representative;
     var chunks = selectedDocument ? documentChunks(state, selectedDocument) : [];
-    var controls = renderKnowledgeBaseControl(asset, bindings, selectedBinding) + (selectedDocument ? dom.button("新增切片", {
+    var controls = (bindings.length ? renderKnowledgeBaseControl(asset, bindings, selectedBinding) : "") + (selectedBinding ? dom.button("新增切片", {
       variant: "primary",
       icon: "plus",
       size: "small",
@@ -179,7 +188,7 @@
       sourceHeader: false,
       source: renderDocumentSource(state, asset),
       resultHeader: false,
-      result: selectedDocument ? renderChunkCards(chunks, selectedDocument) : dom.empty("暂无切片", "该文件尚未加入可用知识库。", "blocks")
+      result: selectedDocument ? renderChunkCards(chunks, selectedDocument) : dom.empty("尚未生成切片", "在知识库中导入该文件后，可查看相应的处理结果。", "blocks")
     });
     return dom.pageHeader({
       title: "文件预览",
@@ -189,45 +198,28 @@
   }
 
   function render(route, state) {
+    if (sourcePreviewUrl) {
+      URL.revokeObjectURL(sourcePreviewUrl);
+      sourcePreviewUrl = null;
+    }
+    if (route.id === "upload") return OpsDemo.pages.knowledge.renderLocalImport(route, state);
     return route.id ? renderPreview(state, route) : renderList(state);
-  }
-
-  function openUploadDialog(state) {
-    var options = (state.knowledgeBases || []).map(function map(item) {
-      return '<option value="' + esc(item.id) + '">' + esc(item.name) + " · " + esc(item.id) + "</option>";
-    }).join("");
-    var hasKnowledgeBase = Boolean(options);
-    overlay.confirm({
-      title: "上传文档",
-      confirmLabel: "继续上传",
-      body: '<div class="stack"><p class="local-documents__dialog-copy">选择要将文档加入的知识库，随后继续完成文件上传、解析和文档处理。</p>' +
-        '<div class="form-field">' + dom.requiredLabel("目标知识库", { forId: "local-document-target-kb" }) + '<select id="local-document-target-kb" class="select-field" required aria-required="true"' + (hasKnowledgeBase ? "" : " disabled") + '><option value="" selected disabled>' + (hasKnowledgeBase ? "请选择知识库" : "暂无可用知识库") + "</option>" + options + '</select><div class="form-help">企业数据和检索服务通过各自的访问配置调用，不在这里上传。</div></div></div>',
-      onConfirm: function onConfirm(root) {
-        var select = root.querySelector("#local-document-target-kb");
-        if (!select || !select.value) {
-          overlay.toast("尚未选择知识库", hasKnowledgeBase ? "请选择目标知识库。" : "请先创建知识库。", "warning");
-          return false;
-        }
-        router.navigate("knowledge/" + select.value + "?onboarding=1&step=upload&flow=import");
-        return true;
-      }
-    });
   }
 
   function confirmDeleteDocument(asset) {
     if (!asset) return;
     var knowledgeBaseCount = asset.instances.reduce(function count(ids, item) {
-      if (ids.indexOf(item.knowledgeBaseId) < 0) ids.push(item.knowledgeBaseId);
+      if (item.knowledgeBaseId && ids.indexOf(item.knowledgeBaseId) < 0) ids.push(item.knowledgeBaseId);
       return ids;
     }, []).length;
     overlay.confirm({
       title: "删除文档",
       confirmLabel: "确认删除",
       confirmVariant: "danger",
-      body: '<div class="notice notice--warning">' + dom.icon("triangle-alert", 17) + '<div class="notice__content"><div class="notice__title">将从所有使用位置删除</div>删除“' + esc(asset.representative.name) + '”后，原文件及其在 ' + number(knowledgeBaseCount) + " 个知识库中的切片和向量索引将全部移除，且无法恢复。</div></div>",
+      body: '<div class="notice notice--warning">' + dom.icon("triangle-alert", 17) + '<div class="notice__content"><div class="notice__title">确认删除文档</div>删除“' + esc(asset.representative.name) + '”后，' + (knowledgeBaseCount ? '原文件及其在 ' + number(knowledgeBaseCount) + ' 个知识库中的切片和向量索引将全部移除' : '原文件将被移除') + "，且无法恢复。</div></div>",
       onConfirm: function onConfirm() {
         var deleted = actions.deleteLocalDocumentAsset ? actions.deleteLocalDocumentAsset(asset.id) : actions.deleteDocument(asset.representative.id);
-        if (deleted) overlay.toast("文档已删除", "原文件及其全部知识库处理结果已移除。", "success");
+        if (deleted) overlay.toast("文档已删除", knowledgeBaseCount ? "原文件及其全部知识库处理结果已移除。" : "原文件已移除。", "success");
         return Boolean(deleted);
       }
     });
@@ -236,7 +228,7 @@
   function openAddChunk(documentId, assetId, knowledgeBaseId) {
     overlay.open({
       title: "新增切片",
-      confirmLabel: "生成向量并保存",
+      confirmLabel: "创建切片",
       wide: true,
       body: '<div class="stack"><div class="form-field">' + dom.requiredLabel("切片内容", { forId: "new-local-chunk-content" }) + '<textarea id="new-local-chunk-content" class="textarea-field chunk-content-editor" maxlength="5000" placeholder="输入需要纳入检索的内容" data-local-chunk-content required aria-required="true"></textarea></div><div class="vector-cost-notice">' + dom.icon("circle-alert", 15) + '<span>保存后只会更新当前知识库中的切片和向量索引，并产生 Embedding Token 消耗。</span></div></div>',
       onConfirm: function onConfirm(scope) {
@@ -310,7 +302,7 @@
   function downloadAsset(state, asset) {
     if (!asset) return;
     var item = asset.representative;
-    var blob = new Blob([sourceText(state, asset) || item.name], { type: item.mimeType || "text/plain;charset=utf-8" });
+    var blob = item.sourceFile || new Blob([sourceText(state, asset) || item.name], { type: item.mimeType || "text/plain;charset=utf-8" });
     var url = URL.createObjectURL(blob);
     var link = document.createElement("a");
     link.href = url;
@@ -322,14 +314,20 @@
     overlay.toast("已开始下载", item.name, "success");
   }
 
-  function mount(root, route) {
+  function mount(root, route, state) {
+    if (route.id === "upload") {
+      OpsDemo.pages.knowledge.mountLocalImport(root, route, state || store.getState());
+      return;
+    }
     var search = root.querySelector("[data-local-document-search]");
     var status = root.querySelector("[data-local-document-status-filter]");
     if (search) search.addEventListener("input", function handle() { applyFilters(root); });
     if (status) status.addEventListener("change", function handle() { applyFilters(root); });
 
     var upload = root.querySelector("[data-local-document-upload]");
-    if (upload) upload.addEventListener("click", function handle() { openUploadDialog(store.getState()); });
+    if (upload) upload.addEventListener("click", function handle() {
+      router.navigate("local-documents/upload?step=upload");
+    });
 
     root.querySelectorAll("[data-local-document-preview]").forEach(function bind(button) {
       button.addEventListener("click", function handle() {

@@ -67,6 +67,33 @@
   }
 }
 
+@media (max-width: 640px) {
+  .main-pane.is-empty-chat {
+    padding: 28px 20px;
+  }
+
+  .chat-welcome h1 {
+    font-size: 20px;
+  }
+
+  .chat-welcome > p {
+    max-width: 360px;
+  }
+
+  .chat-welcome .composer-region {
+    margin-top: 28px;
+  }
+
+  .report-drawer .dialog-header {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .report-drawer .dialog-body {
+    padding: 20px 16px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

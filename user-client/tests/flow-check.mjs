@@ -12,12 +12,36 @@ vm.runInNewContext(fixtureSource, context);
 const data = context.window.CHAT_DEMO_DATA;
 const scenario = data.scenario;
 
+assert.deepEqual(
+  Array.from(data.sessions, (session) => session.id),
+  ['copper-decision', 'general-qa', 'report-reading-qa'],
+  'the client must seed the copper demonstration and two ordinary conversations'
+);
+assert.deepEqual(
+  Array.from(data.sessions.filter((session) => session.pinned), (session) => session.id),
+  ['copper-decision'],
+  'only the copper demonstration must be pinned by default'
+);
+const ordinarySessions = data.sessions.filter((session) => !session.pinned);
+assert.equal(ordinarySessions.length, 2, 'the conversation history must start with two ordinary conversations');
+assert.equal(ordinarySessions.find((session) => session.id === 'general-qa').title, '通用问答');
+assert.equal(ordinarySessions.find((session) => session.id === 'report-reading-qa').title, '分析结果解读');
+for (const session of ordinarySessions) {
+  assert.deepEqual(
+    Array.from(session.messages, (message) => message.role),
+    ['user', 'assistant', 'user', 'assistant'],
+    `${session.id} must contain two complete conversation turns`
+  );
+  assert.ok(session.messages.every((message) => typeof message.text === 'string' && message.text.trim()), `${session.id} messages must provide readable text`);
+}
+assert.ok(!('createdAt' in scenario), 'the conversation fixture must not retain header time metadata');
+
 assert.equal(data.outputProfiles.length, 3, 'the user client must seed three report templates');
-assert.equal(data.outputProfiles.filter((item) => item.isDefault).length, 1, 'exactly one seeded report template must be the default');
 for (const profile of data.outputProfiles) {
   assert.ok(profile.id && profile.name && profile.description, 'every report template must expose identity and description');
   assert.ok(!('scenario' in profile), `${profile.id} must use a description rather than a scenario field`);
   assert.ok(!('enabled' in profile), `${profile.id} must be active by definition rather than carry a status field`);
+  assert.ok(!('isDefault' in profile), `${profile.id} must not carry a default selection`);
   assert.ok(Array.isArray(profile.sections) && profile.sections.length > 0, `${profile.id} must contain report sections`);
   for (const section of profile.sections) {
     assert.ok(section.title, `${profile.id} must name every report section`);
@@ -51,6 +75,11 @@ assert.ok(!appSource.includes('minimumCharts'), 'template editing must not keep 
 assert.ok(!appSource.includes('failureFallback'), 'template editing must not keep chart fallback controls');
 assert.ok(!appSource.includes('toggle-template'), 'template management must not expose activation toggles');
 assert.ok(!appSource.includes('toggleTemplate'), 'template management must not keep activation-toggle logic');
+assert.ok(!appSource.includes('default-template'), 'template management must not expose a set-default action');
+assert.ok(!appSource.includes('setDefaultTemplate'), 'template management must not keep set-default logic');
+assert.ok(!appSource.includes('isDefault'), 'template management must not retain default flags or deletion protection');
+assert.ok(!appSource.includes('copy-link'), 'the conversation header must not keep the retired copy-link action');
+assert.ok(!appSource.includes("action === 'more'"), 'the conversation header must not keep the retired more action');
 assert.ok(!appSource.includes("icon('message-circle'"), 'conversation history must not render per-row icons');
 assert.ok(!appSource.includes('适用场景'), 'template management must use description language consistently');
 assert.ok(appSource.includes('data-template-chapter-chart'), 'template chapters must expose per-section chart controls');
@@ -161,7 +190,6 @@ for (const action of [
   'export-report',
   'create-template',
   'edit-template',
-  'default-template',
   'delete-template',
   'save-template',
   'add-template-chapter',
@@ -180,11 +208,8 @@ for (const sourceToken of [
   "function syncTemplateEditor()",
   "function collectTemplatePayload(editor)",
   "function saveTemplate()",
-  "function setDefaultTemplate(profile)",
   "function requestDeleteTemplate(profile)",
   "item.name.toLowerCase() === payload.name.toLowerCase()",
-  "profile.isDefault",
-  "item.isDefault = item.id === profile.id",
   "state.outputProfiles.splice(state.outputProfiles.indexOf(profile), 1)",
   "global.location.hash.match(/^#\\/templates"
 ]) {

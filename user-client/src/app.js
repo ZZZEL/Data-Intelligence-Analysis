@@ -9,10 +9,15 @@
   var app = document.getElementById('app');
   var dialogRoot = document.getElementById('dialog-root');
   var toastRoot = document.getElementById('toast-root');
+  var sessionMenuRoot = document.getElementById('session-menu-root');
+  var sessionMenuId = null;
+  var homeSession = { id: 'new', title: '新对话', isNew: true };
+  var sessionSequence = 0;
+  var dialogReturnFocus = null;
 
   var state = {
     view: 'chat',
-    activeSessionId: scenario.id,
+    activeSessionId: homeSession.id,
     templateRouteId: null,
     outputProfiles: JSON.parse(JSON.stringify(DATA.outputProfiles || [])),
     draggedChapter: null,
@@ -31,7 +36,9 @@
     thoughtRevisionTarget: scenario.interaction.target,
     thoughtEditorTarget: null,
     pendingFiles: [],
+    sessions: DATA.sessions.map(function copySession(session) { return Object.assign({}, session); }),
     customSessions: [],
+    sessionMessages: Object.create(null),
     customMessages: [],
     dialog: null
   };
@@ -167,13 +174,15 @@
   }
 
   function allSessions() {
-    return state.customSessions.concat(DATA.sessions);
+    return state.customSessions.concat(state.sessions);
   }
 
   function activeSession() {
-    return allSessions().find(function findSession(item) {
-      return item.id === state.activeSessionId;
-    }) || DATA.sessions[0];
+    return findSession(state.activeSessionId) || homeSession;
+  }
+
+  function findSession(id) {
+    return allSessions().find(function find(item) { return item.id === id; });
   }
 
   function sessionRoute(id) {
@@ -423,16 +432,125 @@
     document.title = '页面不存在 · ' + DATA.productName;
     dialogRoot.innerHTML = '';
     toastRoot.innerHTML = '';
-    app.innerHTML = '<main class="route-unavailable" aria-labelledby="route-unavailable-title"><span class="route-unavailable-icon">' + icon('file-question', 26) + '</span><p class="route-unavailable-code">404</p><h1 id="route-unavailable-title">页面不存在</h1><p>该地址没有可用页面。请进入轻量用户端继续使用。</p><a class="route-home-button" href="' + sessionRoute(scenario.id) + '">' + icon('message-square', 17) + '<span>进入轻量用户端</span></a></main>';
+    app.innerHTML = '<main class="route-unavailable" aria-labelledby="route-unavailable-title"><span class="route-unavailable-icon">' + icon('file-question', 26) + '</span><p class="route-unavailable-code">404</p><h1 id="route-unavailable-title">页面不存在</h1><p>该地址没有可用页面。请进入轻量用户端继续使用。</p><a class="route-home-button" href="' + sessionRoute(homeSession.id) + '">' + icon('message-square', 17) + '<span>进入轻量用户端</span></a></main>';
     hydrateIcons();
   }
 
-  function renderSidebar() {
-    var sessions = allSessions().map(function sessionRow(session) {
+  function renderSessionGroup(sessions, title, pinned) {
+    return '<section class="session-group" aria-label="' + title + '"><div class="sidebar-label">' + title + '</div><ol class="session-list' + (pinned ? ' session-list--pinned' : '') + '">' + sessions.map(function sessionRow(session) {
       var active = state.view === 'chat' && session.id === state.activeSessionId;
-      return '<li><button class="session-button ' + (active ? 'active' : '') + '" type="button" data-action="select-session" data-session-id="' + escapeHtml(session.id) + '" aria-current="' + (active ? 'page' : 'false') + '"><span class="session-title">' + escapeHtml(session.title) + '</span></button></li>';
-    }).join('');
-    return '<aside class="sidebar" aria-label="用户端导航"><div class="brand-row"><span class="brand-mark">' + icon('chart-no-axes-combined', 19) + '</span><span class="brand-name">' + escapeHtml(DATA.productName) + '</span></div><nav class="sidebar-primary-actions" aria-label="主要功能"><button class="new-chat-button" type="button" data-action="new-chat">' + icon('plus', 18) + '<span>新建对话</span></button><a class="sidebar-feature-link ' + (state.view === 'templates' ? 'active' : '') + '" href="' + templateRoute() + '" aria-current="' + (state.view === 'templates' ? 'page' : 'false') + '">' + icon('layout-template', 18) + '<span>报告模板</span>' + icon('chevron-right', 15) + '</a></nav><div class="sidebar-label">对话记录</div><ol class="session-list">' + sessions + '</ol><div class="user-account-menu" data-user-account-menu><button class="user-menu" type="button" data-action="user-menu" aria-expanded="false" aria-controls="user-account-popover" aria-label="打开账户菜单"><span class="avatar user">' + escapeHtml(DATA.user.name.slice(0, 1)) + '</span><span><strong>' + escapeHtml(DATA.user.name) + '</strong><small>' + escapeHtml(DATA.user.role) + '</small></span>' + icon('chevron-down', 16) + '</button><nav class="user-account-popover" id="user-account-popover" aria-label="账户操作" hidden><a class="user-account-popover__action" href="../ops-console/#/knowledge">' + icon('settings-2', 16) + '<span>运营端</span></a></nav></div></aside>';
+      var id = escapeHtml(session.id);
+      return '<li class="session-row' + (active ? ' active' : '') + '"><button class="session-button' + (active ? ' active' : '') + '" type="button" data-action="select-session" data-session-id="' + id + '" aria-current="' + (active ? 'page' : 'false') + '" title="' + escapeHtml(session.title) + '"><span class="session-title">' + escapeHtml(session.title) + '</span></button><button class="session-more-button" type="button" data-action="session-menu" data-session-id="' + id + '" aria-label="' + escapeHtml(session.title) + '的更多操作" aria-haspopup="menu" aria-expanded="false" aria-controls="session-popover">' + icon('ellipsis', 16) + '</button></li>';
+    }).join('') + '</ol></section>';
+  }
+
+  function renderSessionGroups() {
+    var sessions = allSessions();
+    var pinned = sessions.filter(function pinnedSession(session) { return session.pinned; });
+    var recent = sessions.filter(function recentSession(session) { return !session.pinned; });
+    return (pinned.length ? renderSessionGroup(pinned, '置顶', true) : '') + renderSessionGroup(recent, '对话记录', false);
+  }
+
+  function renderSidebar() {
+    return '<aside class="sidebar" aria-label="用户端导航"><a class="brand-row" href="' + sessionRoute(homeSession.id) + '" data-action="new-chat" aria-label="数据智能分析首页"><span class="brand-mark">' + icon('chart-no-axes-combined', 19) + '</span><span class="brand-name">' + escapeHtml(DATA.productName) + '</span></a><nav class="sidebar-primary-actions" aria-label="主要功能"><button class="new-chat-button" type="button" data-action="new-chat">' + icon('plus', 18) + '<span>新建对话</span></button><a class="sidebar-feature-link ' + (state.view === 'templates' ? 'active' : '') + '" href="' + templateRoute() + '" aria-current="' + (state.view === 'templates' ? 'page' : 'false') + '">' + icon('layout-template', 18) + '<span>报告模板</span>' + icon('chevron-right', 15) + '</a></nav><div class="sidebar-conversations">' + renderSessionGroups() + '</div><div class="user-account-menu" data-user-account-menu><button class="user-menu" type="button" data-action="user-menu" aria-expanded="false" aria-controls="user-account-popover" aria-label="打开账户菜单"><span class="avatar user">' + escapeHtml(DATA.user.name.slice(0, 1)) + '</span><span><strong>' + escapeHtml(DATA.user.name) + '</strong></span>' + icon('chevron-down', 16) + '</button><nav class="user-account-popover" id="user-account-popover" aria-label="账户操作" hidden><a class="user-account-popover__action" href="../ops-console/#/knowledge">' + icon('settings-2', 16) + '<span>运营端</span></a><button class="user-account-popover__action" type="button" data-action="logout">' + icon('log-out', 16) + '<span>退出登录</span></button></nav></div></aside>';
+  }
+
+  function sessionMenuTrigger(id) {
+    return Array.from(document.querySelectorAll('[data-action="session-menu"]')).find(function find(button) { return button.dataset.sessionId === id; });
+  }
+
+  function closeSessionMenu(restoreFocus) {
+    var trigger = sessionMenuTrigger(sessionMenuId);
+    sessionMenuRoot.innerHTML = '';
+    sessionMenuId = null;
+    if (trigger) {
+      trigger.setAttribute('aria-expanded', 'false');
+      trigger.closest('.session-row').classList.remove('is-menu-open');
+      if (restoreFocus) trigger.focus();
+    }
+  }
+
+  function openSessionMenu(id, trigger) {
+    if (sessionMenuId === id) { closeSessionMenu(true); return; }
+    closeSessionMenu();
+    var session = findSession(id);
+    if (!session) return;
+    sessionMenuId = id;
+    trigger.setAttribute('aria-expanded', 'true');
+    trigger.closest('.session-row').classList.add('is-menu-open');
+    sessionMenuRoot.innerHTML = '<nav id="session-popover" class="session-popover" role="menu" aria-label="对话操作"><button class="session-menu-action" type="button" role="menuitem" data-action="pin-session">' + icon(session.pinned ? 'pin-off' : 'pin', 16) + '<span>' + (session.pinned ? '取消置顶' : '置顶') + '</span></button><button class="session-menu-action" type="button" role="menuitem" data-action="rename-session">' + icon('pencil', 16) + '<span>重命名</span></button><button class="session-menu-action danger" type="button" role="menuitem" data-action="delete-session">' + icon('trash-2', 16) + '<span>删除</span></button></nav>';
+    hydrateIcons(sessionMenuRoot);
+    var menu = sessionMenuRoot.firstElementChild;
+    var rect = trigger.getBoundingClientRect();
+    var left = rect.right + 4;
+    menu.style.maxWidth = Math.max(0, global.innerWidth - left - 8) + 'px';
+    var top = Math.max(8, Math.min(rect.top, global.innerHeight - menu.offsetHeight - 8));
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+    menu.style.maxHeight = Math.max(80, global.innerHeight - top - 8) + 'px';
+    menu.querySelector('button').focus();
+  }
+
+  function refreshSessionSidebar(focusId) {
+    closeSessionMenu();
+    var container = document.querySelector('.sidebar-conversations');
+    if (!container) return;
+    var scrollTop = container.scrollTop;
+    container.innerHTML = renderSessionGroups();
+    container.scrollTop = scrollTop;
+    hydrateIcons(container);
+    if (focusId) {
+      var trigger = sessionMenuTrigger(focusId);
+      if (trigger) trigger.focus();
+    }
+  }
+
+  function requestRenameSession(session) {
+    if (!session) return;
+    closeSessionMenu(true);
+    state.dialog = { kind: 'rename-session', sessionId: session.id, title: '重命名对话', body: '<label class="session-rename-label" for="session-name">名称</label><input class="session-rename-input" id="session-name" maxlength="80" autocomplete="off" value="' + escapeHtml(session.title) + '" />' };
+    renderDialog();
+    var input = document.getElementById('session-name');
+    input.focus();
+    input.select();
+  }
+
+  function confirmRenameSession() {
+    var session = state.dialog && findSession(state.dialog.sessionId);
+    var input = document.getElementById('session-name');
+    if (!session || !input) return;
+    var name = input.value.trim();
+    if (!name) { showToast('请输入对话名称'); input.focus(); return; }
+    session.title = name.slice(0, 80);
+    var heading = state.view === 'chat' && state.activeSessionId === session.id && document.querySelector('.conversation-heading strong');
+    if (heading) heading.textContent = session.title;
+    state.dialog = null;
+    renderDialog();
+    refreshSessionSidebar(session.id);
+    showToast('对话已重命名');
+  }
+
+  function requestDeleteSession(session) {
+    if (!session) return;
+    closeSessionMenu(true);
+    state.dialog = { kind: 'confirm-session-delete', sessionId: session.id, title: '删除对话', body: '<p class="confirm-dialog-copy">确定删除“<strong>' + escapeHtml(session.title) + '</strong>”？删除后无法恢复。</p>' };
+    renderDialog();
+  }
+
+  function confirmDeleteSession() {
+    var session = state.dialog && findSession(state.dialog.sessionId);
+    if (!session) return;
+    state.sessions = state.sessions.filter(function keep(item) { return item.id !== session.id; });
+    state.customSessions = state.customSessions.filter(function keep(item) { return item.id !== session.id; });
+    delete state.sessionMessages[session.id];
+    state.dialog = null;
+    renderDialog();
+    if (state.view === 'chat' && state.activeSessionId === session.id) newChat();
+    else {
+      if (state.activeSessionId === session.id) { state.activeSessionId = homeSession.id; state.customMessages = []; }
+      refreshSessionSidebar();
+    }
+    showToast('对话已删除');
   }
 
   function renderTopbar() {
@@ -443,7 +561,7 @@
       var replayCopy = state.waitingFor ? '等待思考修订' : state.replaying ? '演示进行中' : '重新演示';
       replayButton = '<button class="text-button" type="button" data-action="replay-demo" ' + (state.replaying ? 'disabled' : '') + '>' + icon('refresh-cw', 16) + '<span data-replay-copy>' + replayCopy + '</span></button>';
     }
-    return '<header class="topbar"><div class="conversation-heading"><strong>' + escapeHtml(session.title) + '</strong><span>' + (isScenario ? escapeHtml(scenario.createdAt) : '当前对话') + '</span></div><div class="topbar-actions">' + replayButton + '<button class="icon-button" type="button" data-action="copy-link" aria-label="复制当前对话链接" title="复制当前对话链接">' + icon('link-2', 18) + '</button><button class="icon-button" type="button" data-action="more" aria-label="更多选项" title="更多选项">' + icon('ellipsis', 19) + '</button></div></header>';
+    return '<header class="topbar"><div class="conversation-heading"><strong>' + escapeHtml(session.title) + '</strong></div>' + (replayButton ? '<div class="topbar-actions">' + replayButton + '</div>' : '') + '</header>';
   }
 
   function normalizeTemplateSection(section) {
@@ -469,15 +587,14 @@
   function renderTemplateActions(profile) {
     return '<div class="template-row-actions">' +
       '<button type="button" data-action="edit-template" data-template-id="' + escapeHtml(profile.id) + '">编辑</button>' +
-      (profile.isDefault ? '' : '<button type="button" data-action="default-template" data-template-id="' + escapeHtml(profile.id) + '">设默认</button>') +
-      '<button class="is-danger" type="button" data-action="delete-template" data-template-id="' + escapeHtml(profile.id) + '"' + (profile.isDefault ? ' disabled title="默认模板不能删除"' : '') + '>删除</button></div>';
+      '<button class="is-danger" type="button" data-action="delete-template" data-template-id="' + escapeHtml(profile.id) + '">删除</button></div>';
   }
 
   function renderTemplateList() {
     var rows = state.outputProfiles.map(function renderProfile(profile) {
       var sections = (profile.sections || []).map(normalizeTemplateSection);
       var sectionNames = sections.map(function sectionTitle(section) { return section.title; });
-      return '<tr><td><div class="template-name-cell"><strong>' + escapeHtml(profile.name) + '</strong>' + (profile.isDefault ? '<span class="template-tag is-default">默认</span>' : '') + '</div></td><td>' + escapeHtml(profile.description) + '</td><td><strong>' + sections.length + ' 节</strong><small>' + escapeHtml(sectionNames.slice(0, 3).join('、')) + (sections.length > 3 ? '…' : '') + '</small></td><td>' + renderTemplateActions(profile) + '</td></tr>';
+      return '<tr><td><div class="template-name-cell"><strong>' + escapeHtml(profile.name) + '</strong></div></td><td>' + escapeHtml(profile.description) + '</td><td><strong>' + sections.length + ' 节</strong><small>' + escapeHtml(sectionNames.slice(0, 3).join('、')) + (sections.length > 3 ? '…' : '') + '</small></td><td>' + renderTemplateActions(profile) + '</td></tr>';
     }).join('');
     var actions = '<button class="button primary" type="button" data-action="create-template">' + icon('plus', 16) + '新建模板</button>';
     return renderTemplateTopbar('报告模板', actions, false) +
@@ -517,7 +634,7 @@
     };
     var actions = '<button class="button" type="button" data-action="cancel-template-edit">取消</button><button class="button primary" type="button" data-action="save-template" data-template-id="' + escapeHtml(profile ? profile.id : '') + '">' + icon('check', 15) + (editing ? '保存' : '创建') + '</button>';
     return renderTemplateTopbar(editing ? '编辑报告模板' : '新建报告模板', actions, true) +
-      '<div class="template-page-scroll is-editor"><div class="template-editor" data-template-editor data-template-id="' + escapeHtml(profile ? profile.id : '') + '"><section class="template-editor-form"><div class="template-form-field"><label for="template-name">模板名称 <span aria-hidden="true">*</span></label><input id="template-name" class="template-field" maxlength="50" value="' + escapeHtml(current.name) + '" placeholder="例如：供应商风险研判报告" required aria-required="true" data-template-field="name"></div><div class="template-form-field"><label for="template-description">模板描述 <span aria-hidden="true">*</span></label><textarea id="template-description" class="template-field template-description-field" maxlength="160" rows="3" placeholder="简要说明模板的用途与内容，例如：用于评估供应商交付、履约及经营风险…" required aria-required="true" data-template-field="description">' + escapeHtml(current.description) + '</textarea></div><div class="template-form-field"><div class="template-chapter-heading"><label>章节 <span aria-hidden="true">*</span></label><button class="button" type="button" data-action="add-template-chapter">' + icon('plus', 14) + '新增章节</button></div><div class="template-chapter-list" data-template-chapter-list role="list" aria-label="报告章节">' + renderTemplateChapterRows(current.sections) + '</div></div></section><aside class="template-preview"><div class="template-preview-label">实时预览</div><article><h2 data-template-preview-title>' + escapeHtml(current.name || '报告标题') + '</h2><p data-template-preview-description>' + escapeHtml(current.description || '模板描述') + '</p><div data-template-preview-sections>' + renderTemplatePreviewSections(current.sections) + '</div></article></aside></div></div>';
+      '<div class="template-page-scroll is-editor"><div class="template-editor" data-template-editor data-template-id="' + escapeHtml(profile ? profile.id : '') + '"><section class="template-editor-form"><div class="template-form-field"><label for="template-name">名称 <span aria-hidden="true">*</span></label><input id="template-name" class="template-field" maxlength="50" value="' + escapeHtml(current.name) + '" placeholder="例如：供应商风险研判报告" required aria-required="true" data-template-field="name"></div><div class="template-form-field"><label for="template-description">描述 <span aria-hidden="true">*</span></label><textarea id="template-description" class="template-field template-description-field" maxlength="160" rows="3" placeholder="简要说明模板的用途与内容，例如：用于评估供应商交付、履约及经营风险…" required aria-required="true" data-template-field="description">' + escapeHtml(current.description) + '</textarea></div><div class="template-form-field"><div class="template-chapter-heading"><label>章节 <span aria-hidden="true">*</span></label><button class="button" type="button" data-action="add-template-chapter">' + icon('plus', 14) + '新增章节</button></div><div class="template-chapter-list" data-template-chapter-list role="list" aria-label="报告章节">' + renderTemplateChapterRows(current.sections) + '</div></div></section><aside class="template-preview"><article><h2 data-template-preview-title>' + escapeHtml(current.name || '报告标题') + '</h2><p data-template-preview-description>' + escapeHtml(current.description || '描述') + '</p><div data-template-preview-sections>' + renderTemplatePreviewSections(current.sections) + '</div></article></aside></div></div>';
   }
 
   function syncTemplateEditor() {
@@ -539,7 +656,7 @@
       row.setAttribute('aria-setsize', String(rows.length));
     });
     var name = editor.querySelector('[data-template-field="name"]').value.trim() || '报告标题';
-    var description = editor.querySelector('[data-template-field="description"]').value.trim() || '模板描述';
+    var description = editor.querySelector('[data-template-field="description"]').value.trim() || '描述';
     var sections = rows.map(function chapterValue(row) {
       return {
         title: row.querySelector('[data-template-chapter-name]').value.trim(),
@@ -552,6 +669,7 @@
   }
 
   function renderTemplateShell(routeId) {
+    closeSessionMenu();
     state.view = 'templates';
     state.templateRouteId = routeId || null;
     state.dialog = null;
@@ -612,12 +730,17 @@
     return '<div class="thread">' + renderUserQuestion() + renderAnalysisMessage() + renderCustomMessages() + '</div>';
   }
 
-  function renderEmptyThread() {
+  function renderSessionThread() {
     var session = activeSession();
-    if (session.id !== scenario.id && !session.isNew) {
-      return '<div class="thread"><article class="message user-message"><div class="user-bubble"><p>请继续分析“' + escapeHtml(session.title) + '”，并给出可执行的下一步建议。</p></div></article><article class="message assistant-message"><span class="avatar assistant">' + icon('sparkles', 17) + '</span><div class="assistant-content"><div class="assistant-label">数据智能分析 <span>历史记录</span></div><div class="markdown-body">' + renderMarkdown('该对话用于展示会话切换。铜采购案例包含连续的深度分析过程、必要补充和报告生成流程。') + '</div></div></article></div>';
-    }
-    return '<div class="thread"><div class="empty-chat"><span class="empty-mark">' + icon('sparkles', 22) + '</span><h1>开始一次数据智能分析</h1><p>输入问题并上传资料，我会先理解目标、确认分析思路，再制定执行计划。</p></div>' + renderCustomMessages() + '</div>';
+    return '<div class="thread">' + (session.messages || []).map(renderCustomMessage).join('') + renderCustomMessages() + '</div>';
+  }
+
+  function isEmptyChat() {
+    return state.activeSessionId === homeSession.id;
+  }
+
+  function renderChatWelcome() {
+    return '<section class="chat-welcome" aria-labelledby="chat-welcome-title"><span class="empty-mark">' + icon('sparkles', 22) + '</span><h1 id="chat-welcome-title">开始一次数据智能分析</h1><p>输入问题并上传资料，我会先理解目标、确认分析思路，再制定执行计划。</p>' + renderComposer() + '</section>';
   }
 
   function renderPendingFileItems() {
@@ -640,12 +763,15 @@
   }
 
   function renderShell(options) {
+    closeSessionMenu();
     var settings = options || {};
     state.view = 'chat';
     state.templateRouteId = null;
     var isScenario = state.activeSessionId === scenario.id;
+    var emptyChat = isEmptyChat();
     document.title = DATA.productName;
-    app.innerHTML = '<div class="chat-shell">' + renderSidebar() + '<main class="main-pane">' + renderTopbar() + '<div class="thread-scroll" id="thread-scroll">' + (isScenario ? renderScenarioThread() : renderEmptyThread()) + '</div>' + renderComposer() + '</main></div>';
+    var content = emptyChat ? renderChatWelcome() : renderTopbar() + '<div class="thread-scroll" id="thread-scroll">' + (isScenario ? renderScenarioThread() : renderSessionThread()) + '</div>' + renderComposer();
+    app.innerHTML = '<div class="chat-shell">' + renderSidebar() + '<main class="main-pane' + (emptyChat ? ' is-empty-chat' : '') + '">' + content + '</main></div>';
     hydrateIcons();
     syncRoute();
     global.requestAnimationFrame(function finishRender() {
@@ -1210,17 +1336,28 @@
     runInitialReplay(state.runId);
   }
 
-  function newChat() {
+  function selectSession(id, focusComposer) {
     stopReplay();
+    closeSessionMenu();
+    state.dialog = null;
+    renderDialog();
     state.view = 'chat';
-    var id = 'new-' + Date.now();
-    state.customSessions.unshift({ id: id, title: '新对话', isNew: true });
     state.activeSessionId = id;
-    state.customMessages = [];
+    state.customMessages = id === homeSession.id ? [] : (state.sessionMessages[id] || (state.sessionMessages[id] = []));
     state.pendingFiles = [];
+    state.stage = scenario.result.stage;
     state.waitingFor = null;
     state.composerDraft = '';
-    renderShell({ focusComposer: true });
+    state.thoughtRevision = '';
+    state.thoughtDraft = scenario.interaction.originalText;
+    state.thoughtRevisionTarget = scenario.interaction.target;
+    state.thoughtEditorOpen = false;
+    state.thoughtEditorTarget = null;
+    renderShell({ focusComposer: Boolean(focusComposer) });
+  }
+
+  function newChat() {
+    selectSession(homeSession.id, true);
   }
 
   function fileType(name) {
@@ -1266,22 +1403,34 @@
       return;
     }
     var files = state.pendingFiles.map(function copyFile(file) { return Object.assign({}, file); });
+    var wasEmptyChat = isEmptyChat();
+    if (wasEmptyChat) {
+      var newId = 'session-' + Date.now() + '-' + (++sessionSequence);
+      state.customSessions.unshift({ id: newId, title: (text || (files[0] && files[0].name) || '新对话').slice(0, 18) });
+      state.activeSessionId = newId;
+      state.customMessages = [];
+      state.sessionMessages[newId] = state.customMessages;
+    }
     var userMessage = { role: 'user', text: text || '请分析这些文件。', files: files };
     state.customMessages.push(userMessage);
     state.pendingFiles = [];
     state.composerDraft = '';
-    appendMessageHtml(renderCustomMessage(userMessage));
-    updatePendingFiles();
-    updateComposer();
     var session = activeSession();
-    if (session.isNew && session.title === '新对话') {
-      session.title = (text || (files[0] && files[0].name) || '新分析').slice(0, 18);
-    patchActiveSessionCopy(session);
+    if (wasEmptyChat) {
+      renderShell({ scrollToBottom: true, focusComposer: true });
+    } else {
+      appendMessageHtml(renderCustomMessage(userMessage));
+      updatePendingFiles();
+      updateComposer();
+      patchActiveSessionCopy(session);
     }
     global.setTimeout(function simulatedReply() {
-      if (state.activeSessionId !== session.id) return;
+      if (!findSession(session.id)) return;
       var reply = '已收到补充内容。在真实接入中，我会把它并入当前会话上下文，重新判断是否需要调整分析思路或更新后续计划。';
-      state.customMessages.push({ role: 'assistant', text: reply });
+      var replies = state.sessionMessages[session.id];
+      if (!replies) return;
+      replies.push({ role: 'assistant', text: reply });
+      if (state.view !== 'chat' || state.activeSessionId !== session.id) return;
       var message = appendMessageHtml('<article class="message assistant-message"><span class="avatar assistant">' + icon('sparkles', 17) + '</span><div class="assistant-content"><div class="assistant-label">数据智能分析</div><div class="markdown-body" data-custom-stream></div></div></article>');
       var target = message && message.querySelector('[data-custom-stream]');
       if (target) appendMarkdownChunk(target, reply, state.runId, { maxDuration: 1600 });
@@ -1312,14 +1461,14 @@
     var current = profileId ? findOutputProfile(profileId) : null;
     var payload = collectTemplatePayload(editor);
     if (!payload.name || !payload.description || !payload.sections.length) {
-      showToast('请完善模板名称、模板描述和至少一个章节');
+      showToast('请完善名称、描述和至少一个章节');
       return;
     }
     var duplicate = state.outputProfiles.some(function sameName(item) {
       return item.id !== profileId && item.name.toLowerCase() === payload.name.toLowerCase();
     });
     if (duplicate) {
-      showToast('模板名称需保持唯一');
+      showToast('名称需保持唯一');
       editor.querySelector('[data-template-field="name"]').focus();
       return;
     }
@@ -1337,7 +1486,6 @@
         id: 'OUT-' + String(nextNumber).padStart(2, '0'),
         name: payload.name,
         description: payload.description,
-        isDefault: state.outputProfiles.length === 0,
         sections: payload.sections
       });
     }
@@ -1345,19 +1493,8 @@
     showToast(current ? '模板已更新' : '模板已创建');
   }
 
-  function setDefaultTemplate(profile) {
-    if (!profile) return;
-    state.outputProfiles.forEach(function updateDefault(item) { item.isDefault = item.id === profile.id; });
-    renderTemplateShell();
-    showToast(profile.name + ' 已设为默认模板');
-  }
-
   function requestDeleteTemplate(profile) {
     if (!profile) return;
-    if (profile.isDefault) {
-      showToast('默认模板不能删除');
-      return;
-    }
     state.dialog = {
       kind: 'confirm-template-delete',
       templateId: profile.id,
@@ -1369,7 +1506,7 @@
 
   function confirmDeleteTemplate() {
     var profile = state.dialog && findOutputProfile(state.dialog.templateId);
-    if (!profile || profile.isDefault) return;
+    if (!profile) return;
     state.outputProfiles.splice(state.outputProfiles.indexOf(profile), 1);
     state.dialog = null;
     renderDialog();
@@ -1383,20 +1520,47 @@
 
   function openDocument(documentId) {
     var documentItem = activeResult().documents.find(function item(value) { return value.id === documentId; });
-    state.dialog = { title: documentItem ? documentItem.name : '铜采购签约决策分析报告', body: reportBody() };
+    state.dialog = { kind: 'report-preview', title: documentItem ? documentItem.name : '铜采购签约决策分析报告', body: reportBody() };
+    renderDialog();
+  }
+
+  function requestLogout() {
+    setUserMenuOpen(false, true);
+    state.dialog = {
+      kind: 'confirm-logout',
+      title: '退出登录',
+      body: '<p class="confirm-dialog-copy">确认退出当前账户？</p><p class="confirm-dialog-copy">当前为演示模式，退出操作不会结束本地会话。</p>'
+    };
     renderDialog();
   }
 
   function renderDialog() {
     if (!state.dialog) {
       dialogRoot.innerHTML = '';
+      if (dialogReturnFocus && dialogReturnFocus.isConnected) dialogReturnFocus.focus();
+      dialogReturnFocus = null;
       return;
     }
+    if (!dialogRoot.querySelector('[role="dialog"]')) dialogReturnFocus = document.activeElement;
     var confirmDelete = state.dialog.kind === 'confirm-template-delete';
-    var footer = confirmDelete
+    var confirmLogout = state.dialog.kind === 'confirm-logout';
+    var confirmSessionDelete = state.dialog.kind === 'confirm-session-delete';
+    var renameSession = state.dialog.kind === 'rename-session';
+    var reportPreview = state.dialog.kind === 'report-preview';
+    var footer = renameSession
+      ? '<button class="button" type="button" data-action="close-dialog">取消</button><button class="button primary" type="button" data-action="confirm-rename-session">保存</button>'
+      : confirmSessionDelete
+      ? '<button class="button" type="button" data-action="close-dialog">取消</button><button class="button danger" type="button" data-action="confirm-delete-session">删除</button>'
+      : confirmDelete
       ? '<button class="button" type="button" data-action="close-dialog">取消</button><button class="button danger" type="button" data-action="confirm-delete-template">删除</button>'
-      : '<button class="button" type="button" data-action="close-dialog">关闭</button><button class="button primary" type="button" data-action="export-report">' + icon('download', 15) + '下载报告</button>';
-    dialogRoot.innerHTML = '<div class="dialog-backdrop" data-action="close-dialog" role="presentation"><section class="dialog ' + (confirmDelete ? 'dialog--confirm' : '') + '" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><header class="dialog-header"><h2 id="dialog-title">' + escapeHtml(state.dialog.title) + '</h2><button class="icon-button" type="button" data-action="close-dialog" aria-label="关闭">' + icon('x', 19) + '</button></header><div class="dialog-body">' + state.dialog.body + '</div><footer class="dialog-footer">' + footer + '</footer></section></div>';
+      : confirmLogout
+      ? '<button class="button" type="button" data-action="close-dialog">取消</button><button class="button primary" type="button" data-action="confirm-logout">确认退出</button>'
+      : '';
+    var closeAction = '<button class="icon-button" type="button" data-action="close-dialog" aria-label="关闭">' + icon('x', 19) + '</button>';
+    var headerActions = reportPreview
+      ? '<div class="report-drawer__actions"><button class="button" type="button" data-action="export-report">' + icon('download', 15) + '下载报告</button>' + closeAction + '</div>'
+      : closeAction;
+    dialogRoot.innerHTML = '<div class="dialog-backdrop' + (reportPreview ? ' report-drawer-backdrop' : '') + '" data-action="close-dialog" role="presentation"><section class="dialog ' + (reportPreview ? 'report-drawer' : 'dialog--confirm') + '" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><header class="dialog-header"><h2 id="dialog-title">' + escapeHtml(state.dialog.title) + '</h2>' + headerActions + '</header><div class="dialog-body"' + (reportPreview ? ' tabindex="0" aria-label="报告内容"' : '') + '>' + state.dialog.body + '</div>' + (reportPreview ? '' : '<footer class="dialog-footer">' + footer + '</footer>') + '</section></div>';
     hydrateIcons(dialogRoot);
     var closeButton = dialogRoot.querySelector('.dialog-header .icon-button');
     if (closeButton) closeButton.focus();
@@ -1425,11 +1589,34 @@
 
   document.addEventListener('click', function handleClick(event) {
     if (!event.target.closest('[data-user-account-menu]')) setUserMenuOpen(false);
+    if (!event.target.closest('#session-menu-root, [data-action="session-menu"]')) closeSessionMenu();
     var control = event.target.closest('[data-action]');
     if (!control) return;
     var action = control.dataset.action;
+    if (action === 'session-menu') { openSessionMenu(control.dataset.sessionId, control); return; }
+    if (action === 'pin-session') {
+      var session = findSession(sessionMenuId);
+      if (!session) return;
+      session.pinned = !session.pinned;
+      refreshSessionSidebar(session.id);
+      return;
+    }
+    if (action === 'rename-session') { requestRenameSession(findSession(sessionMenuId)); return; }
+    if (action === 'delete-session') { requestDeleteSession(findSession(sessionMenuId)); return; }
+    if (action === 'confirm-rename-session') { confirmRenameSession(); return; }
+    if (action === 'confirm-delete-session') { confirmDeleteSession(); return; }
     if (action === 'user-menu') {
       setUserMenuOpen(control.getAttribute('aria-expanded') !== 'true');
+      return;
+    }
+    if (action === 'logout') {
+      requestLogout();
+      return;
+    }
+    if (action === 'confirm-logout') {
+      state.dialog = null;
+      renderDialog();
+      showToast('演示模式未接入登录，当前会话保持不变');
       return;
     }
     if (action === 'create-template') {
@@ -1438,10 +1625,6 @@
     }
     if (action === 'edit-template') {
       navigateToTemplate(control.dataset.templateId);
-      return;
-    }
-    if (action === 'default-template') {
-      setDefaultTemplate(findOutputProfile(control.dataset.templateId));
       return;
     }
     if (action === 'delete-template') {
@@ -1479,23 +1662,12 @@
       return;
     }
     if (action === 'new-chat') {
+      event.preventDefault();
       newChat();
       return;
     }
     if (action === 'select-session') {
-      stopReplay();
-      state.activeSessionId = control.dataset.sessionId;
-      state.customMessages = [];
-      state.pendingFiles = [];
-      state.stage = scenario.result.stage;
-      state.waitingFor = null;
-      state.composerDraft = '';
-      state.thoughtRevision = '';
-      state.thoughtDraft = scenario.interaction.originalText;
-      state.thoughtRevisionTarget = scenario.interaction.target;
-      state.thoughtEditorOpen = false;
-      state.thoughtEditorTarget = null;
-      renderShell();
+      if (findSession(control.dataset.sessionId)) selectSession(control.dataset.sessionId);
       return;
     }
     if (action === 'replay-demo') {
@@ -1543,16 +1715,11 @@
       exportReport();
       return;
     }
-    if (action === 'copy-link') {
-      if (navigator.clipboard) navigator.clipboard.writeText(global.location.href);
-      showToast('当前对话链接已复制');
-      return;
-    }
-    if (action === 'more') showToast('演示中暂不提供更多设置');
   });
 
   document.addEventListener('focusin', function handleAccountFocus(event) {
     if (!event.target.closest('[data-user-account-menu]')) setUserMenuOpen(false);
+    if (!event.target.closest('#session-menu-root, [data-action="session-menu"]')) closeSessionMenu();
   });
 
   document.addEventListener('change', function handleChange(event) {
@@ -1585,16 +1752,43 @@
   });
 
   document.addEventListener('keydown', function handleKeydown(event) {
+    if (sessionMenuId) {
+      if (event.key === 'Escape') { event.preventDefault(); closeSessionMenu(true); return; }
+      if (event.key === 'Tab') { closeSessionMenu(true); return; }
+      var menuButtons = Array.from(sessionMenuRoot.querySelectorAll('[role="menuitem"]'));
+      if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+        event.preventDefault();
+        var index = menuButtons.indexOf(document.activeElement);
+        var next = event.key === 'Home' ? 0 : event.key === 'End' ? menuButtons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + menuButtons.length) % menuButtons.length;
+        if (menuButtons[next]) menuButtons[next].focus();
+        return;
+      }
+    }
+    if (event.target.id === 'session-name' && event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); confirmRenameSession(); return; }
     if (event.key === 'Escape' && document.querySelector('[data-action="user-menu"][aria-expanded="true"]')) {
       setUserMenuOpen(false, true);
       return;
     }
     if (event.key === 'Escape' && state.dialog) {
+      event.preventDefault();
       state.dialog = null;
       renderDialog();
       return;
     }
-    if (event.target.id === 'composer-input' && event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Tab' && state.dialog) {
+      var dialog = dialogRoot.querySelector('[role="dialog"]');
+      var focusable = dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), a[href], [tabindex="0"]');
+      var first = focusable[0];
+      var last = focusable[focusable.length - 1];
+      if (!dialog.contains(document.activeElement) || (event.shiftKey && document.activeElement === first)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    if (event.target.id === 'composer-input' && event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
       event.preventDefault();
       sendMessage();
     }
@@ -1654,49 +1848,33 @@
   });
 
   function handleRoute() {
-    if (!global.location.hash || global.location.hash === '#') {
-      stopReplay();
-      state.activeSessionId = scenario.id;
-      state.stage = scenario.result.stage;
-      state.waitingFor = null;
-      state.composerDraft = '';
-      state.thoughtRevision = '';
-      state.thoughtDraft = scenario.interaction.originalText;
-      state.thoughtRevisionTarget = scenario.interaction.target;
-      state.thoughtEditorOpen = false;
-      state.thoughtEditorTarget = null;
-      renderShell();
+    closeSessionMenu();
+    state.dialog = null;
+    renderDialog();
+    if (!global.location.hash || global.location.hash === '#' || global.location.hash === '#/' || global.location.hash === sessionRoute(homeSession.id)) {
+      selectSession(homeSession.id);
       return;
     }
     var templateMatch = global.location.hash.match(/^#\/templates(?:\/([^/]+))?$/);
     if (templateMatch) {
       stopReplay();
-      renderTemplateShell(templateMatch[1] ? decodeURIComponent(templateMatch[1]) : null);
+      try { renderTemplateShell(templateMatch[1] ? decodeURIComponent(templateMatch[1]) : null); }
+      catch (error) { if (!(error instanceof URIError)) throw error; renderUnavailableRoute(); }
       return;
     }
     var match = global.location.hash.match(/^#\/chat\/(.+)$/);
-    if (!match) {
-      renderUnavailableRoute();
-      return;
-    }
-    var id = decodeURIComponent(match[1]);
-    var exists = allSessions().some(function sessionExists(item) { return item.id === id; });
-    if (!exists) {
-      renderUnavailableRoute();
-      return;
-    }
-    stopReplay();
-    state.activeSessionId = id;
-    state.stage = scenario.result.stage;
-    state.waitingFor = null;
-    state.composerDraft = '';
-    state.thoughtRevision = '';
-    state.thoughtDraft = scenario.interaction.originalText;
-    state.thoughtRevisionTarget = scenario.interaction.target;
-    state.thoughtEditorOpen = false;
-    state.thoughtEditorTarget = null;
-    renderShell();
+    if (!match) { renderUnavailableRoute(); return; }
+    var id;
+    try { id = decodeURIComponent(match[1]); }
+    catch (error) { renderUnavailableRoute(); return; }
+    if (!findSession(id)) { renderUnavailableRoute(); return; }
+    selectSession(id);
   }
+
+  global.addEventListener('resize', function closeMenuOnResize() { closeSessionMenu(); });
+  document.addEventListener('scroll', function closeMenuOnScroll(event) {
+    if (sessionMenuId && !sessionMenuRoot.contains(event.target)) closeSessionMenu();
+  }, true);
 
   global.addEventListener('hashchange', handleRoute);
   handleRoute();

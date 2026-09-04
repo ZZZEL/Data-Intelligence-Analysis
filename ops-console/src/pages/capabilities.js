@@ -611,7 +611,7 @@
     generate_district_map: { data: { name: "上海市", dataType: "number", dataLabel: "供应商数量", dataValueUnit: "家", showAllSubdistricts: true, subdistricts: [{ name: "浦东新区", dataValue: "42" }, { name: "闵行区", dataValue: "28" }, { name: "徐汇区", dataValue: "19" }] } },
     generate_pin_map: { data: ["上海市徐汇区西岸智能谷", "苏州市工业园区金鸡湖大道", "杭州市余杭区未来科技城"] },
     generate_path_map: { data: [{ data: ["上海洋山深水港", "苏州工业园区", "合肥新桥机场"] }] },
-    generate_organization_chart: { data: { name: "数据智能中心", description: "运营与研判", children: [{ name: "知识运营组" }, { name: "分析口径组" }, { name: "能力管理组" }] } },
+    generate_organization_chart: { data: { name: "数据智能中心", description: "运营与研判", children: [{ name: "知识运营组" }, { name: "数据分析组" }, { name: "能力管理组" }] } },
     generate_mind_map: { data: { name: "供应商风险", children: [{ name: "交付", children: [{ name: "准时率" }, { name: "产能" }] }, { name: "质量", children: [{ name: "退货率" }, { name: "整改" }] }, { name: "合规" }] } },
     generate_radar_chart: { data: [{ name: "交付", value: 86, group: "A 供应商" }, { name: "质量", value: 92, group: "A 供应商" }, { name: "合规", value: 78, group: "A 供应商" }, { name: "产能", value: 84, group: "A 供应商" }, { name: "交付", value: 72, group: "B 供应商" }, { name: "质量", value: 81, group: "B 供应商" }, { name: "合规", value: 88, group: "B 供应商" }, { name: "产能", value: 69, group: "B 供应商" }] },
     generate_funnel_chart: { data: [{ category: "全部供应商", value: 240 }, { category: "完成初审", value: 176 }, { category: "进入复审", value: 108 }, { category: "通过认证", value: 72 }] },
