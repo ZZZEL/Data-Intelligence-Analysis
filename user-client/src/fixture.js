@@ -14,6 +14,16 @@
         pinned: true
       },
       {
+        id: 'supply-chain-kb-qa',
+        title: '供应链知识库问答',
+        messages: [
+          { role: 'user', text: '供应商风险评估应覆盖哪些维度？' },
+          { role: 'assistant', text: '可以按六个维度先做结构化评估：\n\n1. **经营稳定性**：注册信息、财务健康、产能利用率和重大诉讼。\n2. **交付能力**：准时交付率、产能弹性、物流时效和异常升级机制。\n3. **质量表现**：来料合格率、批次追溯、纠正预防措施和现场审核结果。\n4. **合规与 ESG**：资质、环保、安全生产、劳工与数据合规。\n5. **供应连续性**：关键物料、二级供应商、区域集中度和替代方案。\n6. **协同能力**：预测响应、系统对接、库存透明度和联合改善记录。\n\n高风险项应落到整改责任、复核时间和是否暂停合作的触发条件。' },
+          { role: 'user', text: '新员工学习供应链管理，应该先看哪些资料？' },
+          { role: 'assistant', text: '建议先按“理论、流程、数据、案例”四步阅读。\n\n先看《供应链管理基础理论手册》建立采购、库存、物流和协同的基本概念；再看《供应商管理流程规范》《采购成本控制指南》《物流配送操作手册》，把日常流程和职责边界串起来；随后用《库存与采购数据》和《供应商基本信息》练习字段理解与基础分析；最后阅读趋势白皮书、数字化案例集和培训 PPT，把实务问题放到韧性建设与数字化转型的背景下理解。' }
+        ]
+      },
+      {
         id: 'general-qa',
         title: '通用问答',
         messages: [
@@ -34,59 +44,39 @@
         ]
       }
     ],
-    outputProfiles: [
-      {
-        id: 'OUT-01',
-        name: '供应商风险研判报告',
-        description: '用于评估供应商交付能力、履约表现与潜在经营风险。',
-        sections: [
-          { title: '摘要', includeChart: false },
-          { title: '关键事实', includeChart: false },
-          { title: '趋势', includeChart: true },
-          { title: '情景', includeChart: true },
-          { title: '业务影响', includeChart: false },
-          { title: '建议', includeChart: false },
-          { title: '限制说明', includeChart: false }
-        ]
-      },
-      {
-        id: 'OUT-02',
-        name: '政策影响快报',
-        description: '用于快速梳理关税及贸易政策变化对业务的影响。',
-        sections: [
-          { title: '政策摘要', includeChart: false },
-          { title: '变化点', includeChart: false },
-          { title: '受影响对象', includeChart: false },
-          { title: '情景测算', includeChart: true },
-          { title: '应对建议', includeChart: false },
-          { title: '限制说明', includeChart: false }
-        ]
-      },
-      {
-        id: 'OUT-03',
-        name: '供应商履约复盘报告',
-        description: '用于复盘供应商履约过程、关键风险信号与改进建议。',
-        sections: [
-          { title: '摘要', includeChart: false },
-          { title: '关键事实', includeChart: false },
-          { title: '风险信号时间线', includeChart: true },
-          { title: '趋势', includeChart: true },
-          { title: '情景', includeChart: false },
-          { title: '业务影响', includeChart: false },
-          { title: '建议', includeChart: false },
-          { title: '限制说明', includeChart: false }
-        ]
-      }
-    ],
+    agentApiAccess: {
+      clients: [
+        {
+          id: 'AGENT-API-001',
+          name: '供应商风险工作台',
+          apiType: 'agent',
+          keyMasked: 'sk_agent_•••••••6F2K',
+          lastUsedAt: '2026-08-25T14:18:00+08:00',
+          createdAt: '2026-03-18T09:30:00+08:00',
+          enabled: true,
+          status: 'active'
+        },
+        {
+          id: 'AGENT-API-002',
+          name: '经营分析门户',
+          apiType: 'agent',
+          keyMasked: 'sk_agent_•••••••A9D4',
+          lastUsedAt: '2026-08-24T16:42:00+08:00',
+          createdAt: '2026-04-02T14:10:00+08:00',
+          enabled: false,
+          status: 'disabled'
+        }
+      ]
+    },
     scenario: {
       id: 'copper-decision',
       title: '铜采购中标后的签约决策',
       originalQuestion: '我司刚刚中标华东某大型铜加工企业的年度电解铜采购项目，首批供货量为 2,000 吨，中标价为 68,500 元/吨，须在 5 个工作日内签约。若不签约，将损失 200 万元保证金，并暂停未来 2 年的投标资格。为锁定成本，我们已买入 400 手 CU2401 合约，成交均价 68,440 元/吨。但签约前华东现货供应突然收紧，贸易商最新报盘已经超过 69,500 元/吨，部分规格断档；同期 CU2401 仅上涨至 68,500 元/吨。请结合上传材料和市场信息，比较按原价签约、放弃签约、先协商调整条款三种方案，并给出最终建议。如果关键事实不足，请先向我确认。',
       attachments: [
-        { name: '中标通知书.pdf', size: '1.2 MB', type: 'pdf' },
-        { name: '招标文件及合同草案.pdf', size: '3.8 MB', type: 'pdf' },
-        { name: 'CU2401持仓明细.xlsx', size: '26 KB', type: 'xlsx' },
-        { name: '华东现货报价汇总.xlsx', size: '34 KB', type: 'xlsx' }
+        { id: 'bid-notice', name: '中标通知书.pdf', size: '1.2 MB', type: 'pdf' },
+        { id: 'contract-draft', name: '招标文件及合同草案.pdf', size: '3.8 MB', type: 'pdf' },
+        { id: 'position-ledger', name: 'CU2401持仓明细.xlsx', size: '26 KB', type: 'xlsx' },
+        { id: 'spot-quotes', name: '华东现货报价汇总.xlsx', size: '34 KB', type: 'xlsx' }
       ],
       rewrittenQuery: '请在 5 个工作日的签约窗口内，基于中标材料、CU2401 持仓、最新现货报价、企业制度及公开市场信息，统一比较按原中标价签约履约、放弃签约、先协商调整交付或定价条款三条路径。分析应核验货源与交付可行性，测算当前可见损益和待补充成本，识别套保失效原因，明确期现头寸处理原则，并形成带前置条件和退出条件的决策建议。',
       displayCapabilityIds: ['knowledge', 'web', 'calculation'],
@@ -205,6 +195,37 @@
           completedTitle: '市场信号已交叉核验',
           capability: 'Web Search · 外部信源检索 Tool',
           summary: '仓单集中注销、现货升水扩大和部分规格断档相互印证，供应收紧并非单一贸易商报价波动。',
+          searchQuery: '华东电解铜现货升水、仓单变化与可交割规格',
+          searchResults: [
+            {
+              id: 'shfe-warehouse-daily',
+              source: '上海期货交易所',
+              title: '铜仓单日报',
+              snippet: '核对华东交割仓库注册与注销变化，判断可交割货源是否收紧。',
+              url: 'https://www.shfe.com.cn/reports/tradedata/dailyandweeklydata/'
+            },
+            {
+              id: 'east-china-premium',
+              source: 'SMM',
+              title: '华东电解铜现货升贴水',
+              snippet: '跟踪华东现货升贴水、品牌价差与成交表现，验证区域基差变化。',
+              url: 'https://www.smm.cn/copper'
+            },
+            {
+              id: 'cu2401-market',
+              source: '上海期货交易所',
+              title: '铜期货行情 CU2401',
+              snippet: '查看期货价格与持仓变化，用于对照现货升水和套保头寸。',
+              url: 'https://www.shfe.com.cn/'
+            },
+            {
+              id: 'inventory-arrivals',
+              source: 'SMM',
+              title: '国内电解铜库存与到货观察',
+              snippet: '交叉核验库存、进口到货和下游补库节奏，判断紧张是否持续。',
+              url: 'https://www.smm.cn/'
+            }
+          ],
           progress: [
             '正在检索 CU2401 市场行情',
             '正在检索华东交割仓库仓单变化',
@@ -319,6 +340,37 @@
             runName: 'Web Search',
             runningTitle: '正在重新查验可执行货源…',
             completedTitle: '可锁货源与基差信号已更新',
+            searchQuery: '华东电解铜可锁报价、认可仓库与到厂条件',
+            searchResults: [
+              {
+                id: 'tradable-quotes',
+                source: 'SMM',
+                title: '华东主流品牌可成交报价',
+                snippet: '比较品牌、数量和报价有效期，筛出可形成锁量条件的现货线索。',
+                url: 'https://www.smm.cn/copper'
+              },
+              {
+                id: 'deliverable-brands',
+                source: '上海期货交易所',
+                title: '铜交割品牌与指定仓库',
+                snippet: '核对交割品牌、仓库资格与客户认可范围，排除不可执行资源。',
+                url: 'https://www.shfe.com.cn/'
+              },
+              {
+                id: 'warehouse-daily-revised',
+                source: '上海期货交易所',
+                title: '上海地区铜仓单日报',
+                snippet: '查看注册仓单和注销节奏，为仓库提货与延期交付方案提供依据。',
+                url: 'https://www.shfe.com.cn/reports/tradedata/dailyandweeklydata/'
+              },
+              {
+                id: 'east-china-logistics',
+                source: '公开市场信息',
+                title: '华东电解铜物流与到厂时效',
+                snippet: '补充不同仓库至客户工厂的运输时效与条件，验证交付窗口。',
+                url: 'https://www.smm.cn/'
+              }
+            ],
             progress: [
               '正在检索不同品牌的有效报价',
               '正在核对认可仓库与可交割规格',
@@ -355,14 +407,14 @@
         result: {
           conclusion: '修订后的优先路径是：在签约窗口前段并行推进条款协商、内部授权和可执行锁货；只有综合改善达到阈值且完整成本可封顶时才签约，否则触发退出。',
           summary: [
-            '新的分析不再把三种方案平均排列。先协商交付弹性并同步取得有约束力的货源报价是主路径；按原条款签约和弃标分别作为“条件满足”与“条件失败”时的分支。',
-            '建议把 300—500 元/吨的综合改善作为首轮协商目标，可由调价、扩大认可品牌与仓库、分批交付或延后交期组合实现。若客户让步无法转化为可验证的成本改善，或年度固定价敞口仍不能控制，应停止签约并同步解除对应套保头寸。'
+            '新的分析不再把三种方案平均排列。先协商交付弹性并同步取得有约束力的货源报价是主路径；按原条款签约和弃标分别作为“条件满足”与“条件失败”时的分支。[^internal-rules][^spot-quotes]',
+            '建议把 300—500 元/吨的综合改善作为首轮协商目标，可由调价、扩大认可品牌与仓库、分批交付或延后交期组合实现。[^bid-notice][^spot-quotes] 若客户让步无法转化为可验证的成本改善，或年度固定价敞口仍不能控制，应停止签约并同步解除对应套保头寸。[^internal-rules][^position-ledger]'
           ],
           premises: [
-            '头寸匹配仍为 400 手 CU2401 × 5 吨/手 = 2,000 吨，但数量匹配不等于货源与交付条件已经成立。',
-            '首批当前可见净亏损基准仍约为 188 万元；完整成本还需加入仓储、运输、短驳、交割、资金和可能的移仓费用。',
-            '内部交割审批、客户认可仓库与规格、有效锁量报价必须同时成立，交割方案才具备执行条件。',
-            '价格每改善 100 元/吨，首批亏损约减少 20 万元；300—500 元/吨的综合改善对应约 60—100 万元减亏空间。',
+            '头寸匹配仍为 400 手 CU2401 × 5 吨/手 = 2,000 吨，但数量匹配不等于货源与交付条件已经成立。[^position-ledger]',
+            '根据中标价与数量、现货报盘及持仓浮盈复算，首批当前可见净亏损基准仍约为 188 万元。[^bid-notice][^spot-quotes][^position-ledger] 完整成本还需加入仓储、运输、短驳、交割、资金和可能的移仓费用。',
+            '内部交割审批、客户认可仓库与规格、有效锁量报价必须同时成立，交割方案才具备执行条件。[^internal-rules]',
+            '按首批 2,000 吨复算，价格每改善 100 元/吨，亏损约减少 20 万元；300—500 元/吨的综合改善对应约 60—100 万元减亏空间。[^bid-notice]',
             '客户资格价值需要用历史订单和毛利区间单独估计，不能在缺少数据时直接抵扣当前亏损。',
             '年度总量与后续定价机制仍是签约前必须核实的风险上限。'
           ],
@@ -373,6 +425,14 @@
             '用 300、500 和 800 元/吨三档改善情景更新首批及年度损益',
             '确认交割审批、仓单、资金、物流和客户验收条件是否形成闭环',
             '若综合改善不足 300 元/吨且完整成本无法封顶，启动弃标与对应头寸退出预案'
+          ],
+          sources: [
+            { id: 'bid-notice', kind: 'upload', title: '中标通知书.pdf', locator: '第 1 页 · 中标结果', excerpt: '首批供货量为 2,000 吨，中标价为 68,500 元/吨。', assetId: 'bid-notice', sourceVersion: '中标通知原件', retrievedAt: '本次对话上传' },
+            { id: 'bid-terms', kind: 'upload', title: '招标文件及合同草案.pdf', locator: '第 4 页 · 第 2.1 条「签约与违约」', excerpt: '中标通知送达后 5 个工作日内完成签约；不签约将没收 200 万元投标保证金，并暂停未来 2 年投标资格。', assetId: 'contract-draft', sourceVersion: '招标文件定稿', retrievedAt: '本次对话上传' },
+            { id: 'position-ledger', kind: 'upload', title: 'CU2401持仓明细.xlsx', locator: '「持仓汇总」表 · B3:G6', excerpt: 'CU2401 多头 400 手，每手 5 吨，成交均价 68,440 元/吨，当前价 68,500 元/吨，浮盈约 12 万元。', assetId: 'position-ledger', sourceVersion: '持仓快照 v2', retrievedAt: '重新分析时复核' },
+            { id: 'spot-quotes', kind: 'upload', title: '华东现货报价汇总.xlsx', locator: '「华东报价」表 · B8:G15', excerpt: '有效报盘超过 69,500 元/吨；不同品牌与仓库的可交付条件存在明显差异。', assetId: 'spot-quotes', sourceVersion: '报价快照 v2', retrievedAt: '重新分析时复核' },
+            { id: 'internal-rules', kind: 'rag', title: '期现套保与投标履约管理办法', locator: '第 4.2 条「套保头寸调整」· 第 7.1 条「交割审批」', excerpt: '套保头寸应与真实现货风险保持对应；平仓、移仓或申请交割需要完成授权与资金审批。', relatedExecutionId: 'knowledge', sourceVersion: '2026-06 修订', retrievedAt: '内部知识检索 · 本轮快照' },
+            { id: 'market-signal', kind: 'web', title: '华东电解铜现货升贴水与仓单周报', locator: '公开市场信息 · 华东现货/仓单口径', excerpt: '现货升水扩大、可交割规格可得性下降，但不同仓库与品牌差异需通过可成交询价继续验证。', url: 'https://www.shfe.com.cn/', relatedExecutionId: 'web', sourceVersion: '检索快照 v2', retrievedAt: '2026-09-08 10:28' }
           ]
         }
       },
@@ -478,27 +538,27 @@
         title: '铜采购中标后的基差风险与签约决策分析',
         conclusion: '建议先协商调整条款、同步锁定货源，再按条件触发签约或退出。',
         summary: [
-          '当前不建议在货源尚未锁定的情况下直接按原价签约，也不建议立即弃标。这不是签约与弃标的简单二选一，而是一项带前置条件和退出机制的决策。',
-          '如果客户同意调整交付或定价条款，且企业能够锁定对应货源，应按调整后的条款签约；如果客户拒绝调整，但货源可锁、亏损可封顶且综合代价可接受，可以按原条款签约；如果货源不能锁定、交付无法保证或亏损不能封顶，应弃标并同步解除对应期货头寸。'
+          '当前不建议在货源尚未锁定的情况下直接按原价签约，也不建议立即弃标。这不是签约与弃标的简单二选一，而是一项带前置条件和退出机制的决策。[^spot-quotes][^internal-rules]',
+          '如果客户同意调整交付或定价条款，且企业能够锁定对应货源，应按调整后的条款签约；如果客户拒绝调整，但货源可锁、亏损可封顶且综合代价可接受，可以按原条款签约；如果货源不能锁定、交付无法保证或亏损不能封顶，应弃标并同步解除对应期货头寸。[^bid-terms][^position-ledger]'
         ],
         premises: [
-          '头寸匹配：400 手 CU2401 × 5 吨/手 = 2,000 吨，与首批供货量完全匹配，属于全额买入套保。',
-          '即时基准：合同销售收入 1.37 亿元；按 69,500 元/吨现货报盘下限计算，采购成本至少 1.39 亿元；期货浮盈约 12 万元。',
-          '当前可见净亏损约 188 万元，但尚未计入交割、仓储、运输、短驳和资金占用成本，不能视为最终全口径损失。',
-          '200 万元保证金是弃标直接损失；暂停两年投标资格和客户关系影响需作为长期综合代价单独评估。',
-          '现货与期货价差超过 1,000 元/吨，说明当前套保没有覆盖区域升水和货源可得性风险；年度总供货量和后续定价机制仍需核实。'
+          '头寸匹配：400 手 CU2401 × 5 吨/手 = 2,000 吨，与首批供货量完全匹配，属于全额买入套保。[^position-ledger]',
+          '即时基准：合同销售收入 1.37 亿元。[^bid-notice] 按 69,500 元/吨现货报盘下限计算，采购成本至少 1.39 亿元。[^bid-notice][^spot-quotes] 当前持仓浮盈约 12 万元。[^position-ledger]',
+          '根据中标价与数量、现货报盘及持仓浮盈复算，当前可见净亏损约 188 万元。[^bid-notice][^spot-quotes][^position-ledger] 交割、仓储、运输、短驳和资金占用成本尚未计入，不能视为最终全口径损失。',
+          '200 万元保证金是弃标直接损失；暂停两年投标资格和客户关系影响需作为长期综合代价单独评估。[^bid-terms]',
+          '现货与期货价差超过 1,000 元/吨，说明当前套保没有覆盖区域升水和货源可得性风险；年度总供货量和后续定价机制仍需核实。[^spot-quotes][^market-signal]'
         ],
         metrics: [
-          { label: '套保数量', value: '2,000 吨', formula: '400 手 × 5 吨/手' },
-          { label: '现货采购价差损失', value: '约 200 万元', formula: '（69,500－68,500）× 2,000' },
-          { label: '当前期货浮盈', value: '约 12 万元', formula: '（68,500－68,440）× 2,000' },
-          { label: '当前可见净亏损', value: '约 188 万元', formula: '200 万元－12 万元' }
+          { label: '套保数量', value: '2,000 吨', formula: '400 手 × 5 吨/手', sourceIds: ['position-ledger'] },
+          { label: '现货采购价差损失', value: '约 200 万元', formula: '（69,500－68,500）× 2,000', sourceIds: ['bid-notice', 'spot-quotes'] },
+          { label: '当前期货浮盈', value: '约 12 万元', formula: '（68,500－68,440）× 2,000', sourceIds: ['position-ledger'] },
+          { label: '当前可见净亏损', value: '约 188 万元', formula: '200 万元－12 万元', sourceIds: ['bid-notice', 'spot-quotes', 'position-ledger'] }
         ],
         paths: [
           {
             title: '方案一：按原价签约履约',
             label: '条件触发',
-            body: '近期现货交付时，首批当前可见净亏损至少约 188 万元；只有在货源可锁、交付时效明确且全口径亏损可封顶时，才具备签约条件。',
+            body: '近期现货交付时，首批当前可见净亏损至少约 188 万元；只有在货源可锁、交付时效明确且全口径亏损可封顶时，才具备签约条件。[^bid-notice][^spot-quotes][^position-ledger]',
             details: [
               '主要收益：保住 200 万元保证金、客户准入资格与后续合作机会。',
               '主要风险：年度固定价敞口、现货规格断档、延期违约及基差继续扩大。',
@@ -508,7 +568,7 @@
           {
             title: '方案二：放弃签约',
             label: '退出条件',
-            body: '保证金损失 200 万元；若同步平掉期货并兑现约 12 万元浮盈，当前净直接损失约 188 万元。',
+            body: '保证金损失 200 万元；若同步平掉期货并兑现约 12 万元浮盈，当前净直接损失约 188 万元。[^bid-terms][^position-ledger]',
             details: [
               '主要收益：立即终止首批和年度固定价敞口，释放资金、授信和执行资源。',
               '主要风险：暂停两年投标资格、客户关系与行业信用受损，前期投标投入归零。',
@@ -518,7 +578,7 @@
           {
             title: '方案三：先协商调整合同条款',
             label: '优先推进',
-            body: '优先争取延迟或分批交付、扩大认可仓库与规格范围，并把固定价改为期货均价加约定升贴水；协商与锁货必须并行。',
+            body: '优先争取延迟或分批交付、扩大认可仓库与规格范围，并把固定价改为期货均价加约定升贴水；协商与锁货必须并行。[^market-signal][^internal-rules]',
             details: [
               '价格每上调 300 元/吨，首批当前可见亏损可由约 188 万元收窄至约 128 万元；延迟交货或联动定价的改善空间更大。',
               '最差情形是协商失败后回到方案一或二，主要新增成本是有限的时间与关系成本，因此必须在签约窗口前段发起并保留最终决策时间。',
@@ -547,8 +607,16 @@
           '交割、仓储、运输和资金成本尚未完整取得',
           '客户准入资格及未来订单价值尚无统一估值'
         ],
+        sources: [
+          { id: 'bid-notice', kind: 'upload', title: '中标通知书.pdf', locator: '第 1 页 · 中标结果', excerpt: '首批供货量为 2,000 吨，中标价为 68,500 元/吨。', assetId: 'bid-notice', sourceVersion: '中标通知原件', retrievedAt: '本次对话上传' },
+          { id: 'bid-terms', kind: 'upload', title: '招标文件及合同草案.pdf', locator: '第 4 页 · 第 2.1 条「签约与违约」', excerpt: '中标通知送达后 5 个工作日内完成签约；不签约将没收 200 万元投标保证金，并暂停未来 2 年投标资格。', assetId: 'contract-draft', sourceVersion: '招标文件定稿', retrievedAt: '本次对话上传' },
+          { id: 'position-ledger', kind: 'upload', title: 'CU2401持仓明细.xlsx', locator: '「持仓汇总」表 · B3:G6', excerpt: 'CU2401 多头 400 手，每手 5 吨，成交均价 68,440 元/吨，当前价 68,500 元/吨，浮盈约 12 万元。', assetId: 'position-ledger', sourceVersion: '持仓快照 v1', retrievedAt: '本次对话上传' },
+          { id: 'spot-quotes', kind: 'upload', title: '华东现货报价汇总.xlsx', locator: '「华东报价」表 · B8:G15', excerpt: '有效报盘超过 69,500 元/吨，部分指定规格显示无可交付库存。', assetId: 'spot-quotes', sourceVersion: '报价快照 v1', retrievedAt: '本次对话上传' },
+          { id: 'internal-rules', kind: 'rag', title: '期现套保与投标履约管理办法', locator: '第 4.2 条「套保头寸调整」· 第 7.1 条「交割审批」', excerpt: '套保头寸应与真实现货风险保持对应；平仓、移仓或申请交割需要完成内部授权。', relatedExecutionId: 'knowledge', sourceVersion: '2026-06 修订', retrievedAt: '内部知识检索 · 本轮快照' },
+          { id: 'market-signal', kind: 'web', title: '华东电解铜现货升贴水与仓单周报', locator: '公开市场信息 · 华东现货/仓单口径', excerpt: '华东现货升水扩大，可交割规格可得性下降；多类信号指向短期区域性货源紧张。', url: 'https://www.shfe.com.cn/', relatedExecutionId: 'web', sourceVersion: '检索快照 v1', retrievedAt: '2026-09-08 10:26' }
+        ],
         documents: [
-          { id: 'report', name: '铜采购签约决策分析报告.pdf', meta: '12 页 · 1.8 MB', icon: 'file-text' }
+          { id: 'report', name: '铜采购签约决策分析报告.pdf', size: '1.8 MB', icon: 'file-text' }
         ]
       }
     }

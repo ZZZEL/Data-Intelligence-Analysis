@@ -1,28 +1,77 @@
-# Design QA — 通用页头、RAG 入库与 Skill 能力目录
+# Design QA — 通用页头与 RAG 入库
 
-本文件只验收知识 / RAG 与部分配置运营专项原型，不代表完整运营端范围；未覆盖的运行管理、版本/批次、定制 Tool、真实企业数据导入、模型路由与 Prompt/策略仍以正式 PRD 和需求清单为准。
+## 2026-09-09 文件目录更新
+
+**证据**
+
+- Source visual truth: `/var/folders/kq/5wc9n16j51b2gnvghhdr_wqw0000gn/T/TemporaryItems/NSIRD_screencaptureui_YLMICZ/截屏2026-09-09 17.13.59.png`
+- Source evidence copy: `qa/directory-tree-reference.png`
+- Implementation screenshot path / reproducible comparison surface: `qa/directory-tree-comparison.html`
+- Implementation URL: `http://127.0.0.1:8780/demo/ops-console/#/local-documents`
+- Comparison URL: `http://127.0.0.1:8780/demo/ops-console/qa/directory-tree-comparison.html`
+- Source pixels: `564 × 676`; normalized at `@2x` to `282 × 338 CSS px`.
+- Implementation focused clip: `250 × 338 CSS px`; source and implementation were rendered together in the comparison surface and captured by the Codex in-app browser at `1280 × 720`, DPR 1.
+- Full-view browser evidence: document management and knowledge import at `1838 × 1354`, DPR 1. Minimum supported desktop width also checked at `1024 × 900`; the product shell intentionally has a `1024px` minimum width.
+- State: light theme; document root selected; local folders expanded; local/enterprise knowledge-import tabs; enterprise business folder selected; local upload target folder selected.
+
+**Full-View Comparison**
+
+- Document management uses a `250px` left tree and an unframed right table. Folder selection changes the URL and limits the right table to descendants while the tree retains the complete hierarchy.
+- Knowledge import reuses the local document tree for “文档管理”. “企业数据” renders a separate connection → business-folder → file hierarchy using the same visual component.
+- At `1024px`, the page has no document-level horizontal overflow or top-bar overlap; the wide data table scrolls inside its own table wrapper.
+
+**Focused Comparison**
+
+- Typography: both surfaces use compact sans-serif labels with regular file names and stronger folder names. The implementation is intentionally denser to match the existing operations console; letter spacing remains `0` and long names truncate with native title text.
+- Spacing and layout: chevrons, folder icons, names, and right-aligned counts form stable tracks. Nested guide lines and `13px` depth increments make parent-child relationships legible. The selected row uses the reference's white raised treatment.
+- Colors and tokens: neutral gray sidebar, dark labels, muted counts, thin separators, and blue active affordances map to existing product tokens. No decorative gradients or unsupported palette were introduced.
+- Image and icon fidelity: the supplied screenshot is preserved at native resolution and normalized only for comparison. Product icons use the existing Lucide library; files intentionally have no icon per the requirement.
+- Copy/content: directory labels are business-specific and counts match descendants. Upload mode explicitly states the destination folder. Move help text clarifies that knowledge-base references are unaffected.
+
+**Interaction Evidence**
+
+- Collapsing `供应链管理` changed `aria-expanded` to `false`, hid all 10 descendant file rows, and preserved the root count at 18.
+- Selecting `业务数据与培训` produced `#/local-documents?folder=FOLDER-SCM-DATA` and exactly `SCM-DOC-08/09/10` in the right table.
+- The create-folder dialog exposes name and hierarchical parent selection. The move dialog exposes all valid folders and preserves knowledge-base references.
+- Knowledge import local mode rendered 18 local assets. Enterprise mode rendered three independent connection/business directory branches and three source files; selecting one business folder reduced the table to one file.
+- Selecting an enterprise file enabled `下一步（1）`; switching to upload displayed `上传后存入：未分类`.
+- Uploading from `FOLDER-SCM-DATA` routed to `#/local-documents/upload?step=upload&folder=FOLDER-SCM-DATA` and displayed `上传后存入：业务数据与培训`.
+- Browser console warnings/errors: none.
+
+**Comparison History**
+
+1. Initial pass found a P1 layout defect in knowledge import: `[hidden]` on the inactive enterprise directory was overridden by the sidebar's `display:flex`, so the right file table wrapped below the local tree and the first viewport appeared blank.
+2. Fix: added `.document-directory-sidebar[hidden] { display: none; }` and reloaded the same route/state.
+3. Post-fix evidence: local tree and file table rendered side by side at `250px / minmax(0, 1fr)`; enterprise switching produced the same layout with independent data. No remaining P0/P1/P2 issue was visible in the combined normalized comparison.
+
+**Follow-up Polish**
+
+- P3 accepted deviation: the reference uses filled, heterogeneous icons and larger row spacing. The implementation keeps the product's Lucide stroke icons and denser operations-console rhythm; file icons are deliberately omitted.
+
+final result: passed
+
+本文件只验收知识 / RAG 与部分配置运营专项原型，不代表完整运营端范围；未覆盖的运行管理、版本/批次、真实企业数据导入、模型路由与 Prompt/策略仍以正式 PRD 和需求清单为准。
 
 ## 本轮验收范围
 
 - `PageHeader` 单行通用契约：页面身份与搜索、筛选、视图、主要操作在同一行分区承载
-- `page-content` 开放内容区：移除可视化、Skill、检索测试等页面无意义的最外层线框
+- `page-content` 开放内容区：移除检索测试等页面无意义的最外层线框
 - 四步建库：定义知识库、导入文件、文档解析策略、文档处理策略
 - 向量模型来源、维度联动及知识库创建后的不可切换约束
 - 多文件选择/拖放、逐文件状态行和删除操作
 - 知识库列表的可点击名称、测试/详情/编辑/删除闭环，以及不可检索时测试入口的禁用态
 - 知识库紧凑完整的两行信息区、单一文件生命周期、切片数列和可点击文件名称
 - 源文档与切片卡片并排的通用预览，文件切换/下载、真实切片数、卡片展开收起、新增切片及重新向量化 Token 影响提示
-- 重名同内容跳过、同名不同内容替换原文件的导入闭环
+- 重名同内容跳过、同名不同内容明确更新原文档或另存、更新成功后同步引用库的导入闭环
 - MinerU 解析配置是否真正服务 RAG，且不与切片策略重复
-- 模型管理的双分区列表、弹窗 CRUD、API Key 脱敏、手动/保存自动测试和删除引用保护
+- 模型管理的 LLM／向量／Rerank 三分区列表、弹窗 CRUD、API Key 脱敏、手动/保存自动测试和删除引用保护
 - 企业数据的三类数据库接入、用户名/密码、测试后加载可访问数据库、目标数据库选择、明文不落状态，以及不提前选择 Schema/表/视图的边界
 - 全局 Query 检索设置的系统固定项、运营可配项、直接生效边界与 Rerank 模型引用保护
-- 检索测试从知识库详情与检索配置进入，只选知识库，可临时试用未保存设置，去除冗余文案、展示运营评估、输入框内触发检索且不模拟访问等级
-- Skill 的清单接入、目录管理、字段收敛与 Tool 运行依赖一致性
-- 可视化目录的图标视图切换与紧凑“数据样例”抽屉
-- API 密钥的极简创建、一次展示、精简列表与删除闭环
+- 检索测试从知识库详情与检索配置进入，只选知识库，可临时试用未保存设置，去除冗余文案、展示运营评估并在输入框内触发检索
+- Skill、Tool 与可视化管理在运营端完整下线，历史深链安全回退
+- API 密钥的知识库范围、检索策略、一次展示、精简列表与删除闭环
 
-不验收真实数据库、后端文件持久化、真实 MinerU/RAG 请求或 Skill 代码上传执行。报告模板由轻量客户端（user-client）负责，运营端只验收其入口、路由、页面、状态和管理动作均不存在。产品不存在移动端，因此移动端布局、导航与触控交互均不属于设计或验收范围。当前专项原型的 Skill 需完成真实单目录选择后的前端登记与管理闭环；Tool 在本轮只验收 Skill 列表中的只读元数据和依赖校验，正式 Tool 运营能力不在本轮实现范围内。
+不验收真实数据库、后端文件持久化或真实 MinerU/RAG 请求。Skill、Tool 与可视化生成由底层系统预置；报告由用户端 AI 根据任务、证据和交付目标自由组织，不设置模板或固定章节。运营端只验收这些底层能力及报告模板配置相关的导航、路由、页面、状态和管理动作均不存在。产品不存在移动端，因此移动端布局、导航与触控交互均不属于设计或验收范围。
 
 ## 视觉与结构依据
 
@@ -39,15 +88,11 @@
 |---|---|
 | 页面身份 | 返回图标和 H1 位于左侧，返回图标具有可访问名称；不显示重复路径导航 |
 | 右侧操作 | 搜索、筛选、视图切换和主要操作位于同一行右侧；页面不输出第二行 toolbar |
-| 复用 | 知识库、模型、Skill、可视化等目录不再各自拼装独立 FilterBar |
+| 复用 | 知识库、模型等目录不再各自拼装独立 FilterBar |
 | 桌面排版 | 1440 下单行稳定对齐；1024 下控件允许收缩，标题和主要动作保持可见且不产生第二行 |
-
-可视化目录是工具层的明确例外：不提供搜索或筛选，只保留两个带可访问名称的图标按钮用于分类/卡片视图切换。
 
 ### 开放内容区
 
-- 可视化目录直接呈现分类标题和卡片网格，没有额外“可视化能力 Panel”。
-- Skill 直接呈现表面或表格，不重复页面标题和汇总容器。
 - 检索测试直接呈现左右工作区，不在外层再套 Panel。
 - 抽屉内部、信息块和单张表格仍可使用 Panel，因为这些边框有明确分组语义。
 
@@ -57,7 +102,7 @@
 
 ### 1. 定义知识库
 
-- 名称、描述、向量模型/向量维度、访问等级纵向排列。
+- 名称、描述、向量模型/向量维度纵向排列。
 - 仅向量模型和维度组成同一行的两列结构；维度为跟随模型的只读值。
 - 模型选择来自模型管理中已经通过连通性测试的向量模型。
 - 明确提示绑定后不可切换；动作层把模型 ID 和维度固化到知识库。
@@ -81,6 +126,7 @@
 - 表格解析和公式解析分别可选；图片 / 图表内容理解合并为一个选项且默认关闭，开启后自动使用精细解析并启用 VLM Image Analysis。
 - 原图由系统固定保存，不展示“附加输出”分组或开关，且与 VLM 开关互不影响。
 - 默认本地解析；本 Demo 不提供 endpoint 或远程上传开关。
+- 从文档管理上传进入的第 2 个可见步骤必须直接复用本步的全部字段、默认值和联动，只将步骤条收口为“上传 → 解析”，主按钮改为“开始解析”。提交后立即返回文档列表；不显示独立解析完成卡、逐文件状态行、动效、重试/完成按钮或解析结果预览。
 
 本步骤不得出现切片长度、重叠比例或分隔符配置。官方能力依据见 `design-spec.md` 的“RAG 文档入库配置边界”。
 
@@ -101,30 +147,31 @@
 ## 知识库详情与切片预览验收
 
 - 详情 PageHeader 只显示返回和知识库名称，不再重复 ID 或描述副标题；列表中的知识库名称可点击并进入同一详情地址。
-- 常驻信息区保持紧凑但不得删减知识库自身信息：第一行为两列基础信息，必须包含 ID、描述、向量模型、访问等级、启停状态与时间；不显示全局 Query 检索设置、Rerank 模型、文件总数或所谓“文档处理策略”。
+- 常驻信息区保持紧凑但不得删减知识库自身信息：第一行为两列基础信息，必须包含 ID、描述、向量模型、启停状态与时间；不显示全局 Query 检索设置、Rerank 模型、文件总数或所谓“文档处理策略”。
 - 第二行整行展示“知识处理与检索状态”链；处理中或错误可显示真实进度，不伪造警告。
 - 文件列表只有“文件 / 文件状态 / 切片数 / 导入时间 / 操作”等必要列；不显示当前修订、文件等级、页数或另一套检索状态。
 - 文件状态是唯一权威生命周期：解析中、切片中、向量化中、索引中、可检索、处理失败。尚未启动处理的上传项不提前创建文件对象；进度中可带阶段/百分比，但不再并排“处理状态 / 检索状态”。
-- 文件名称本身可点击打开预览，操作仍至少包含“预览 / 删除”；处理失败可显示“重试”。删除确认必须说明会移除该文件的切片、向量和引用，不宣称会产生新 Token 计费。
+- 文件名称本身可点击打开详情，操作仍至少包含“详情 / 删除”；处理失败可显示“重试”。删除确认必须说明会移除该文件的切片、向量和引用，不宣称会产生新 Token 计费。
 - “预览”打开通用双栏组件：顶部可切换当前知识库文件并下载原文件，不显示文件处理状态；左侧直接显示源文档内容，不再增加独立“源文档”栏头。
+- 从文档管理进入详情时，左侧始终展示当前原文件，右侧常驻“查看切片”选择器；无引用时显示禁用的“暂无知识库引用”，存在引用时只包含实际引用知识库并展示所选库切片。选择器下不重复展示知识库名称或状态列表，也不提供公共池处理结果。文档管理没有“加入知识库”操作，引用只能从知识库管理建立。预览工作区填满页头以下的剩余高度，内容在各自栏内滚动。
 - 右侧标题严格显示“全部切片（N）”，N 等于当前 DOM 中真实渲染的切片卡片数量；不出现“代表切片”“当前展示 X / Y”等汇总。
 - 切片卡片默认截断，点击一张后展开全文并设置 `aria-expanded="true"`；再次点击该卡片或点击卡片列表外区域后收起。展开另一张时上一张同步收起。
 - “新增切片”要求内容必填；保存前明确提示“重新生成向量”和“Embedding Token 消耗”，保存后文件进入向量化/索引中，新卡片立即出现。
 - 页面不出现“导入记录”页签，`tab=imports` 兼容地回到文件内容，不恢复历史台账。
-- 同名同内容跳过时不增加文件/切片/Token 记录；同名不同内容确认替换时沿用原文件 ID，更新内容并记录向量重建、索引更新和 Token 消耗影响。
+- 同名同内容跳过时不增加文件/切片/Token 记录；同名不同内容由用户明确更新原文档或另存。更新时沿用稳定文档 ID，记录向量重建、索引更新和 Token 消耗影响，成功后同步所有引用库；产品只展示当前内容。
 
 ## 模型管理验收
 
-- 向量模型与 Rerank 模型在上下两个独立表格板块中展示；PageHeader 只保留搜索和“新增模型”，不再用类型或状态筛选。
-- 两表复用相同的四列网格；向量表第二列展示向量维度，Rerank 表保留同宽空单元格但不显示维度标题或数值，使连接状态和操作严格对齐。Rerank 不出现伪造的规格/用途字段。
+- LLM、向量模型与 Rerank 模型在上下三个独立表格板块中展示；PageHeader 只保留搜索和“新增模型”，不再用类型或状态筛选。
+- 三表复用相同的四列网格；LLM 表第二列展示总参数与激活参数，向量表第二列展示向量维度，Rerank 表保留同宽空单元格但不显示标题或数值，使连接状态和操作严格对齐。
 - 原“状态”与“最近测试”合并为“连接状态”：主行显示连接正常、连接失败或待测试，辅助行显示测试时间。
 - 页面不出现模型 ID、版本、服务来源、引用配置、“查看引用”或说明性底部边界。
 - “新增模型”与“编辑”复用同一弹窗表单；列表只提供测试、编辑和删除，不再提供内容重复的查看入口。
-- 新增时使用两张卡片选择模型类型；表单仅包含名称、API 地址、API Key，向量维度由连接结果读取并以只读字段展示。Rerank 的名称输入占满整行；向量模型出现紧凑维度字段时名称自动让位，维度区域不出现“连接/测试后出现”类占位文案。不存在鉴权方式、请求超时或 Rerank 用途字段。
+- 新增时使用三张卡片选择模型类型；通用表单包含名称、API 地址和 API Key。LLM 额外要求总参数不低于 25B；向量维度由连接结果读取并以只读字段展示；Rerank 的名称输入占满整行。不存在鉴权方式、请求超时或 Rerank 用途字段。
 - 编辑时模型类型不可切换；API Key 输入框显示现有脱敏值，保持不变时沿用原密钥，清空则按必填项校验，页面和状态中都不保存明文 Key。
 - “测试连接”与取消、保存同属底部操作区，用于检查当前未保存输入；修改任一字段后清除本次通过提示。
 - 点击保存时必须再对当前 API 地址和 Key 自动测试；失败时弹窗不关闭且不创建/更新，通过后才落库并直接处于连接正常。
-- 正在被知识库绑定的向量模型、被全局 Query 检索设置选中的 Rerank 模型不能删除；Rerank 开关关闭不会自动解除模型引用。无引用模型使用“取消 / 删除”确认弹窗后从目录移除。
+- 正在被默认回答生成引用的 LLM、被知识库绑定的向量模型、被全局 Query 检索设置选中的 Rerank 模型不能删除。无引用模型使用“取消 / 删除”确认弹窗后从目录移除。
 - 连接正常的向量模型可在“定义知识库”选择；连接失败或待测试模型不进入可选来源。
 
 ## 企业数据接入验收
@@ -141,73 +188,60 @@
 ## 全局 Query 检索设置与测试验收
 
 - `#/retrieval-config` 管理唯一的全局 Query 检索设置；不展示配置列表、版本、生效/草稿状态，不提供复制草稿、应用到知识库、发布或回滚操作。
-- 系统固定使用混合召回，候选规模、去重、权限过滤和元数据过滤由代码派生；运营人员不能配置过程候选数。页面以包含关系展示混合检索及其关键词 / 语义两路能力。
-- 运营可配项只包含关键词 / 语义融合权重（10%–90%，步长 5%，总和恒为 100%）、Rerank 开关与连接正常的模型、最终 Top K（5–20，默认 10）和最低相关度（0.4–0.9，步长 0.1，默认 0.6）。不存在单文件最大切片数。界面以三张解释卡片展示宽松 0.4–0.5、均衡 0.6–0.7、严格 0.8–0.9，卡片只解释当前分数区间。
+- 系统固定使用混合召回，候选规模、去重和元数据过滤由代码派生；运营人员不能配置过程候选数。页面以包含关系展示混合检索及其关键词 / 语义两路能力。
+- 运营可配项只包含关键词 / 语义融合权重（10%–90%，步长 5%，总和恒为 100%）、Rerank 开关与连接正常的模型、最终 Top K（5–20，默认 10）和最低相关度（0.40–0.90，步长 0.01，默认 0.60）。不存在单文件最大切片数。最低相关度复用 Top K 的紧凑数字输入，以两位小数显示；字段下方的单行说明同步展示当前值及宽松 0.40–0.50、均衡 0.51–0.70、严格 0.71–0.90 参考区间。
 - 保存全局设置后立即对后续 Query 请求生效，不触发文档解析、切片、向量化或索引重建，也不改变知识库可用状态。
 - 知识库详情页头与检索配置页头均提供快捷入口。从知识库进入时只带入知识库；从设置页进入时可携带当前未保存的表单作为临时测试设置，但不回写全局值。
 - 测试页左侧仅保留知识库选择，不出现检索配置、版本或生效状态选择；右侧直接呈现问题输入、运营评估和证据结果，不显示无操作价值的设置说明、当前测试对象/配置摘要或完成状态等重复文案。
 - “运行检索”按钮放在问题输入框内部的尾部操作位，不在输入框下方另建操作栏。
 - 运营评估严格包含返回切片数、有效证据数、证据覆盖度和结果相关性四项；证据卡逐条展示本次实际用于排序和过滤的相关度，并标明来源为重排分或融合分；不展示 BM25、Dense、阶段耗时或总耗时等技术日志。
-- 页面不存在“模拟访问等级”输入或权限说明文案；权限过滤属于系统固定能力，不在测试页配置或强调。
 - 修改知识库选择更新 URL；运行检索刷新测试结果，但不保存或修改线上全局检索设置，也不修改知识库可用状态。
 - 在 1024 视口下仍保持工作区可用，不出现水平裁切、浮层遮挡或输入区不可见。
 
-## Skill 目录与 Tool 依赖验收
+## 底层能力边界验收
 
-- 页面不展示汇总指标条、重复模块标题、“验证”按钮、最近测试、运行状态或同时表达同一语义的双重状态；真实清单读取错误和依赖阻断使用明确的就地反馈。
-- Skill 列表字段收敛为：图标、名称（上）/描述（下）、包含的 Tool、调用次数、启用状态、操作。
-- “添加 Skill”每次只允许选择一个包含 `SKILL.md` 的真实目录；选中后上传区收起，展示已选目录摘要和删除重选操作，删除摘要后恢复目录选择。登记后的 Skill 默认停用，且界面说明这里只纳管清单和配置，不上传或执行代码。
-- 运营端不显示内置、上传等来源，也不按来源区分权限；所有 Skill 均支持查看、启停、编辑名称/描述，并仅在停用后删除。
-- Tool 清单、实现、启停和可用状态由系统/技术侧维护；侧栏、路由和页面均不出现独立 Tool 目录，也不提供 Tool 接入、编辑、启停或删除动作。
-- Tool 依赖由 `SKILL.md` 元数据和系统注册信息维护，只在 Skill 列表中以“包含的 Tool”只读元数据展示。新增和编辑 Skill 均不出现 Tool 选择、增删或绑定控件；右侧抽屉也不展示 Tool。Skill 启用前检查 Tool 依赖，缺失、停用或不可用时阻断并明确列出问题。
-- Skill 的“启用状态”只表达运营开关意图；Tool 依赖错误不是第二个运行状态列，而是动作发生时的可处置错误。
-- Skill 的查看与编辑合并为同一个右侧抽屉。抽屉页头显示名称、灰色辅助字“Skill”、本月调用次数和启停开关；正文取消嵌套卡片和“基本信息”标题，名称、描述、渲染后的 `SKILL.md` 依次直排，保存区域初始隐藏且仅在名称或描述变化后出现。抽屉不显示 Tool、文字版“已启用 / 已停用”、重复“能力说明”、包路径、清单位置或文件数，也不放独立编辑/删除按钮；删除仅作为列表操作，并只在 Skill 停用后可用。
-
-## 可视化能力验收
-
-- 页头仅以辅助文字提示“报告图表生成 Skill”的当前状态，并可进入 Skill 目录；不得在可视化能力页出现第二套启停开关或逐图启停。
-
-- 目录只展示 `generate.js` 已支持的 7 类 25 种图表，不提供搜索或筛选，也不显示“统一控制 Agent 是否生成图表”辅助文案。
-- 分类视图/卡片视图只由两个图标按钮表示，按钮具有选中态及 `aria-label/title`；不再显示“分类｜卡片”文字。分类视图已有分组标题，卡片内部不重复类名。
-- 图表入口和抽屉内功能统一称“数据样例”。抽屉标题只显示图表中文名，不附加“· 数据试绘”；分类名称用灰色辅助文字，与调用次数一起集成在 `drawer__header`。
-- 抽屉正文直接呈现预览，不输出“数据试绘预览”等重复小标题；数据面板只保留可编辑的样例 JSON，图表标题如需要也写入样例数据，不提供独立标题输入。
-- 删除整个“显示参数”板块，不出现主题、输出宽高、背景色、线宽/线条或系列配色；同时不展示“数据要求”和“试绘方法”说明。
-- “重新绘制”由数据面板页头中的刷新图标按钮取代，按钮有可访问名称；修改样例 JSON 并点击后更新预览，不额外占用正文操作行。
+- 侧栏只保留知识库、数据接入、检索引擎、系统配置四个业务分组，不出现能力管理、Skill 目录或可视化能力。
+- 运营端不加载能力页脚本，不注册 Skill、Tool、可视化页面或管理状态，也不暴露上传、编辑、启停、删除等动作。
+- 历史 `#/tools`、`#/skills` 和 `#/visualizations` 深链统一回到 `#/knowledge`，不留下空白页。
+- 用户端的运行过程仍可渲染 Skill、Tool 等调用节点，本次改造不修改 user-client。
 
 ## API 密钥验收
 
 - 侧栏入口、路由标题、页头和操作文案统一使用“API 密钥”；现有 `#/api-access` 路径仅用于兼容已有链接。
-- “创建密钥”表单只包含必填名称和产品既有的 L1/L2/L3 权限等级，不出现调用范围、身份传递、IP 白名单、RPM 限额或到期日期。
+- 页面仅管理检索 API Key，使用一张密钥表，不显示 API 能力类型选择、能力筛选或能力标签。
+- “创建密钥”使用三步向导：第 1 步只填写必填名称并选择至少一个可访问知识库，第 2 步只配置检索策略，第 3 步生成并一次性展示完整 Key。第 2 步可返回且保留第 1 步内容；策略默认跟随全局，可切换为独立配置 Rerank、最终 Top K 与相关度阈值；不出现角色、权限等级、身份传递、IP 白名单、RPM 限额或到期日期。
 - 创建成功后完整 Key 只展示一次，弹层的“完成”按钮默认禁用，成功复制后才可点击；关闭后只能看到脱敏值。
-- 列表严格按名称、API Key、状态、权限、最近使用时间、创建时间、操作排列，不显示 Client ID、凭证版本或上述策略字段；状态文案统一为“已启用 / 已禁用”。
-- 操作严格为查看、启用或禁用、删除；查看弹窗复用创建弹窗的信息层级，在一页只读展示名称、脱敏 Key 和权限。删除代替“永久作废”，影响确认明确说明当前 Key 立即失效且记录从当前列表移除。
+- 列表严格按名称、API Key、可访问知识库、检索策略、状态、最近使用时间、创建时间、操作排列；知识库列只显示数量，策略列只显示“全局 / 独立”，不在列表展开名称和参数详情，也不显示 API 能力、Client ID、凭证版本或权限等级；状态文案统一为“已启用 / 已禁用”。
+- 查看弹窗使用不可编辑的静态文本展示名称与脱敏 Key；可访问知识库只列名称，不展示 ID 和检索状态；检索策略只展示 Rerank 模型、最终 Top K、相关度阈值。
+- 操作严格为查看、启用或禁用、删除；查看弹窗复用创建弹窗的信息层级，在一页只读展示名称和脱敏 Key。删除代替“永久作废”，影响确认明确说明当前 Key 立即失效且记录从当前列表移除。
 - 表格末尾不显示“共 N 个 API 密钥”数量 footer；空列表仍可使用空状态。
-- 名称搜索或状态筛选如保留，只作用于上述精简列表，不恢复被移除的配置字段。
+- 检索 API Key 不得复用或展示检索服务连接中的上游访问凭证。
 
 ## 自动与浏览器证据
 
 自动检查：
 
 ```bash
+node demo/ops-console/tests/api-access-check.mjs
 node demo/ops-console/tests/static-check.mjs
 node demo/ops-console/tests/closed-loop-check.mjs
 ```
 
-- 静态检查直接执行 `dom.pageHeader()` 并校验生成的单行 DOM、拒绝旧第二层工具栏，而不是只匹配标题文案；同时检查开放内容区、文档处理无独立导航/路由/管理动作且流程内编辑完整、Skill 单目录摘要/删除重选、统一权限、查看/编辑右侧抽屉、列表只读 Tool 元数据、抽屉无 Tool 与无独立 Tool 目录，以及可视化图标切换和数据样例抽屉结构。另外反向断言运营端不包含报告模板的导航、路由、页面、动作、状态和专用样式。
-- 闭环检查验证真实状态变化：模型保存自动测试/API Key 脱敏/连接状态/引用删除保护、服务器连接测试/数据库列表加载/目标数据库必选/用户名密码校验/明文不落状态/无 Schema 授权、知识库模型固化且不绑定 Rerank、文件单一生命周期、切片数及新增切片后的向量化/Token 影响、重名同内容跳过与不同内容替换、解析配置、文档处理策略仅在知识库流程选择、全局 Query 检索设置的可配项校验/直接生效/Rerank 引用保护，以及临时未保存设置只影响当次检索测试，Skill 默认停用、清单管理和 Tool 运行依赖阻断，以及 API 密钥名称与权限校验、一次展示、复制后完成、无数量 footer、启停与删除。同时校验初始状态与动作层均不存在报告模板管理对象。
+- API 密钥检查独立覆盖知识库白名单、全局/独立检索策略、运行时配置解析、名称去重、一次性明文返回、启停删除及旧记录兼容，并反向拒绝能力类型选择、筛选、能力列和权限等级。
+- 静态检查直接执行 `dom.pageHeader()` 并校验生成的单行 DOM、拒绝旧第二层工具栏；同时检查开放内容区、文档处理无独立导航/路由/管理动作且流程内编辑完整。反向断言运营端不包含 Skill、Tool、可视化或报告模板配置的导航、路由、页面、动作、状态和专用样式。
+- 闭环检查验证真实状态变化：模型保存自动测试/API Key 脱敏/连接状态/引用删除保护、服务器连接测试/数据库列表加载/目标数据库必选/用户名密码校验/明文不落状态/无 Schema 授权、知识库模型固化且不绑定 Rerank、文件单一生命周期、切片数及新增切片后的向量化/Token 影响、同内容跳过、异内容更新与企业来源稳定键同步、解析配置、文档处理策略仅在知识库流程选择、全局 Query 检索设置的可配项校验/直接生效、全局及 Key 级 Rerank 引用保护，以及临时未保存设置只影响当次检索测试和 API 密钥管理。同时校验运营端状态与动作层不存在底层能力管理对象。
 
 浏览器回归路径：
 
 1. `#/knowledge` → 新建知识库 → 仅创建。
-2. `#/knowledge` → 新建知识库 → 创建并导入 → 选择与拖入两种文件 → 删除一行 → 导入 → 配置解析 → 选择代码预置方案并编辑本次文档处理参数 → 完成；随后从已有知识库再次“导入文件”，确认完整经过上传、解析和可编辑文档处理三步，再分别验证同名同内容跳过与同名不同内容替换确认/Token 提示。
+2. `#/knowledge` → 新建知识库 → 创建并导入 → 选择与拖入两种文件 → 删除一行 → 导入 → 配置解析 → 选择代码预置方案并编辑本次文档处理参数 → 完成；随后从已有知识库再次“导入文件”，确认完整经过上传、解析和可编辑文档处理三步，再分别验证同内容跳过、同名异内容更新确认/Token 提示、更新成功后的引用库同步，以及另存为同名新文档入口。
 3. `#/models` → 检查向量/Rerank 两个表格板块 → 新增向量模型 → 手动测试当前输入 → 保存自动复测 → 快捷测试与编辑 → 再次进入建库确认成为选项 → 分别验证有引用删除阻断和无引用删除成功。
 4. `#/enterprise-connections` → 核对页面无顶部说明条 → 分别点击数据库标题和“编辑”，确认均只出现同一个“编辑数据库”弹窗且无详情抽屉 → 接入数据库 → 核对名称与描述直接展示、下方仅“连接信息”保留模块边界且无说明文字 → 填写数据库名称与描述 → 切换三种数据库类型卡片并核对默认端口 → 填写服务器地址、用户名和密码，确认目标数据库下拉已显示但禁用 → 点击“测试并获取数据库” → 核对下拉启用且仅出现当前账号可访问的 DB → 选择目标数据库后确认接入；再次编辑确认密码不回显且留空可保存，修改服务器级字段后确认下拉重新禁用，再模拟失败复测并观察唯一连接状态。
 5. `#/knowledge/KB-001` → 点击文件名称进入预览；切换文件、下载原文件、核对“全部切片（N）”与真实卡片数，依次验证卡片点击展开/再次点击/点击外部收起，再新增切片并确认向量化 Token 提示与状态更新。
 6. `#/knowledge` → 点击知识库名称进入详情；分别点击可/不可检索知识库的“测试”，验证正常带入与禁用态；再验证详情、编辑和删除。
-7. `#/retrieval-config` → 核对混合检索包含两路只读能力，调整融合权重时百分比与右侧卡片比例同步；切换 Rerank 时只显示或隐藏模型，更改 Top K/最低相关度并保存后确认全局生效；验证三张解释卡片与 0.4–0.9 Slider 同步，再修改未保存值进入检索测试，验证当次结果使用临时设置、输入框内检索按钮、四项运营评估和逐条相关度分数；返回设置页确认未保存值没有替换线上值。
-8. `#/skills`：一次选择一个包含 `SKILL.md` 的目录，确认上传区收起并出现已选目录摘要；删除摘要后重选并登记 Skill，确认默认停用和精简列表。随机打开不同种子 Skill，确认不显示来源且权限一致；“查看”进入同一个右侧抽屉，页头含名称、Skill 辅助字、本月调用和开关，正文无卡片嵌套并依次直排名称、描述和渲染后的 `SKILL.md`。确认未编辑时没有保存操作，修改任一字段后才出现并可回写列表；抽屉无 Tool、文字状态、重复能力说明、包技术信息及独立编辑/删除按钮。从列表验证停用后才能删除；列表仍可显示包含的 Tool，新增和编辑均无 Tool 选择控件；依赖未满足时启用被阻断，侧栏和页面均不存在独立 Tool 入口。
-9. `#/visualizations`：确认无搜索/筛选和说明副文案；切换分类/卡片两个图标视图；在分类视图检查卡片不重复类名。
-10. 打开一个图表“数据样例”：确认抽屉标题、分类/调用次数都在页头，正文只有直接预览和样例 JSON；修改数值后点击刷新图标并观察预览更新。
-11. `#/api-access`：确认导航与页头均为“API 密钥”；填写名称并选择 L1/L2/L3 权限创建，必须先复制一次性 Key 才能完成；检查列表字段顺序、无数量 footer、查看弹窗、已启用/已禁用状态、启停与删除。
+7. `#/retrieval-config` → 核对混合检索包含两路只读能力，调整融合权重时百分比与右侧卡片比例同步；切换 Rerank 时只显示或隐藏模型，更改 Top K/最低相关度并保存后确认全局生效；在最低相关度输入 0.71、0.72 等百分位数值并验证两位小数归一化、区间校验和行内说明同步，再修改未保存值进入检索测试，验证当次结果使用临时设置、输入框内检索按钮、四项运营评估和逐条相关度分数；返回设置页确认未保存值没有替换线上值。
+8. 分别打开 `#/tools`、`#/skills` 和 `#/visualizations`，确认都回到知识库管理，且侧栏没有能力管理分组。
+9. 打开 `../user-client/#/chat/copper-decision`，确认任务运行记录中的 Skill、Tool 调用节点仍正常展示。
+10. `#/api-access`：确认导航与页头均为“API 密钥”，页面没有能力类型选择、筛选、能力列或权限等级；逐步检查“名称与知识库 → 检索策略 → 获取 API Key”，验证上一步保留草稿且生成前不创建记录，最后必须先复制一次性 Key 才能完成；检查列表字段顺序、无数量 footer、查看弹窗回显、已启用/已禁用状态，以及单条密钥的启停与删除。
 
 浏览器验收记录必须包含页面身份、非空页面、无框架错误层、控制台健康、关键交互状态和 1440/1024 截图。自动检查通过不能替代此视觉/交互证据。

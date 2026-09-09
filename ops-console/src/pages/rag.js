@@ -5,6 +5,7 @@
   var overlay = OpsDemo.ui.overlay;
   var router = OpsDemo.core.router;
   var actions = OpsDemo.core.actions;
+  var cleanupRetrievalSettingsPage = null;
 
   function esc(value) {
     return dom.escape(value);
@@ -39,17 +40,21 @@
   }
 
   var relevanceBands = [
-    { value: "loose", label: "宽松", range: "0.4–0.5", max: 0.5, description: "覆盖优先，可能包含弱相关内容。" },
-    { value: "balanced", label: "均衡", range: "0.6–0.7", max: 0.7, description: "平衡结果数量与相关质量。" },
-    { value: "strict", label: "严格", range: "0.8–0.9", max: 0.9, description: "质量优先，返回结果可能更少。" }
+    { value: "loose", label: "宽松", range: "≤ 0.50", max: 0.5, description: "覆盖优先" },
+    { value: "balanced", label: "均衡", range: "0.51–0.70", max: 0.7, description: "兼顾数量与质量" },
+    { value: "strict", label: "严格", range: "≥ 0.71", max: 0.9, description: "质量优先，结果可能更少" }
   ];
 
-  function normalizedRelevanceThreshold(value, legacyLevel) {
+  function exactRelevanceThreshold(value) {
     var numeric = Number(value);
-    if (Number.isFinite(numeric)) {
-      var rounded = Math.round(numeric * 10) / 10;
-      if (rounded >= 0.4 && rounded <= 0.9) return rounded;
-    }
+    var scaled = Math.round(numeric * 100);
+    if (!Number.isFinite(numeric) || Math.abs(numeric - scaled / 100) > 1e-9 || scaled < 40 || scaled > 90) return null;
+    return scaled / 100;
+  }
+
+  function normalizedRelevanceThreshold(value, legacyLevel) {
+    var exact = exactRelevanceThreshold(value);
+    if (exact != null) return exact;
     return legacyLevel === "loose" ? 0.4 : legacyLevel === "strict" ? 0.8 : 0.6;
   }
 
@@ -63,147 +68,109 @@
     return relevanceBands.find(function find(item) { return score <= item.max; }) || relevanceBands[2];
   }
 
-  function relevanceProgress(threshold) {
-    return ((normalizedRelevanceThreshold(threshold) - 0.4) / 0.5) * 100;
+  function relevanceDescription() {
+    return relevanceBands.map(function describe(item) {
+      return item.range + " " + item.label + "（" + item.description + "）";
+    }).join("，") + "。";
   }
 
-  function relevanceCards(activeBand) {
-    return '<div class="retrieval-relevance-cards" role="list" aria-label="相关度分数区间说明">' + relevanceBands.map(function map(band) {
-      var active = band.value === activeBand.value;
-      return '<article class="retrieval-relevance-card' + (active ? " is-active" : "") + '" role="listitem" data-relevance-card="' + band.value + '"' + (active ? ' aria-current="true"' : "") + '><div class="retrieval-relevance-card__header"><strong>' + band.label + '</strong><span>' + band.range + '</span></div><p>' + band.description + '</p></article>';
-    }).join("") + '</div>';
-  }
-
-  function relevanceSlider(id, selected, compact) {
+  function relevanceNumberInput(id, selected, options) {
     var threshold = normalizedRelevanceThreshold(selected);
     var band = relevanceBandAt(threshold);
+    var showDescription = !options || options.showDescription !== false;
     var descriptionId = id + "-description";
-    return '<div class="retrieval-relevance-slider' + (compact ? " retrieval-relevance-slider--compact" : "") + '" data-relevance-slider data-relevance-value="' + threshold.toFixed(1) + '" data-relevance-band="' + band.value + '" style="--relevance-progress: ' + relevanceProgress(threshold) + '%">' +
-      (compact ? "" : relevanceCards(band)) +
-      '<div class="retrieval-relevance-slider__summary"><span>最低相关度</span><strong data-relevance-current>' + threshold.toFixed(1) + '</strong></div>' +
-      '<input id="' + id + '" class="retrieval-relevance-slider__input" type="range" min="0.4" max="0.9" step="0.1" value="' + threshold.toFixed(1) + '" aria-labelledby="' + id + '-label" aria-valuetext="最低相关度 ' + threshold.toFixed(1) + "，" + band.label + '" aria-describedby="' + descriptionId + '" data-relevance-range>' +
-      '<div class="retrieval-relevance-slider__scale" aria-hidden="true"><span>0.4</span><span>0.5</span><span>0.6</span><span>0.7</span><span>0.8</span><span>0.9</span></div>' +
-      '<p id="' + descriptionId + '" class="retrieval-relevance-slider__description"><span data-relevance-description>仅返回相关度 ≥ ' + threshold.toFixed(1) + ' 的结果。</span> <span>开启 Rerank 时使用重排分，关闭时使用融合分。</span></p></div>';
+    return '<input id="' + id + '" class="field" type="number" inputmode="decimal" min="0.40" max="0.90" step="0.01" value="' + threshold.toFixed(2) + '" required aria-required="true"' +
+      (showDescription ? ' aria-describedby="' + descriptionId + '"' : "") +
+      ' aria-valuetext="相关度阈值 ' + threshold.toFixed(2) + "，" + band.label + '" data-relevance-input>' +
+      (showDescription ? '<div id="' + descriptionId + '" class="form-help" data-relevance-description>' + relevanceDescription() + '</div>' : "");
   }
 
-  function syncRelevanceSlider(input) {
-    var slider = input && input.closest("[data-relevance-slider]");
-    if (!slider) return;
-    var threshold = normalizedRelevanceThreshold(input.value);
-    var band = relevanceBandAt(threshold);
-    var current = slider.querySelector("[data-relevance-current]");
-    var description = slider.querySelector("[data-relevance-description]");
-    slider.setAttribute("data-relevance-value", threshold.toFixed(1));
-    slider.setAttribute("data-relevance-band", band.value);
-    slider.style.setProperty("--relevance-progress", relevanceProgress(threshold) + "%");
-    input.setAttribute("aria-valuetext", "最低相关度 " + threshold.toFixed(1) + "，" + band.label);
-    slider.querySelectorAll("[data-relevance-card]").forEach(function update(card) {
-      var active = card.getAttribute("data-relevance-card") === band.value;
-      card.classList.toggle("is-active", active);
-      if (active) card.setAttribute("aria-current", "true");
-      else card.removeAttribute("aria-current");
-    });
-    if (current) current.textContent = threshold.toFixed(1);
-    if (description) description.textContent = "仅返回相关度 ≥ " + threshold.toFixed(1) + " 的结果。";
-  }
-
-  function bindRelevanceSliders(root) {
-    root.querySelectorAll("[data-relevance-range]").forEach(function bind(input) {
-      input.addEventListener("input", function handle() { syncRelevanceSlider(input); });
-      syncRelevanceSlider(input);
-    });
-  }
-
-  function relevanceSliderValue(root, id) {
-    var input = root.querySelector("#" + id);
-    return normalizedRelevanceThreshold(input ? input.value : 0.6);
-  }
-
-  function keywordWeightFrom(operator, system) {
-    var value = Number(operator && operator.keywordWeight);
-    if (!Number.isFinite(value)) {
-      var fallback = system && system.fusionWeights && system.fusionWeights.bm25;
-      value = Math.round(Number(fallback == null ? 0.5 : fallback) * 100);
+  function syncRelevanceInput(input, normalize) {
+    if (!input) return;
+    var threshold = exactRelevanceThreshold(input.value);
+    var description = input.parentElement && input.parentElement.querySelector("[data-relevance-description]");
+    if (threshold == null) {
+      input.setCustomValidity("请输入 0.40 至 0.90 之间的数值，步长为 0.01。");
+      input.setAttribute("aria-invalid", "true");
+      input.removeAttribute("aria-valuetext");
+      if (description) description.textContent = "请输入 0.40 至 0.90 之间的数值，最多保留两位小数。";
+      return;
     }
-    return Math.max(10, Math.min(90, Math.round(value / 5) * 5));
+    var band = relevanceBandAt(threshold);
+    input.setCustomValidity("");
+    input.removeAttribute("aria-invalid");
+    input.setAttribute("aria-valuetext", "相关度阈值 " + threshold.toFixed(2) + "，" + band.label);
+    if (normalize) input.value = threshold.toFixed(2);
+    if (description) description.textContent = relevanceDescription(threshold);
   }
 
-  function hybridRetrievalComposition(operator, system) {
-    var keywordWeight = keywordWeightFrom(operator, system);
-    var semanticWeight = 100 - keywordWeight;
-    return '<div class="retrieval-hybrid-composition" data-hybrid-composition data-keyword-weight="' + keywordWeight + '">' +
-      '<section class="retrieval-hybrid-card" aria-labelledby="retrieval-hybrid-title"><div class="retrieval-hybrid-card__heading"><span class="retrieval-system-mode__icon">' + dom.icon("git-merge", 18) + '</span><div><h3 id="retrieval-hybrid-title">混合检索</h3><p>系统固定同时使用两路检索并融合去重</p></div></div>' +
-      '<div class="retrieval-hybrid-weight"><div class="retrieval-hybrid-weight__summary"><span>融合权重</span><div><strong data-keyword-weight-label>关键词 ' + keywordWeight + '%</strong><strong data-semantic-weight-label>语义 ' + semanticWeight + '%</strong></div></div>' +
-      '<input id="retrieval-keyword-weight" class="retrieval-hybrid-weight__input" type="range" min="10" max="90" step="5" value="' + keywordWeight + '" aria-label="关键词检索权重" aria-valuetext="关键词 ' + keywordWeight + '%，语义 ' + semanticWeight + '%" data-hybrid-weight-range>' +
-      '<div class="retrieval-hybrid-weight__scale" aria-hidden="true"><span>偏语义</span><span>均衡</span><span>偏关键词</span></div><p>两种检索始终启用；权重只影响融合排序。</p></div></section>' +
-      '<div class="retrieval-hybrid-sources" aria-label="混合检索包含的两路能力">' +
-      '<article class="retrieval-hybrid-source retrieval-hybrid-source--keyword" data-keyword-source style="flex-grow:' + keywordWeight + '"><span class="retrieval-system-mode__icon">' + dom.icon("text-search", 18) + '</span><div><div class="retrieval-hybrid-source__title"><strong>关键词检索</strong><span data-keyword-source-value>' + keywordWeight + '%</span></div><p>按关键词与字段匹配</p></div></article>' +
-      '<article class="retrieval-hybrid-source retrieval-hybrid-source--semantic" data-semantic-source style="flex-grow:' + semanticWeight + '"><span class="retrieval-system-mode__icon">' + dom.icon("waypoints", 18) + '</span><div><div class="retrieval-hybrid-source__title"><strong>语义检索</strong><span data-semantic-source-value>' + semanticWeight + '%</span></div><p>按语义相似度召回</p></div></article>' +
-      '</div></div>';
-  }
-
-  function syncHybridWeight(input) {
-    var composition = input && input.closest("[data-hybrid-composition]");
-    if (!composition) return;
-    var keywordWeight = Math.max(10, Math.min(90, Math.round(Number(input.value) / 5) * 5));
-    var semanticWeight = 100 - keywordWeight;
-    composition.dataset.keywordWeight = String(keywordWeight);
-    input.value = String(keywordWeight);
-    input.setAttribute("aria-valuetext", "关键词 " + keywordWeight + "%，语义 " + semanticWeight + "%");
-    var keywordSource = composition.querySelector("[data-keyword-source]");
-    var semanticSource = composition.querySelector("[data-semantic-source]");
-    if (keywordSource) keywordSource.style.flexGrow = String(keywordWeight);
-    if (semanticSource) semanticSource.style.flexGrow = String(semanticWeight);
-    [["[data-keyword-weight-label]", "关键词 " + keywordWeight + "%"], ["[data-semantic-weight-label]", "语义 " + semanticWeight + "%"], ["[data-keyword-source-value]", keywordWeight + "%"], ["[data-semantic-source-value]", semanticWeight + "%"]].forEach(function update(item) {
-      var node = composition.querySelector(item[0]);
-      if (node) node.textContent = item[1];
+  function bindRelevanceInputs(root) {
+    root.querySelectorAll("[data-relevance-input]").forEach(function bind(input) {
+      input.addEventListener("input", function handle() { syncRelevanceInput(input, false); });
+      input.addEventListener("change", function handle() { syncRelevanceInput(input, true); });
+      input.addEventListener("blur", function handle() { syncRelevanceInput(input, true); });
+      syncRelevanceInput(input, true);
     });
+  }
+
+  function relevanceInputValue(root, id) {
+    var input = root.querySelector("#" + id);
+    var threshold = exactRelevanceThreshold(input && input.value);
+    if (threshold == null && input) {
+      syncRelevanceInput(input, false);
+      if (typeof input.reportValidity === "function") input.reportValidity();
+    } else if (input) {
+      syncRelevanceInput(input, true);
+    }
+    return threshold == null ? Number.NaN : threshold;
   }
 
   function renderRetrievalSettings(state) {
     var settings = state.rag.retrievalSettings;
-    var system = settings.system;
     var operator = settings.operator;
     var modelReady = readyRerankerModels(state).length > 0;
     var headerActions = dom.button("检索测试", { variant: "secondary", icon: "search-check", attrs: "data-open-retrieval-test" }) +
-      dom.button("保存设置", { variant: "primary", icon: "save", attrs: "data-save-retrieval-settings" });
+      dom.button("更新配置", { variant: "primary", icon: "save", attrs: "data-save-retrieval-settings", disabled: true });
     return dom.pageHeader({ title: "检索配置", actions: headerActions }) +
       '<div class="page-content retrieval-settings-page"><div class="retrieval-settings-layout">' +
-      '<section class="panel retrieval-settings-section retrieval-settings-section--system"><div class="panel__header"><div><h2>检索方式</h2><p>系统固定使用混合检索，可调整两路结果的融合权重</p></div></div><div class="panel__body">' +
-      hybridRetrievalComposition(operator, system) +
+      '<section class="panel retrieval-settings-section retrieval-settings-section--system"><div class="panel__header"><div><h2>检索方式</h2><p>系统统一管理召回与融合策略</p></div></div><div class="panel__body">' +
+      '<div class="retrieval-system-heading"><span class="retrieval-system-heading__icon" aria-hidden="true">' + dom.icon("git-merge", 18) + '</span><div><h3>混合检索</h3><p>同时使用关键词与语义检索，系统统一合并结果并去重。关键词检索按关键词与字段匹配召回证据。语义检索按向量语义相似度召回证据。</p></div></div>' +
       '</div></section>' +
-      '<section class="panel retrieval-settings-section retrieval-settings-section--rerank"><div class="panel__header"><div><h2>Rerank</h2><p>按需对系统召回的候选结果重新排序</p></div><button type="button" class="switch' + (operator.rerankEnabled ? " is-on" : "") + '" role="switch" aria-checked="' + (operator.rerankEnabled ? "true" : "false") + '" aria-label="Rerank" data-rerank-toggle></button></div><div class="panel__body retrieval-settings-fields retrieval-settings-fields--single" data-rerank-fields' + (operator.rerankEnabled ? "" : " hidden") + '>' +
+      '<section class="panel retrieval-settings-section retrieval-settings-section--rerank"><div class="panel__header"><div><h2>Rerank</h2><p>按需对系统召回的候选结果重新排序</p></div><button type="button" class="switch' + (operator.rerankEnabled ? " is-on" : "") + '" role="switch" aria-checked="' + (operator.rerankEnabled ? "true" : "false") + '" aria-label="Rerank" data-rerank-toggle></button></div><div class="panel__body retrieval-settings-fields retrieval-settings-fields--single" data-rerank-fields>' +
       '<div class="form-field">' + dom.requiredLabel("Rerank 模型", { forId: "retrieval-reranker-model" }) + '<select id="retrieval-reranker-model" class="select-field"' + (operator.rerankEnabled ? ' required aria-required="true"' : " disabled") + '>' + rerankerOptions(state, operator.rerankerModelId) + '</select><div class="form-help">' + (modelReady ? "开启后使用所选模型对候选结果重新排序。" : "暂无连接正常的 Rerank 模型。") + '</div></div>' +
       '</div></section>' +
-      '<section class="panel retrieval-settings-section retrieval-settings-section--results"><div class="panel__header"><div><h2>召回设置</h2><p>控制最终返回数量与最低相关度</p></div></div><div class="panel__body"><div class="retrieval-result-fields retrieval-result-fields--single">' +
-      '<div class="form-field">' + dom.requiredLabel("最终 Top K", { forId: "retrieval-final-topk" }) + '<input id="retrieval-final-topk" class="field" type="number" min="5" max="20" value="' + esc(operator.finalTopK) + '" required aria-required="true"><div class="form-help">达到最低相关度后，最多返回的证据切片数。</div></div></div>' +
-      '<fieldset class="retrieval-relevance-fieldset"><legend id="retrieval-relevance-label">相关性要求</legend>' +
-      relevanceSlider("retrieval-relevance", relevanceThresholdFromOperator(operator), false) +
-      '</fieldset></div></section>' +
+      '<section class="panel retrieval-settings-section retrieval-settings-section--results"><div class="panel__header"><div><h2>召回设置</h2><p>控制最终返回数量与相关度阈值</p></div></div><div class="panel__body"><div class="retrieval-result-fields">' +
+      '<div class="form-field">' + dom.requiredLabel("最终 Top K", { forId: "retrieval-final-topk" }) + '<input id="retrieval-final-topk" class="field" type="number" min="5" max="20" value="' + esc(operator.finalTopK) + '" required aria-required="true"><div class="form-help">达到相关度阈值后，最多返回的证据切片数。</div></div>' +
+      '<div class="form-field">' + dom.requiredLabel("相关度阈值", { forId: "retrieval-relevance" }) + relevanceNumberInput("retrieval-relevance", relevanceThresholdFromOperator(operator)) + '</div></div></div></section>' +
       '<div class="retrieval-settings-footnote">' + dom.icon("info", 15) + '<span>设置仅影响后续 Query 检索，不会重新解析文件、切片或生成向量。</span></div>' +
       '</div></div>';
   }
 
   function retrievalSettingsPayload(root) {
     var toggle = root.querySelector("[data-rerank-toggle]");
-    var relevanceThreshold = relevanceSliderValue(root, "retrieval-relevance");
+    var relevanceThreshold = relevanceInputValue(root, "retrieval-relevance");
     return {
       rerankEnabled: Boolean(toggle && toggle.getAttribute("aria-checked") === "true"),
       rerankerModelId: (root.querySelector("#retrieval-reranker-model") || {}).value || null,
-      keywordWeight: Number((root.querySelector("#retrieval-keyword-weight") || {}).value),
-      semanticWeight: 100 - Number((root.querySelector("#retrieval-keyword-weight") || {}).value),
       finalTopK: Number((root.querySelector("#retrieval-final-topk") || {}).value),
       relevanceThreshold: relevanceThreshold,
       relevanceLevel: relevanceBandAt(relevanceThreshold).value
     };
   }
 
+  function syncRequiredLabel(root, controlId, required) {
+    var label = root.querySelector('label[for="' + controlId + '"]');
+    if (!label) return;
+    label.classList.toggle("form-label--required", required);
+    label.querySelectorAll(".form-required-mark, .sr-only").forEach(function each(indicator) {
+      indicator.hidden = !required;
+    });
+  }
+
   function syncRetrievalSettingsControls(root) {
     var toggle = root.querySelector("[data-rerank-toggle]");
     if (!toggle) return;
     var enabled = toggle.getAttribute("aria-checked") === "true";
-    var fields = root.querySelector("[data-rerank-fields]");
-    if (fields) fields.hidden = !enabled;
     [root.querySelector("#retrieval-reranker-model")].forEach(function each(control) {
       if (!control) return;
       control.disabled = !enabled;
@@ -211,14 +178,110 @@
       if (enabled) control.setAttribute("aria-required", "true");
       else control.removeAttribute("aria-required");
     });
+    syncRequiredLabel(root, "retrieval-reranker-model", enabled);
+  }
+
+  function retrievalSettingsDraftKey(root) {
+    var toggle = root.querySelector("[data-rerank-toggle]");
+    var enabled = Boolean(toggle && toggle.getAttribute("aria-checked") === "true");
+    var model = root.querySelector("#retrieval-reranker-model");
+    var topK = root.querySelector("#retrieval-final-topk");
+    var relevance = root.querySelector("#retrieval-relevance");
+    return [
+      enabled ? "1" : "0",
+      enabled && model ? model.value : "",
+      topK ? String(topK.value).trim() : "",
+      relevance ? String(relevance.value).trim() : ""
+    ].join("|");
+  }
+
+  function validateRetrievalSettings(root) {
+    var relevance = root.querySelector("#retrieval-relevance");
+    if (relevance) syncRelevanceInput(relevance, true);
+    var invalid = Array.from(root.querySelectorAll("input, select")).find(function find(control) {
+      return !control.disabled && typeof control.checkValidity === "function" && !control.checkValidity();
+    });
+    if (!invalid) return true;
+    if (typeof invalid.reportValidity === "function") invalid.reportValidity();
+    invalid.focus();
+    return false;
   }
 
   function mountRetrievalSettings(root) {
-    var hybridWeight = root.querySelector("[data-hybrid-weight-range]");
-    if (hybridWeight) {
-      hybridWeight.addEventListener("input", function handle() { syncHybridWeight(hybridWeight); });
-      syncHybridWeight(hybridWeight);
+    if (cleanupRetrievalSettingsPage) cleanupRetrievalSettingsPage();
+    var save = root.querySelector("[data-save-retrieval-settings]");
+    var initialDraftKey = retrievalSettingsDraftKey(root);
+    var dirty = false;
+    var unblockNavigation = null;
+
+    function beforeUnload(event) {
+      if (!dirty) return;
+      event.preventDefault();
+      event.returnValue = "";
     }
+
+    function releaseDirtyGuard() {
+      if (unblockNavigation) unblockNavigation();
+      unblockNavigation = null;
+      window.removeEventListener("beforeunload", beforeUnload);
+    }
+
+    function saveSettings() {
+      if (!validateRetrievalSettings(root)) return false;
+      var result = actions.updateRetrievalSettings(retrievalSettingsPayload(root));
+      if (!result) {
+        overlay.toast("配置未更新", "请检查 Top K、相关度阈值和 Rerank 模型连接状态。", "warning");
+        return false;
+      }
+      dirty = false;
+      releaseDirtyGuard();
+      overlay.toast("检索配置已更新", "后续检索请求将使用新配置。", "success");
+      return true;
+    }
+
+    function addTertiaryAction(label, attrs, onClick) {
+      var scope = document.getElementById("overlay-root");
+      var footer = scope && scope.querySelector(".dialog__footer");
+      if (!footer) return;
+      var action = document.createElement("button");
+      action.type = "button";
+      action.className = "btn btn--text retrieval-unsaved-dialog__discard";
+      action.textContent = label;
+      Object.keys(attrs || {}).forEach(function each(name) { action.setAttribute(name, attrs[name]); });
+      action.addEventListener("click", onClick);
+      footer.insertBefore(action, footer.firstChild);
+    }
+
+    function confirmUnsavedNavigation(transition) {
+      overlay.open({
+        title: "有未更新的配置",
+        body: '<div class="retrieval-unsaved-dialog"><p>当前修改尚未更新。离开后，未保存的内容将丢失。</p></div>',
+        cancelLabel: "继续编辑",
+        confirmLabel: "更新配置并离开",
+        onConfirm: function confirmUpdateAndLeave() {
+          if (!saveSettings()) return false;
+          transition.retry();
+          return true;
+        }
+      });
+      return false;
+    }
+
+    function syncDirtyState() {
+      dirty = retrievalSettingsDraftKey(root) !== initialDraftKey;
+      root.toggleAttribute("data-retrieval-settings-dirty", dirty);
+      if (save) {
+        save.disabled = !dirty;
+        save.setAttribute("aria-disabled", dirty ? "false" : "true");
+      }
+      if (dirty && !unblockNavigation) {
+        unblockNavigation = router.block(confirmUnsavedNavigation);
+        window.addEventListener("beforeunload", beforeUnload);
+      } else if (!dirty) {
+        releaseDirtyGuard();
+      }
+    }
+
     var toggle = root.querySelector("[data-rerank-toggle]");
     if (toggle) toggle.addEventListener("click", function handle() {
       var next = toggle.getAttribute("aria-checked") !== "true";
@@ -230,24 +293,56 @@
       toggle.setAttribute("aria-checked", next ? "true" : "false");
       toggle.classList.toggle("is-on", next);
       syncRetrievalSettingsControls(root);
+      syncDirtyState();
     });
-    bindRelevanceSliders(root);
-    var save = root.querySelector("[data-save-retrieval-settings]");
+    bindRelevanceInputs(root);
     if (save) save.addEventListener("click", function handle() {
-      var result = actions.updateRetrievalSettings(retrievalSettingsPayload(root));
-      if (result) overlay.toast("检索设置已保存", "后续检索请求将使用新设置。", "success");
-      else overlay.toast("设置未保存", "请检查混合权重、Top K、相关性阈值和 Rerank 模型连接状态。", "warning");
+      saveSettings();
+    });
+    root.querySelectorAll("#retrieval-reranker-model, #retrieval-final-topk, #retrieval-relevance").forEach(function bindDirty(control) {
+      control.addEventListener("input", syncDirtyState);
+      control.addEventListener("change", syncDirtyState);
     });
     var preview = root.querySelector("[data-open-retrieval-test]");
     if (preview) preview.addEventListener("click", function handle() {
-      var draft = actions.previewRetrievalSettings(retrievalSettingsPayload(root));
-      if (!draft) {
-        overlay.toast("无法开始测试", "请先检查当前设置。", "warning");
+      if (!dirty) {
+        actions.clearRetrievalTestDraft();
+        router.navigate("retrieval-test");
         return;
       }
-      router.navigate("retrieval-test?settings=preview");
+      if (!validateRetrievalSettings(root)) return;
+      overlay.open({
+        title: "测试当前修改",
+        body: '<div class="retrieval-unsaved-dialog"><p>这次修改还没有更新到全局配置。你可以只用于本次测试，或先更新配置再测试。</p></div>',
+        cancelLabel: "继续编辑",
+        confirmLabel: "更新配置并测试",
+        onConfirm: function updateAndTest() {
+          if (!saveSettings()) return false;
+          router.navigate("retrieval-test");
+          return true;
+        }
+      });
+      addTertiaryAction("仅测试本次修改", { "data-preview-retrieval-settings": "" }, function previewDraft() {
+        var draft = actions.previewRetrievalSettings(retrievalSettingsPayload(root));
+        if (!draft) {
+          overlay.toast("无法开始测试", "请先检查当前配置。", "warning");
+          return;
+        }
+        dirty = false;
+        releaseDirtyGuard();
+        router.navigate("retrieval-test?settings=preview");
+      });
     });
     syncRetrievalSettingsControls(root);
+    syncDirtyState();
+    cleanupRetrievalSettingsPage = function cleanup() {
+      releaseDirtyGuard();
+      cleanupRetrievalSettingsPage = null;
+    };
+  }
+
+  function unmountRetrievalSettings() {
+    if (cleanupRetrievalSettingsPage) cleanupRetrievalSettingsPage();
   }
 
   function renderRag(route, state) {
@@ -260,29 +355,27 @@
     }).join("");
   }
 
-  function orderedRetrievalKnowledgeBases(items) {
-    var list = (items || []).slice();
-    return list.filter(function filter(item) { return item.benchmarkReadOnly === true; })
-      .concat(list.filter(function filter(item) { return item.benchmarkReadOnly !== true; }));
-  }
-
   function retrievalKnowledgeBaseChoice(item) {
-    var evaluationBadge = item.benchmarkReadOnly === true ? '<span class="retrieval-kb-choice__badge">评测库</span>' : "";
-    return '<span class="retrieval-kb-choice"><span class="retrieval-kb-choice__name">' + esc(item.name) + "</span>" + evaluationBadge + "</span>";
+    return '<span class="retrieval-kb-choice"><span class="retrieval-kb-choice__name">' + esc(item.name) + "</span></span>";
   }
 
   function retrievalKnowledgeBasePicker(items, selectedId) {
-    var orderedItems = orderedRetrievalKnowledgeBases(items);
-    var selectedItem = orderedItems.find(function find(item) { return item.id === selectedId; }) || orderedItems[0];
-    var sourceOptions = orderedItems.map(function mapSourceOption(item) {
+    var knowledgeBases = (items || []).slice();
+    var selectedItem = knowledgeBases.find(function find(item) { return item.id === selectedId; }) || knowledgeBases[0];
+    var sourceOptions = knowledgeBases.map(function mapSourceOption(item) {
       return '<option value="' + esc(item.id) + '"' + (selectedItem && item.id === selectedItem.id ? " selected" : "") + ">" + esc(item.name) + "</option>";
     }).join("");
-    var listOptions = orderedItems.map(function mapListOption(item) {
-      var isEvaluation = item.benchmarkReadOnly === true;
+    var listOptions = knowledgeBases.map(function mapListOption(item) {
       var isSelected = Boolean(selectedItem && item.id === selectedItem.id);
-      return '<button type="button" class="retrieval-kb-option' + (isEvaluation ? " retrieval-kb-option--evaluation" : "") + '" role="option" tabindex="-1" aria-selected="' + (isSelected ? "true" : "false") + '" data-retrieval-kb-option="' + esc(item.id) + '" data-evaluation="' + (isEvaluation ? "true" : "false") + '">' + retrievalKnowledgeBaseChoice(item) + '<span class="retrieval-kb-option__check" aria-hidden="true">' + dom.icon("check", 14) + "</span></button>";
+      return '<button type="button" class="retrieval-kb-option" role="option" tabindex="-1" aria-selected="' + (isSelected ? "true" : "false") + '" data-retrieval-kb-option="' + esc(item.id) + '">' + retrievalKnowledgeBaseChoice(item) + '<span class="retrieval-kb-option__check" aria-hidden="true">' + dom.icon("check", 14) + "</span></button>";
     }).join("");
-    return '<div class="retrieval-kb-picker" data-retrieval-kb-picker><select id="test-kb-v2" hidden aria-hidden="true" tabindex="-1" data-retrieval-kb-source>' + sourceOptions + '</select><button type="button" class="retrieval-kb-trigger' + (selectedItem && selectedItem.benchmarkReadOnly === true ? " is-evaluation" : "") + '" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="test-kb-listbox" aria-labelledby="test-kb-label test-kb-value" data-retrieval-kb-trigger><span id="test-kb-value" data-retrieval-kb-value>' + (selectedItem ? retrievalKnowledgeBaseChoice(selectedItem) : "请选择知识库") + '</span>' + dom.icon("chevron-down", 15) + '</button><div id="test-kb-listbox" class="retrieval-kb-listbox" role="listbox" aria-labelledby="test-kb-label" data-retrieval-kb-listbox hidden>' + listOptions + "</div></div>";
+    return '<div class="retrieval-kb-picker" data-retrieval-kb-picker><select id="test-kb-v2" hidden aria-hidden="true" tabindex="-1" data-retrieval-kb-source>' + sourceOptions + '</select><button type="button" class="retrieval-kb-trigger" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="test-kb-listbox" aria-labelledby="test-kb-label test-kb-value" data-retrieval-kb-trigger><span id="test-kb-value" data-retrieval-kb-value>' + (selectedItem ? retrievalKnowledgeBaseChoice(selectedItem) : "请选择知识库") + '</span>' + dom.icon("chevron-down", 15) + '</button><div id="test-kb-listbox" class="retrieval-kb-listbox" role="listbox" aria-labelledby="test-kb-label" data-retrieval-kb-listbox hidden>' + listOptions + "</div></div>";
+  }
+
+  function isAnswerGenerationEnabled(test) {
+    if (!test) return false;
+    if (typeof test.answerGenerationEnabled === "boolean") return test.answerGenerationEnabled;
+    return Boolean(test.generationSnapshot && test.generationSnapshot.enabled === true);
   }
 
   function percentage(numerator, denominator, hasRun) {
@@ -291,26 +384,7 @@
     return Math.round((Number(numerator || 0) / Number(denominator)) * 100) + "%";
   }
 
-  function retrievalResultSummary(test, comparison, hasRun, currentOperator) {
-    if (test.evaluationSuite) {
-      var metrics = hasRun ? test.evaluationMetrics : null;
-      var k = metrics && metrics.k || (currentOperator && currentOperator.finalTopK) || (test.runtimeSnapshot && test.runtimeSnapshot.operator && test.runtimeSnapshot.operator.finalTopK) || "K";
-      var percentMetric = function percentMetric(value) {
-        return value == null ? "N/A" : (Number(value) * 100).toFixed(1) + "%";
-      };
-      var decimalMetric = function decimalMetric(value) {
-        return value == null ? "N/A" : Number(value).toFixed(3);
-      };
-      var latencyMetric = metrics && metrics.retrievalLatencyMs != null ? number(metrics.retrievalLatencyMs) + " ms" : "N/A";
-      var sampleNote = metrics ? "宏平均 · N=" + number(metrics.sampleCount || 0) + (metrics.excludedCount ? " · 排除 " + number(metrics.excludedCount) : "") : "运行后按整套 Gold 评测集计算";
-      var latencyNote = metrics && metrics.latencyKind === "simulated" ? "检索时延为静态 Demo 模拟均值；" : "";
-      return '<div class="retrieval-evaluation-summary"><div class="retrieval-result-summary retrieval-result-summary--evaluation" aria-label="检索评测指标">' +
-        '<div title="前 ' + esc(k) + ' 个结果覆盖了多少 Gold 相关文档"><span>召回率</span><small>Recall@' + esc(k) + '</small><strong>' + (metrics ? percentMetric(metrics.recallAtK) : "—") + '</strong></div>' +
-        '<div title="前 ' + esc(k) + ' 个结果中相关文档所占比例；不足 K 的位置按非相关计"><span>精确率</span><small>Precision@' + esc(k) + '</small><strong>' + (metrics ? percentMetric(metrics.precisionAtK) : "—") + '</strong></div>' +
-        '<div title="各评测题首个相关结果倒数排名的宏平均；只统计 Top K，因此记作 MRR@K"><span>平均倒数排名</span><small>MRR@' + esc(k) + '</small><strong>' + (metrics ? decimalMetric(metrics.mrrAtK) : "—") + '</strong></div>' +
-        '<div title="静态 Demo 的确定性模拟耗时；接入真实检索服务后替换为实测值"><span>检索时延</span><small>Retrieval latency</small><strong>' + (metrics ? latencyMetric : "—") + '</strong></div></div>' +
-        '<p class="retrieval-evaluation-summary__note">' + dom.icon("info", 14) + '<span>' + esc(sampleNote) + "。" + esc(latencyNote) + 'Gold 只用于评分，不参与排序；本 Mini 子集不可与完整 SciFact / BEIR 榜单横向比较。</span></p></div>';
-    }
+  function retrievalResultSummary(test, comparison, hasRun) {
     var evidence = test.evidence || [];
     var evidenceRelevant = evidence.filter(function filter(item) { return item.relevanceMark === "relevant"; }).length;
     var evidenceIrrelevant = evidence.filter(function filter(item) { return item.relevanceMark === "irrelevant"; }).length;
@@ -327,6 +401,37 @@
       '<div title="已判断切片中相关证据所占的比例"><span>结果相关性</span><strong>' + percentage(effectiveCount, reviewedCount, hasRun) + "</strong></div></div>";
   }
 
+  function answerQualitySummary(test, hasRun) {
+    var metrics = hasRun && test.answerMetrics || null;
+    var generated = Boolean(hasRun && test.answerGenerated && metrics);
+    var percent = function percent(value) {
+      return generated && value != null ? (Number(value) * 100).toFixed(1) + "%" : "—";
+    };
+    var latency = generated && metrics.generationLatencyMs != null ? number(metrics.generationLatencyMs) + " ms" : "—";
+    return '<div class="retrieval-answer-quality"><div class="retrieval-quality-heading"><strong>回答质量</strong></div>' +
+      '<div class="retrieval-result-summary retrieval-result-summary--quality" aria-label="回答质量指标">' +
+      '<div title="回答中的事实是否得到检索证据支持"><span>忠实度</span><small>Faithfulness</small><strong>' + percent(metrics && metrics.faithfulness) + '</strong></div>' +
+      '<div title="生成回答是否直接回应测试问题"><span>答案相关性</span><small>Answer relevance</small><strong>' + percent(metrics && metrics.answerRelevance) + '</strong></div>' +
+      '<div title="回答中的关键结论是否附带引用"><span>引用覆盖率</span><small>Citation coverage</small><strong>' + percent(metrics && metrics.citationCoverage) + '</strong></div>' +
+      '<div title="静态 Demo 的确定性模拟生成耗时"><span>生成时延</span><small>Generation latency</small><strong>' + latency + '</strong></div></div></div>';
+  }
+
+  function qualityDashboard(test, comparison, hasRun, generationEnabled) {
+    return '<div class="retrieval-quality-dashboard' + (generationEnabled ? "" : " is-retrieval-only") + '"><section class="retrieval-quality-group"><div class="retrieval-quality-heading"><strong>检索质量</strong></div>' + retrievalResultSummary(test, comparison, hasRun) + '</section><section class="retrieval-quality-group" data-answer-quality' + (generationEnabled ? "" : " hidden") + '>' + answerQualitySummary(test, hasRun) + '</section></div>';
+  }
+
+  function generatedAnswerMessage(test) {
+    if (!test.answerGenerated || !test.generatedAnswer) return "";
+    var citations = (test.answerCitations || []).map(function map(citation, index) {
+      var rank = Number(citation.rank || index + 1);
+      return '<button type="button" class="retrieval-answer-citation" data-evidence-jump="' + rank + '" title="定位到引用证据"><span>[' + rank + ']</span>' + esc(citation.documentName || "引用证据") + '</button>';
+    }).join("");
+    var snapshot = test.generationSnapshot || {};
+    return '<article class="retrieval-message retrieval-message--assistant" aria-label="生成回答"><div class="retrieval-message__avatar">' + dom.icon("sparkles", 16) + '</div><div class="retrieval-message__content"><div class="retrieval-message__label">生成回答</div><p class="retrieval-generated-answer">' + esc(test.generatedAnswer) + '</p>' +
+      (citations ? '<div class="retrieval-answer-citations" aria-label="回答引用">' + citations + '</div>' : "") +
+      '<div class="retrieval-answer-meta">' + esc(snapshot.modelAlias || snapshot.modelId || snapshot.model || "回答模型") + ' · 基于本次检索证据生成</div></div></article>';
+  }
+
   function evidenceRows(test, comparison) {
     if (!test.evidence || !test.evidence.length) {
       return '<div class="notice">' + dom.icon("shield-x", 17) + '<div class="notice__content"><div class="notice__title">无可返回证据</div>' + esc(test.emptyReasonLabel || "当前身份和过滤条件下未命中可访问内容。") + "</div></div>";
@@ -338,7 +443,7 @@
       var score = Number(rawScore);
       var scoreLabel = scoreSource === "rerank" ? "重排分" : "融合分";
       var scoreHtml = Number.isFinite(score) ? '<span class="evidence-item__score" title="本次用于排序和过滤的' + scoreLabel + '"><span>相关度</span><strong>' + score.toFixed(2) + '</strong><small>' + scoreLabel + '</small></span>' : "";
-      return '<article class="evidence-item"><div class="evidence-item__header"><div class="evidence-item__rank">' + esc(item.rank) + '</div><div class="evidence-item__title">' + esc(item.documentName) + '</div><div class="evidence-item__locator">' + esc(item.locator) + "</div></div>" +
+      return '<article class="evidence-item" id="retrieval-evidence-' + esc(item.rank) + '" tabindex="-1"><div class="evidence-item__header"><div class="evidence-item__rank">' + esc(item.rank) + '</div><div class="evidence-item__title">' + esc(item.documentName) + '</div><div class="evidence-item__locator">' + esc(item.locator) + "</div></div>" +
         '<p class="evidence-item__excerpt">' + esc(item.excerpt) + '</p><div class="evidence-item__quality">' + scoreHtml + dom.status(item.relevanceMarkLabel, item.relevanceMark === "relevant" ? "success" : "neutral", true) + "</div></article>";
     }).join("");
     return rows;
@@ -359,10 +464,8 @@
     return [
       value.rerankEnabled ? "1" : "0",
       value.rerankerModelId || "",
-      Number(value.keywordWeight || 0),
-      Number(value.semanticWeight || 0),
       Number(value.finalTopK || 0),
-      relevanceThresholdFromOperator(value).toFixed(1)
+      relevanceThresholdFromOperator(value).toFixed(2)
     ].join("|");
   }
 
@@ -371,54 +474,46 @@
     return Boolean(snapshot && snapshot.source === runtime.source && retrievalOperatorKey(snapshot.operator) === retrievalOperatorKey(runtime.operator));
   }
 
-  function retrievalTestControls(state, runtime, kbId, test) {
+  function retrievalTestControls(state, runtime, kbId, generationEnabled) {
     var operator = runtime.operator;
     var system = state.rag && state.rag.retrievalSettings && state.rag.retrievalSettings.system || {};
-    var modeLabel = system.retrievalModeLabel || "混合检索";
-    var keywordWeight = keywordWeightFrom(operator, system);
-    var semanticWeight = 100 - keywordWeight;
-    var rerankHidden = operator.rerankEnabled ? "" : " hidden";
+    var modeLabel = String(system.retrievalModeLabel || "混合检索").replace(/（系统默认）/g, "");
     var rerankRequired = operator.rerankEnabled ? ' required aria-required="true"' : " disabled";
-    var evaluationCases = test && test.evaluationCases || [];
-    var activeCaseId = test && test.activeEvaluationCaseId || evaluationCases[0] && evaluationCases[0].id;
-    var evaluationControl = evaluationCases.length ? '<div class="form-field retrieval-evaluation-case-field"><label class="form-label" for="test-evaluation-case">预置评测题</label><select id="test-evaluation-case" class="select-field">' + evaluationCases.map(function mapCase(item, index) {
-      return '<option value="' + esc(item.id) + '" data-question="' + esc(item.question) + '"' + (item.id === activeCaseId ? " selected" : "") + '>#' + String(index + 1).padStart(2, "0") + " · " + esc(item.question) + "</option>";
-    }).join("") + '</select><div class="form-help">本次展示所选题的证据，四项指标按全部 ' + number(evaluationCases.length) + ' 条 Gold 题宏平均。</div></div>' : "";
+    var generation = state.rag && state.rag.answerGeneration || { model: "DeepSeek-V4-Pro", temperature: 0.2, citationEnabled: true };
+    var answerModelName = generation.modelAlias || generation.model || generation.modelId || "DeepSeek-V4-Pro";
     return '<div class="retrieval-test-settings-heading"><h2>测试参数</h2></div>' +
       '<section class="retrieval-test-settings-section retrieval-test-settings-section--scope">' +
       '<div class="form-field"><div id="test-kb-label" class="form-label">知识库</div>' + retrievalKnowledgeBasePicker(state.knowledgeBases, kbId) + "</div>" +
-      evaluationControl +
       '<div class="form-field"><span class="form-label">检索方式</span><div class="retrieval-test-mode-card">' +
-      '<span class="retrieval-test-mode-card__icon">' + dom.icon("git-merge", 17) + '</span><div><strong>' + esc(modeLabel) + '</strong><span>关键词 ' + keywordWeight + '% · 语义 ' + semanticWeight + '%</span></div></div></div></section>' +
+      '<span class="retrieval-test-mode-card__icon">' + dom.icon("git-merge", 17) + '</span><div><strong>' + esc(modeLabel) + '</strong><span>关键词检索与语义检索始终启用 · 系统统一合并排序并去重</span></div></div></div></section>' +
       '<section class="retrieval-test-settings-section retrieval-test-settings-section--rerank"><div class="retrieval-test-settings-section__header"><div><h3>Rerank</h3><p>对候选结果进行语义重排</p></div><button type="button" class="switch' + (operator.rerankEnabled ? " is-on" : "") + '" role="switch" aria-checked="' + (operator.rerankEnabled ? "true" : "false") + '" aria-label="本次测试 Rerank" data-test-rerank-toggle></button></div>' +
-      '<div class="retrieval-test-rerank-fields" data-test-rerank-fields' + rerankHidden + '><div class="form-field">' + dom.requiredLabel("Rerank 模型", { forId: "test-reranker-model" }) + '<select id="test-reranker-model" class="select-field"' + rerankRequired + '>' + rerankerOptions(state, operator.rerankerModelId) + '</select></div></div></section>' +
-      '<section class="retrieval-test-settings-section retrieval-test-settings-section--results"><div class="retrieval-test-result-grid"><div class="form-field">' + dom.requiredLabel("最终 Top K", { forId: "test-final-topk" }) + '<input id="test-final-topk" class="field" type="number" min="5" max="20" value="' + esc(operator.finalTopK) + '" required aria-required="true"></div></div>' +
-      '<div class="form-field"><label id="test-relevance-label" class="form-label" for="test-relevance">相关性要求</label>' + relevanceSlider("test-relevance", relevanceThresholdFromOperator(operator), true) + '</div></section>';
+      '<div class="retrieval-test-rerank-fields" data-test-rerank-fields><div class="form-field">' + dom.requiredLabel("Rerank 模型", { forId: "test-reranker-model" }) + '<select id="test-reranker-model" class="select-field"' + rerankRequired + '>' + rerankerOptions(state, operator.rerankerModelId) + '</select></div></div></section>' +
+      '<section class="retrieval-test-settings-section retrieval-test-settings-section--results"><div class="retrieval-test-result-grid"><div class="form-field">' + dom.requiredLabel("最终 Top K", { forId: "test-final-topk" }) + '<input id="test-final-topk" class="field" type="number" min="5" max="20" value="' + esc(operator.finalTopK) + '" required aria-required="true"></div>' +
+      '<div class="form-field">' + dom.requiredLabel("相关度阈值", { forId: "test-relevance" }) + relevanceNumberInput("test-relevance", relevanceThresholdFromOperator(operator), { showDescription: false }) + '</div></div></section>' +
+      '<section class="retrieval-test-settings-section retrieval-test-settings-section--answer"><div class="retrieval-test-settings-section__header"><div><h3>回答生成</h3><p>基于检索证据生成带引用的回答</p></div><button type="button" class="switch' + (generationEnabled ? " is-on" : "") + '" role="switch" aria-checked="' + (generationEnabled ? "true" : "false") + '" aria-label="本次测试生成回答" data-test-answer-toggle></button></div>' +
+      '<div class="retrieval-test-rerank-fields retrieval-test-answer-fields' + (generationEnabled ? "" : " is-disabled") + '" data-test-answer-fields aria-disabled="' + (generationEnabled ? "false" : "true") + '"><div class="form-field"><label class="form-label" for="test-answer-model">回答模型</label><select id="test-answer-model" class="select-field" data-test-answer-model disabled title="当前仅提供默认回答模型"><option selected>' + esc(answerModelName) + '</option></select></div></div></section>';
   }
 
-  function retrievalTestPayload(root, runtime) {
+  function retrievalTestPayload(root) {
     var toggle = root.querySelector("[data-test-rerank-toggle]");
     var rerankEnabled = Boolean(toggle && toggle.getAttribute("aria-checked") === "true");
-    var relevanceThreshold = relevanceSliderValue(root, "test-relevance");
+    var relevanceThreshold = relevanceInputValue(root, "test-relevance");
     return {
       rerankEnabled: rerankEnabled,
       rerankerModelId: rerankEnabled ? (root.querySelector("#test-reranker-model") || {}).value || null : null,
-      keywordWeight: Number(runtime.operator.keywordWeight || 50),
-      semanticWeight: Number(runtime.operator.semanticWeight || 50),
       finalTopK: Number((root.querySelector("#test-final-topk") || {}).value),
       relevanceThreshold: relevanceThreshold,
-      relevanceLevel: relevanceBandAt(relevanceThreshold).value
+      relevanceLevel: relevanceBandAt(relevanceThreshold).value,
+      generateAnswer: Boolean(root.querySelector("[data-test-answer-toggle]") && root.querySelector("[data-test-answer-toggle]").getAttribute("aria-checked") === "true")
     };
   }
 
   function syncRetrievalTestControls(root) {
     var toggle = root.querySelector("[data-test-rerank-toggle]");
     var model = root.querySelector("#test-reranker-model");
-    var fields = root.querySelector("[data-test-rerank-fields]");
     var run = root.querySelector("[data-run-test-v2]");
     if (!toggle) return;
     var enabled = toggle.getAttribute("aria-checked") === "true";
-    if (fields) fields.hidden = !enabled;
     [model].forEach(function each(control) {
       if (!control) return;
       control.disabled = !enabled;
@@ -426,10 +521,33 @@
       if (enabled) control.setAttribute("aria-required", "true");
       else control.removeAttribute("aria-required");
     });
+    syncRequiredLabel(root, "test-reranker-model", enabled);
     if (run) {
       var baseRunnable = run.getAttribute("data-base-runnable") === "true";
       run.disabled = !baseRunnable || Boolean(enabled && (!model || !model.value));
     }
+    var answerToggle = root.querySelector("[data-test-answer-toggle]");
+    var answerFields = root.querySelector("[data-test-answer-fields]");
+    var answerModel = root.querySelector("[data-test-answer-model]");
+    var answerEnabled = Boolean(answerToggle && answerToggle.getAttribute("aria-checked") === "true");
+    if (answerFields) {
+      answerFields.classList.toggle("is-disabled", !answerEnabled);
+      answerFields.setAttribute("aria-disabled", answerEnabled ? "false" : "true");
+    }
+    if (answerModel) answerModel.disabled = true;
+    var answerQuality = root.querySelector("[data-answer-quality]");
+    if (answerQuality) answerQuality.hidden = !answerEnabled;
+    var qualityDashboard = root.querySelector(".retrieval-quality-dashboard");
+    if (qualityDashboard) qualityDashboard.classList.toggle("is-retrieval-only", !answerEnabled);
+  }
+
+  function retrievalTestLocation(knowledgeBaseId, options) {
+    var input = options || {};
+    var query = [];
+    if (knowledgeBaseId) query.push("knowledgeBaseId=" + encodeURIComponent(knowledgeBaseId));
+    if (input.settings && input.settings !== "online") query.push("settings=" + encodeURIComponent(input.settings));
+    if (input.run) query.push("run=" + encodeURIComponent(input.run));
+    return "retrieval-test" + (query.length ? "?" + query.join("&") : "");
   }
 
   function renderRetrievalTest(route, state) {
@@ -437,7 +555,7 @@
     var kbId = route.query.knowledgeBaseId || fallbackTest && fallbackTest.knowledgeBaseId || state.knowledgeBases[0] && state.knowledgeBases[0].id;
     var kb = findKnowledgeBase(state, kbId);
     if (!kb) {
-      kb = findKnowledgeBase(state, fallbackTest && fallbackTest.knowledgeBaseId) || orderedRetrievalKnowledgeBases(state.knowledgeBases)[0] || null;
+      kb = findKnowledgeBase(state, fallbackTest && fallbackTest.knowledgeBaseId) || state.knowledgeBases[0] || null;
       kbId = kb && kb.id;
     }
     var test = state.rag.retrievalTests.find(function find(item) { return item.knowledgeBaseId === kbId; }) || {
@@ -455,27 +573,31 @@
     var searchableCount = kb && kb.documentCounts ? Number(kb.documentCounts.searchable || 0) : 0;
     var embeddingModels = state.rag.modelCatalog.embeddingModels || [];
     var embeddingModel = kb && embeddingModels.find(function find(item) { return item.id === kb.boundEmbeddingModelId; });
-    var blockedReason = !kb ? "知识库不存在" : !kb.enabled ? "知识库已关闭检索" : !searchableCount ? "知识库尚无可检索文件" : !modelConnectionReady(embeddingModel) ? "当前知识库的向量模型连接不可用" : "";
+    var blockedReason = !kb ? "知识库不存在" : !searchableCount ? "知识库尚无可检索文件" : !modelConnectionReady(embeddingModel) ? "当前知识库的向量模型连接不可用" : "";
     var runnable = !blockedReason;
     var resultMatchesRuntime = retrievalResultMatchesRuntime(test, runtime);
     var hasRun = Boolean(route.query.run && resultMatchesRuntime && test.lastRunAt);
     var comparison = hasRun ? test.comparison || (test.comparisons || [])[0] : null;
     if (!comparison) comparison = { returnedCount: 0, expectedEvidenceHit: 0, expectedEvidenceTotal: 0, irrelevantCount: 0 };
-    var evaluationSummary = test.evaluationSuite ? '<div class="retrieval-chat__evaluation" aria-live="polite">' + retrievalResultSummary(test, comparison, hasRun, operator) + "</div>" : "";
+    var generationEnabled = Boolean(hasRun && isAnswerGenerationEnabled(test));
+    var qualitySummary = '<div class="retrieval-chat__quality" aria-live="polite">' + qualityDashboard(test, comparison, hasRun, generationEnabled) + "</div>";
     var chatBody = "";
     if (!runnable) {
       chatBody = '<div class="retrieval-chat-blocked"><div class="notice notice--danger">' + dom.icon("circle-off", 17) + '<div class="notice__content"><div class="notice__title">暂时无法检索</div>' + esc(blockedReason) + "。</div></div></div>";
     } else if (hasRun) {
       chatBody = '<article class="retrieval-message retrieval-message--user" aria-label="测试问题"><div class="retrieval-message__avatar">' + dom.icon("user-round", 16) + '</div><div class="retrieval-message__content"><p>' + esc(test.question || "") + '</p></div></article>' +
-        '<article class="retrieval-message retrieval-message--result" tabindex="-1" data-retrieval-result><div class="retrieval-message__avatar">' + dom.icon("search-check", 16) + '</div><div class="retrieval-message__content"><div class="retrieval-message__label">检索结果</div><p>' + esc((test.evidence || []).length ? "已返回以下证据片段。" : "本次未返回符合要求的证据。") + '</p>' +
-        (test.evaluationSuite ? "" : retrievalResultSummary(test, comparison, true, operator)) + '<div class="retrieval-evidence-list">' + evidenceRows(test, comparison) + '</div></div></article>';
+        generatedAnswerMessage(test) +
+        '<article class="retrieval-message retrieval-message--result" tabindex="-1" data-retrieval-result><div class="retrieval-message__avatar">' + dom.icon("search-check", 16) + '</div><div class="retrieval-message__content"><div class="retrieval-message__label">检索证据</div><p>' + esc((test.evidence || []).length ? "本次回答使用了以下证据片段。" : "本次未返回符合要求的证据。") + '</p>' +
+        '<div class="retrieval-evidence-list">' + evidenceRows(test, comparison) + '</div></div></article>';
+    } else {
+      chatBody = '<div class="retrieval-chat-empty">' + dom.icon("message-square-text", 22) + '<strong>开始一次完整 RAG 测试</strong><span>发送问题后，将依次展示生成回答、引用证据、检索质量与回答质量。</span></div>';
     }
     var rerankReady = !operator.rerankEnabled || readyRerankerModels(state).length > 0;
-    return dom.pageHeader({ title: "检索测试", back: { label: "返回检索配置", route: "retrieval-config" } }) +
-      '<div class="page-content retrieval-test-page"><div class="retrieval-studio"><aside class="retrieval-studio__settings" aria-label="检索测试设置">' +
-      retrievalTestControls(state, runtime, kbId, test) + '</aside>' +
-      '<section class="retrieval-chat" aria-label="检索测试结果">' + evaluationSummary + '<div class="retrieval-chat__body" aria-live="polite">' + chatBody + '</div>' +
-      '<footer class="retrieval-composer"><textarea id="test-question-v2" class="retrieval-composer__input" rows="2" required aria-required="true" aria-label="检索问题" placeholder="输入需要检索知识库的问题"' + (test.evaluationSuite ? " readonly" : "") + (runnable ? "" : " disabled") + '>' + esc(test.question || "") + '</textarea>' + dom.button("检索", { variant: "primary", icon: "play", attrs: 'data-run-test-v2 data-base-runnable="' + (runnable ? "true" : "false") + '"', disabled: !runnable || !rerankReady }) + '</footer></section></div></div>';
+    return dom.pageHeader({ title: "检索测试" }) +
+      '<div class="page-content retrieval-test-page"><div class="retrieval-studio">' +
+      '<section class="retrieval-chat" aria-label="RAG 对话与质量结果">' + qualitySummary + '<div class="retrieval-chat__body" aria-live="polite">' + chatBody + '</div>' +
+      '<footer class="retrieval-composer"><textarea id="test-question-v2" class="retrieval-composer__input" rows="2" required aria-required="true" aria-label="测试问题" placeholder="输入需要测试的问题，Enter 发送，Shift + Enter 换行"' + (runnable ? "" : " disabled") + '>' + esc(test.question || "") + '</textarea>' + dom.button("发送", { variant: "primary", icon: "send", attrs: 'data-run-test-v2 data-base-runnable="' + (runnable ? "true" : "false") + '"', disabled: !runnable || !rerankReady }) + '</footer></section>' +
+      '<aside class="retrieval-studio__settings" aria-label="检索测试设置">' + retrievalTestControls(state, runtime, kbId, generationEnabled) + '</aside></div></div>';
   }
 
   function mountRetrievalTest(root, route) {
@@ -483,12 +605,16 @@
     var kbSelect = root.querySelector("#test-kb-v2");
     var selectedTest = initialState.rag.retrievalTests.find(function find(item) { return item.knowledgeBaseId === (kbSelect && kbSelect.value); }) || null;
     var runtime = retrievalTestSettings(initialState, route, selectedTest);
+    if (route.query.from) {
+      router.navigate(retrievalTestLocation(kbSelect && kbSelect.value, { settings: runtime.source, run: route.query.run }));
+      return;
+    }
     if (kbSelect && route.query.knowledgeBaseId && route.query.knowledgeBaseId !== kbSelect.value) {
-      router.navigate("retrieval-test?knowledgeBaseId=" + encodeURIComponent(kbSelect.value) + (runtime.source === "preview" ? "&settings=preview" : ""));
+      router.navigate(retrievalTestLocation(kbSelect.value, { settings: runtime.source }));
       return;
     }
     if (kbSelect) kbSelect.addEventListener("change", function handle() {
-      router.navigate("retrieval-test?knowledgeBaseId=" + encodeURIComponent(kbSelect.value) + (runtime.source === "preview" ? "&settings=preview" : ""));
+      router.navigate(retrievalTestLocation(kbSelect.value, { settings: runtime.source }));
     });
     var knowledgeBasePicker = root.querySelector("[data-retrieval-kb-picker]");
     if (knowledgeBasePicker && kbSelect) {
@@ -510,7 +636,6 @@
         });
         var choice = current.querySelector(".retrieval-kb-choice");
         if (knowledgeBaseValue && choice) knowledgeBaseValue.innerHTML = choice.outerHTML;
-        if (knowledgeBaseTrigger) knowledgeBaseTrigger.classList.toggle("is-evaluation", current.dataset.evaluation === "true");
       }
 
       function handleKnowledgeBaseOutsidePointer(event) {
@@ -608,12 +733,6 @@
       });
       syncKnowledgeBaseSelection();
     }
-    var evaluationCaseSelect = root.querySelector("#test-evaluation-case");
-    if (evaluationCaseSelect) evaluationCaseSelect.addEventListener("change", function handle() {
-      var selectedOption = evaluationCaseSelect.options[evaluationCaseSelect.selectedIndex];
-      var questionInput = root.querySelector("#test-question-v2");
-      if (questionInput && selectedOption) questionInput.value = selectedOption.dataset.question || "";
-    });
     var toggle = root.querySelector("[data-test-rerank-toggle]");
     if (toggle) toggle.addEventListener("click", function handle() {
       var next = toggle.getAttribute("aria-checked") !== "true";
@@ -630,7 +749,14 @@
     if (model) model.addEventListener("change", function handle() {
       syncRetrievalTestControls(root);
     });
-    bindRelevanceSliders(root);
+    var answerToggle = root.querySelector("[data-test-answer-toggle]");
+    if (answerToggle) answerToggle.addEventListener("click", function handle() {
+      var next = answerToggle.getAttribute("aria-checked") !== "true";
+      answerToggle.setAttribute("aria-checked", next ? "true" : "false");
+      answerToggle.classList.toggle("is-on", next);
+      syncRetrievalTestControls(root);
+    });
+    bindRelevanceInputs(root);
     var run = root.querySelector("[data-run-test-v2]");
     if (run) run.addEventListener("click", function handle() {
       var question = root.querySelector("#test-question-v2").value.trim();
@@ -641,26 +767,39 @@
       var knowledgeBaseId = root.querySelector("#test-kb-v2").value;
       var current = OpsDemo.core.store.getState();
       var currentTest = current.rag.retrievalTests.find(function find(item) { return item.knowledgeBaseId === knowledgeBaseId; }) || null;
-      var quickSettings = retrievalTestPayload(root, runtime);
+      var quickSettings = retrievalTestPayload(root);
       var changed = retrievalOperatorKey(quickSettings) !== retrievalOperatorKey(runtime.operator);
       var result = actions.runRetrievalTest({
         testId: currentTest && currentTest.id,
         knowledgeBaseId: knowledgeBaseId,
         question: question,
-        evaluationCaseId: evaluationCaseSelect && evaluationCaseSelect.value,
         useDraft: runtime.source === "preview",
         operatorOverrides: runtime.source === "test" || changed ? quickSettings : null,
+        generateAnswer: quickSettings.generateAnswer,
         silentRender: true
       });
       if (result) {
         var source = result.runtimeSnapshot && result.runtimeSnapshot.source || "online";
-        var settingsQuery = source === "online" ? "" : "&settings=" + encodeURIComponent(source);
-        var runToken = encodeURIComponent(result.lastRunAt || String(Date.now()));
-        router.navigate("retrieval-test?knowledgeBaseId=" + encodeURIComponent(knowledgeBaseId) + settingsQuery + "&run=" + runToken);
+        var runToken = result.lastRunAt || String(Date.now());
+        router.navigate(retrievalTestLocation(knowledgeBaseId, { settings: source, run: runToken }));
         overlay.toast("检索已完成", "结果已按本次参数刷新，全局设置未发生变化。", "success");
       } else {
         overlay.toast("无法运行检索", "请检查 Rerank、Top K 和相关性设置。", "warning");
       }
+    });
+    var questionInput = root.querySelector("#test-question-v2");
+    if (questionInput && !questionInput.readOnly) questionInput.addEventListener("keydown", function sendOnEnter(event) {
+      if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+      event.preventDefault();
+      if (run && !run.disabled) run.click();
+    });
+    root.querySelectorAll("[data-evidence-jump]").forEach(function bindCitation(button) {
+      button.addEventListener("click", function jumpToEvidence() {
+        var evidence = root.querySelector("#retrieval-evidence-" + button.getAttribute("data-evidence-jump"));
+        if (!evidence) return;
+        evidence.scrollIntoView({ behavior: "smooth", block: "center" });
+        evidence.focus({ preventScroll: true });
+      });
     });
     syncRetrievalTestControls(root);
     var resultFocus = root.querySelector("[data-retrieval-result]");
@@ -669,7 +808,8 @@
 
   OpsDemo.pages.rag = {
     render: renderRag,
-    mount: mountRetrievalSettings
+    mount: mountRetrievalSettings,
+    unmount: unmountRetrievalSettings
   };
 
   OpsDemo.pages.retrievalTest = {

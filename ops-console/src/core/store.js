@@ -3,6 +3,12 @@
 
   var state = null;
   var listeners = [];
+  var initializers = [];
+
+  function initialize(next) {
+    initializers.forEach(function each(initializer) { initializer(next); });
+    return next;
+  }
 
   function ensureSeed() {
     if (!OpsDemo.data.createSeed) {
@@ -13,7 +19,7 @@
 
   function getState() {
     if (!state) {
-      state = ensureSeed();
+      state = initialize(ensureSeed());
     }
     return state;
   }
@@ -39,7 +45,7 @@
   }
 
   function reset() {
-    state = ensureSeed();
+    state = initialize(ensureSeed());
     emit({ type: "reset" });
   }
 
@@ -56,6 +62,10 @@
   }
 
   OpsDemo.core.store = {
+    registerInitializer: function registerInitializer(initializer) {
+      initializers.push(initializer);
+      if (state) initializer(state);
+    },
     getState: getState,
     mutate: mutate,
     subscribe: subscribe,

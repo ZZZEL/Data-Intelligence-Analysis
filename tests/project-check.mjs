@@ -11,8 +11,10 @@ const checks = [
   ['用户端应用语法', ['--check', 'user-client/src/app.js']],
   ['用户端静态检查', ['user-client/tests/static-check.mjs']],
   ['用户端流程检查', ['user-client/tests/flow-check.mjs']],
+  ['运营端检索 API 检查', ['ops-console/tests/api-access-check.mjs']],
   ['运营端静态检查', ['ops-console/tests/static-check.mjs']],
-  ['运营端管理闭环检查', ['ops-console/tests/closed-loop-check.mjs']]
+  ['运营端管理闭环检查', ['ops-console/tests/closed-loop-check.mjs']],
+  ['RAG 文件生命周期与异步闭环检查', ['ops-console/tests/rag-lifecycle-check.mjs']]
 ];
 
 for (const [label, args] of checks) {

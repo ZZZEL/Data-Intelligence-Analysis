@@ -11,20 +11,9 @@
     });
   }
 
-  function availableCapabilities(state) {
-    var skills = state.skills.filter(function filter(item) { return item.enabled && item.status !== "unavailable"; }).length;
-    var tools = state.tools.filter(function filter(item) { return item.enabled && item.status !== "unavailable"; }).length;
-    var visualizations = state.visualizations.filter(function filter(item) {
-      return item.integrationStatus === "integrated" && item.runtimeStatus !== "disabled_by_skill" && item.runtimeStatus !== "unavailable";
-    }).length;
-    return { available: skills + tools + visualizations, total: state.skills.length + state.tools.length + state.visualizations.length };
-  }
-
   function overviewMetrics(state) {
-    var capabilities = availableCapabilities(state);
     return {
       knowledge: { available: availableKnowledgeBases(state).length, total: state.knowledgeBases.length },
-      capabilities: capabilities,
       todayCalls: state.consumption.daily[state.consumption.daily.length - 1].calls,
       monthTokensM: state.consumption.monthSummary.totalTokensM
     };
@@ -44,12 +33,6 @@
     });
   }
 
-  function dependentSkills(state, toolId) {
-    return state.skills.filter(function filter(skill) {
-      return ((skill.dependencies && skill.dependencies.toolIds) || []).indexOf(toolId) >= 0;
-    });
-  }
-
   function documentsForKnowledgeBase(state, knowledgeBaseId) {
     return state.documents.filter(function filter(item) { return item.knowledgeBaseId === knowledgeBaseId; });
   }
@@ -65,12 +48,10 @@
   OpsDemo.core.selectors = {
     enabledKnowledgeBases: enabledKnowledgeBases,
     availableKnowledgeBases: availableKnowledgeBases,
-    availableCapabilities: availableCapabilities,
     overviewMetrics: overviewMetrics,
     actionableTodos: actionableTodos,
     findKnowledgeBase: findKnowledgeBase,
     latestCandidateVersion: latestCandidateVersion,
-    dependentSkills: dependentSkills,
     documentsForKnowledgeBase: documentsForKnowledgeBase,
     importsForKnowledgeBase: importsForKnowledgeBase,
     versionsForKnowledgeBase: versionsForKnowledgeBase

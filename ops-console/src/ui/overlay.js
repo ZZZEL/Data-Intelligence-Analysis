@@ -47,6 +47,12 @@
     }, 0);
   }
 
+  function focusableControls(container) {
+    return Array.prototype.slice.call(container.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter(function visible(control) {
+      return control.getClientRects().length > 0;
+    });
+  }
+
   function open(options) {
     var opts = options || {};
     var kind = opts.kind === "drawer" ? "drawer" : "dialog";
@@ -109,6 +115,27 @@
   });
 
   document.addEventListener("keydown", function handleKey(event) {
+    if (event.key === "Tab" && current) {
+      var panel = overlayRoot().querySelector('[role="dialog"]');
+      var controls = panel ? focusableControls(panel) : [];
+      if (!controls.length) {
+        event.preventDefault();
+        return;
+      }
+      var first = controls[0];
+      var last = controls[controls.length - 1];
+      if (!panel.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+      return;
+    }
     if (event.key === "Escape" && current && current.dismissible !== false) {
       var active = current;
       var shouldClose = typeof active.onCancel !== "function" || active.onCancel(overlayRoot(), "escape") !== false;

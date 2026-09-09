@@ -3,63 +3,7 @@
 
   var app = (global.OpsDemo = global.OpsDemo || {});
   var dataNamespace = (app.data = app.data || {});
-  var scifactMini = dataNamespace.scifactMini || { corpus: [], cases: [] };
-
-  var chartDefinitions = [
-    ["VIS-01", "折线图", "时间趋势", "generate_line_chart", 640, 99.1, 820, "展示时间序列趋势", "日期维度 + 1–5 个数值序列"],
-    ["VIS-02", "面积图", "时间趋势", "generate_area_chart", 180, 98.9, 846, "展示累计量或结构随时间变化", "日期维度 + 可堆叠数值序列"],
-    ["VIS-03", "双轴图", "时间趋势", "generate_dual_axes_chart", 126, 98.4, 910, "对比两类量纲不同的指标", "共享维度 + 左右轴数值"],
-    ["VIS-04", "条形图", "分类比较", "generate_bar_chart", 388, 99.0, 774, "长标签类目排名对比", "类目 + 数值"],
-    ["VIS-05", "柱状图", "分类比较", "generate_column_chart", 412, 99.2, 762, "展示少量类目间差异", "类目 + 1–3 个数值序列"],
-    ["VIS-06", "雷达图", "专项图表", "generate_radar_chart", 158, 97.8, 956, "比较少量对象的多维特征", "3–8 个维度 + 1–5 个对象"],
-    ["VIS-07", "饼图", "占比构成", "generate_pie_chart", 274, 98.8, 790, "展示少量分类占比", "2–6 个类目 + 非负数值"],
-    ["VIS-08", "矩形树图", "占比构成", "generate_treemap_chart", 96, 97.9, 996, "展示层级结构及占比", "分层节点 + 数值"],
-    ["VIS-09", "水波图", "专项图表", "generate_liquid_chart", 42, 97.6, 904, "突出单一进度或完成率", "0–100% 的单一数值"],
-    ["VIS-10", "漏斗图", "专项图表", "generate_funnel_chart", 76, 98.1, 888, "展示阶段转化或缩减", "有序阶段 + 非负数值"],
-    ["VIS-11", "直方图", "分类比较", "generate_histogram_chart", 134, 98.6, 842, "展示连续数值的频次分布", "连续数值数组"],
-    ["VIS-12", "箱型图", "专项图表", "generate_boxplot_chart", 72, 97.5, 932, "比较分布、中位数和异常值", "分组数值样本"],
-    ["VIS-13", "小提琴图", "专项图表", "generate_violin_chart", 18, 94.4, 1080, "比较样本分布密度", "分组数值样本"],
-    ["VIS-14", "散点图", "关系与流向", "generate_scatter_chart", 188, 98.7, 814, "展示双变量关系与异常点", "X/Y 数值 + 可选分组"],
-    ["VIS-15", "维恩图", "关系与流向", "generate_venn_chart", 24, 95.8, 1042, "展示集合重叠关系", "2–4 个集合及交集"],
-    ["VIS-16", "桑基图", "关系与流向", "generate_sankey_chart", 84, 97.6, 1120, "展示量在节点间的流向", "节点 + 带权连线"],
-    ["VIS-17", "网络关系图", "专项图表", "generate_network_graph", 46, 95.7, 1186, "展示实体间关联", "节点 + 连线"],
-    ["VIS-18", "组织架构图", "层级与树", "generate_organization_chart", 12, 91.7, 1210, "展示严格层级与隶属关系", "父子层级节点"],
-    ["VIS-19", "思维导图", "层级与树", "generate_mind_map", 38, 94.7, 1106, "展示主题拆解与分支", "中心主题 + 分层子节点"],
-    ["VIS-20", "流程图", "专项图表", "generate_flow_diagram", 72, 97.2, 1028, "展示业务流程和决策路径", "步骤节点 + 方向连线"],
-    ["VIS-21", "鱼骨图", "专项图表", "generate_fishbone_diagram", 20, 95.0, 1134, "展示问题成因分解", "结果 + 原因分支"],
-    ["VIS-22", "中国行政区地图", "地理地图", "generate_district_map", 52, 96.2, 1380, "展示行政区指标分布", "行政区编码/名称 + 数值"],
-    ["VIS-23", "点标地图", "地理地图", "generate_pin_map", 64, 96.9, 1326, "展示供应商或事件位置", "经纬度 + 标签 + 数值"],
-    ["VIS-24", "路径地图", "地理地图", "generate_path_map", 34, 94.1, 1468, "展示运输或影响传导路径", "起终点经纬度 + 路径属性"],
-    ["VIS-25", "词云", "专项图表", "generate_word_cloud_chart", 30, 96.7, 868, "展示关键词频次", "词语 + 权重"],
-  ];
-
-  var visualizations = chartDefinitions.map(function (item) {
-    return {
-      id: item[0],
-      name: item[1],
-      category: item[2],
-      toolCode: item[3],
-      definitionStatus: "defined",
-      definitionStatusLabel: "已定义",
-      integrationStatus: "integrated",
-      integrationStatusLabel: "已接入",
-      runtimeStatus: "available",
-      runtimeStatusLabel: "可用",
-      limitation: "",
-      controlMode: "skill_level",
-      controlModeLabel: "跟随报告图表生成 Skill 整体启停",
-      dependentSkillId: "SK-06",
-      useCase: item[7],
-      inputSummary: item[8],
-      output: "PNG 图片 URL",
-      fallback: "数据表 + 文字说明",
-      sampleActionEnabled: true,
-      sampleDataset: "2026Q3 供应商脱敏样例",
-      callsThisMonth: item[4],
-      successRate: item[5],
-      avgLatencyMs: item[6],
-    };
-  });
+  var supplyChainDemo = dataNamespace.supplyChainDemo || null;
 
   var documentChunkSamples = [
     {
@@ -167,22 +111,6 @@
     return result;
   }, []);
 
-  scifactMini.corpus.forEach(function addSciFactChunks(documentItem) {
-    documentItem.abstract.forEach(function addSentence(sentence, sentenceIndex) {
-      documentChunkSamples.push({
-        id: "CHK-" + documentItem.id + "-" + String(sentenceIndex + 1).padStart(3, "0"),
-        documentId: documentItem.id,
-        knowledgeBaseId: "KB-EVAL-SCIFACT",
-        index: sentenceIndex + 1,
-        characterCount: sentence.length,
-        content: sentence,
-        createdAt: "2026-09-03T09:00:00+08:00",
-        status: "ready",
-        sourceDocumentId: documentItem.sourceDocumentId
-      });
-    });
-  });
-
   var TEMPLATE = {
     schemaVersion: "1.0.0",
     meta: {
@@ -194,20 +122,11 @@
       locale: "zh-CN",
       currentUser: {
         displayName: "运营管理员 A",
-        accessLevel: "L3",
-        accessLevelName: "受限业务",
-        identitySource: "星港统一身份与权限平台",
+        identitySource: "星港统一身份平台",
         managedUpstream: true,
         readOnly: true,
       },
-      accessLevels: [
-        { code: "L1", name: "基础内部", rank: 1 },
-        { code: "L2", name: "敏感业务", rank: 2 },
-        { code: "L3", name: "受限业务", rank: 3 },
-      ],
       dataPolicy: {
-        documentAccessRule: "文件实际等级取知识库最低访问等级与上游文件等级中更严格者",
-        userPermissionsManagedHere: false,
         modelSelectionManagedHere: false,
         userConversationStoredHere: false,
         reportInstancesStoredHere: false,
@@ -227,26 +146,6 @@
         },
         documents: { total: 240, searchable: 238, label: "文件" },
         importIssues: { open: 1, label: "导入异常" },
-        skills: {
-          total: 7,
-          available: 6,
-          unavailable: 0,
-          disabled: 1,
-          label: "Skill",
-        },
-        tools: {
-          total: 8,
-          available: 7,
-          unavailable: 0,
-          disabled: 1,
-          label: "Tool",
-        },
-        visualizations: {
-          defined: 25,
-          integrated: 25,
-          notIntegrated: 0,
-          label: "可视化能力",
-        },
         consumption: {
           totalTokensM: 268.4,
           label: "本月 Token 消耗",
@@ -287,8 +186,6 @@
         enabledStateLabel: "检索已启用",
         retrievalStatus: "available",
         retrievalStatusLabel: "可检索",
-        minAccessLevel: "L2",
-        minAccessLevelLabel: "敏感业务",
         documentCounts: {
           total: 128,
           searchable: 126,
@@ -332,8 +229,6 @@
         enabledStateLabel: "检索已启用",
         retrievalStatus: "available",
         retrievalStatusLabel: "可检索",
-        minAccessLevel: "L1",
-        minAccessLevelLabel: "基础内部",
         documentCounts: {
           total: 64,
           searchable: 64,
@@ -376,8 +271,6 @@
         enabledStateLabel: "检索已关闭",
         retrievalStatus: "disabled",
         retrievalStatusLabel: "已关闭",
-        minAccessLevel: "L3",
-        minAccessLevelLabel: "受限业务",
         documentCounts: {
           total: 37,
           searchable: 37,
@@ -407,7 +300,7 @@
         currentKnowledgeVersionId: "KV-20260728-01",
         contentUpdatedAt: "2026-08-12T10:36:00+08:00",
         availabilityCheckedAt: "2026-08-25T14:20:00+08:00",
-        hint: "关闭检索不会删除文件；重新启用后仍按访问等级过滤。",
+        hint: "关闭检索不会删除文件；重新启用后恢复检索。",
       },
     ],
 
@@ -426,8 +319,6 @@
         contentHash: "mock:156b535f",
         characterCount: 138240,
         chunkCount: 312,
-        upstreamAccessLevel: "L2",
-        effectiveAccessLevel: "L2",
         searchable: true,
         countsTowardDocumentTotal: true,
         status: "ready",
@@ -456,8 +347,6 @@
         contentHash: "mock:db03051d",
         characterCount: 102400,
         chunkCount: 228,
-        upstreamAccessLevel: "L2",
-        effectiveAccessLevel: "L2",
         searchable: false,
         countsTowardDocumentTotal: true,
         status: "embedding",
@@ -490,8 +379,6 @@
         contentHash: "mock:9059e43a",
         characterCount: 56320,
         chunkCount: 96,
-        upstreamAccessLevel: "L1",
-        effectiveAccessLevel: "L2",
         searchable: false,
         countsTowardDocumentTotal: true,
         status: "indexing",
@@ -518,8 +405,6 @@
         contentHash: "mock:9c1f182c",
         characterCount: 72704,
         chunkCount: 142,
-        upstreamAccessLevel: "L2",
-        effectiveAccessLevel: "L2",
         searchable: false,
         countsTowardDocumentTotal: true,
         status: "parsing",
@@ -547,8 +432,6 @@
         contentHash: "mock:61597ff8",
         characterCount: 64512,
         chunkCount: 118,
-        upstreamAccessLevel: "L1",
-        effectiveAccessLevel: "L2",
         searchable: true,
         countsTowardDocumentTotal: true,
         status: "ready",
@@ -573,8 +456,6 @@
         contentHash: "mock:fb70fa22",
         characterCount: 211968,
         chunkCount: 426,
-        upstreamAccessLevel: "L1",
-        effectiveAccessLevel: "L1",
         searchable: true,
         countsTowardDocumentTotal: true,
         status: "ready",
@@ -599,8 +480,6 @@
         contentHash: "mock:5af72801",
         characterCount: 40960,
         chunkCount: 74,
-        upstreamAccessLevel: "L1",
-        effectiveAccessLevel: "L1",
         searchable: true,
         countsTowardDocumentTotal: true,
         status: "ready",
@@ -625,8 +504,6 @@
         contentHash: "mock:ad9f980e",
         characterCount: 267264,
         chunkCount: 538,
-        upstreamAccessLevel: "L3",
-        effectiveAccessLevel: "L3",
         searchable: true,
         countsTowardDocumentTotal: true,
         status: "ready",
@@ -652,8 +529,6 @@
         contentHash: "mock:9c1f182c",
         characterCount: 72704,
         chunkCount: 96,
-        upstreamAccessLevel: "L2",
-        effectiveAccessLevel: "L3",
         searchable: true,
         countsTowardDocumentTotal: true,
         status: "ready",
@@ -902,6 +777,86 @@
 
     rag: {
       modelCatalog: {
+        llmModels: [
+          {
+            id: "MODEL-LLM-DEEPSEEK-V4-PRO",
+            alias: "DeepSeek-V4-Pro",
+            modelId: "deepseek-ai/DeepSeek-V4-Pro",
+            provider: "DeepSeek",
+            parameters: "1.6T · 激活 49B",
+            parameterCountB: 1600,
+            activeParameterCountB: 49,
+            architecture: "MoE",
+            maxInputTokens: 1000000,
+            description: "百万 token 上下文的开源推理模型，支持分析、代码与 Agent 工具调用。",
+            connectionStatus: "available",
+            connectionStatusLabel: "连接正常",
+            lastTestAt: "2026-09-04T10:00:00+08:00",
+            status: "available",
+            statusLabel: "可用",
+            apiConfig: {
+              endpoint: "model-gateway.internal/models/deepseek-v4-pro/v1/chat/completions",
+              apiKeyMasked: "••••••••DEMO"
+            },
+            lastConnectionTest: {
+              status: "passed",
+              statusLabel: "连接正常",
+              testedAt: "2026-09-04T10:00:00+08:00"
+            }
+          },
+          {
+            id: "MODEL-LLM-QWEN3-8-MAX",
+            alias: "Qwen3.8-2.4T-A95B",
+            modelId: "Qwen/Qwen3.8-2.4T-A95B",
+            provider: "Qwen",
+            parameters: "2.4T · 激活 95B",
+            parameterCountB: 2400,
+            activeParameterCountB: 95,
+            architecture: "MoE",
+            maxInputTokens: 262144,
+            description: "Qwen3.8 旗舰开源 MoE 模型，面向复杂分析、研究、代码与长时程 Agent 任务。",
+            connectionStatus: "available",
+            connectionStatusLabel: "连接正常",
+            lastTestAt: "2026-09-04T10:00:00+08:00",
+            status: "available",
+            statusLabel: "可用",
+            apiConfig: {
+              endpoint: "model-gateway.internal/models/qwen3.8-2.4t-a95b/v1/chat/completions",
+              apiKeyMasked: "••••••••DEMO"
+            },
+            lastConnectionTest: {
+              status: "passed",
+              statusLabel: "连接正常",
+              testedAt: "2026-09-04T10:00:00+08:00"
+            }
+          },
+          {
+            id: "MODEL-LLM-QWEN3-5-LARGE",
+            alias: "Qwen3.5-397B-A17B",
+            modelId: "Qwen/Qwen3.5-397B-A17B",
+            provider: "Qwen",
+            parameters: "397B · 激活 17B",
+            parameterCountB: 397,
+            activeParameterCountB: 17,
+            architecture: "MoE",
+            maxInputTokens: 262144,
+            description: "Qwen3.5 大规模开源 MoE 模型，兼顾多模态理解、推理与工具调用。",
+            connectionStatus: "available",
+            connectionStatusLabel: "连接正常",
+            lastTestAt: "2026-09-04T10:00:00+08:00",
+            status: "available",
+            statusLabel: "可用",
+            apiConfig: {
+              endpoint: "model-gateway.internal/models/qwen3.5-397b-a17b/v1/chat/completions",
+              apiKeyMasked: "••••••••DEMO"
+            },
+            lastConnectionTest: {
+              status: "passed",
+              statusLabel: "连接正常",
+              testedAt: "2026-09-04T10:00:00+08:00"
+            }
+          }
+        ],
         embeddingModels: [
           {
             id: "MODEL-EMBEDDING-PRIMARY",
@@ -1069,6 +1024,12 @@
           }
         ]
       },
+      answerGeneration: {
+        modelId: "MODEL-LLM-DEEPSEEK-V4-PRO",
+        model: "DeepSeek-V4-Pro",
+        temperature: 0.2,
+        citationsEnabled: true
+      },
       ingestionProfiles: [
         {
           id: "ING-01",
@@ -1091,6 +1052,7 @@
             separator: "\n\n",
             separatorType: "literal",
             includeContext: true,
+            parentChildEnabled: false,
             strategy: "auto_structure_recursive_length_fallback",
             strategyLabel: "自动切片",
             usesSemanticModel: false,
@@ -1144,6 +1106,7 @@
             separator: "\n\n",
             separatorType: "literal",
             includeContext: true,
+            parentChildEnabled: false,
             strategy: "chapter_first",
             strategyLabel: "智能切片",
             targetTokens: 1200,
@@ -1202,6 +1165,7 @@
             separator: "\n\n",
             separatorType: "literal",
             includeContext: true,
+            parentChildEnabled: false,
             mergeShortChunks: true,
             strategy: "semantic_boundary",
             strategyLabel: "语义切片",
@@ -1247,11 +1211,11 @@
         {
           id: "ING-FIXED",
           name: "固定长度切片",
-          description: "按统一字符长度切分，适合结构较弱、内容连续的文本材料。",
-          displayGroup: "internal",
+          description: "按统一字符窗口切分，可设置相邻重叠，适合结构较弱、内容连续的文本材料。",
+          displayGroup: "primary",
           displayOrder: 5,
           enabled: true,
-          visible: false,
+          visible: true,
           builtIn: true,
           updatedAt: "2026-08-26T09:10:00+08:00",
           revision: 1,
@@ -1263,15 +1227,12 @@
             mode: "fixed",
             maxChars: 1000,
             overlapPercent: 10,
-            separator: "\n\n",
-            separatorType: "literal",
             includeContext: true,
+            parentChildEnabled: false,
             strategy: "fixed_length",
             strategyLabel: "固定长度",
-            targetTokens: 400,
-            maxTokens: 500,
-            overlapTokens: 40,
-            tableRule: "表格优先保持完整，超过上限时按行组拆分",
+            usesSemanticModel: false,
+            tableRule: "严格按字符窗口切分，表格完整性不作为切片边界条件",
             preserveLocators: ["page", "section", "table"]
           },
           indexContent: {
@@ -1301,10 +1262,11 @@
           id: "ING-RECURSIVE",
           name: "递归切块",
           description: "按段落、换行、句末标点与空格逐级拆分超长片段，最后按字符兜底，尽量保留完整句段。",
-          displayGroup: "primary",
-          displayOrder: 4,
+          displayGroup: "internal",
+          displayOrder: 99,
           enabled: true,
-          visible: true,
+          visible: false,
+          internal: true,
           builtIn: true,
           updatedAt: "2026-09-04T10:00:00+08:00",
           revision: 1,
@@ -1317,8 +1279,9 @@
             maxChars: 1000,
             overlapPercent: 10,
             includeContext: true,
+            parentChildEnabled: false,
             strategy: "recursive_character",
-            strategyLabel: "递归切块",
+            strategyLabel: "分隔符切片",
             recursiveBoundaries: ["paragraph", "newline", "sentence", "whitespace", "character"],
             keepSeparator: true,
             usesSemanticModel: false,
@@ -1359,6 +1322,7 @@
             separatorType: "structure",
             separatorPreset: "structure",
             includeContext: true,
+            parentChildEnabled: false,
             strategy: "parsed_structure_boundary",
             strategyLabel: "结构切片",
             targetTokens: 640,
@@ -1393,14 +1357,14 @@
         {
           id: "ING-SEPARATOR",
           name: "分隔符切片",
-          description: "按选定的换行、段落空行或单个中英文句末符生成边界，适合分隔规则稳定的纯文本。",
+          description: "选择首要分隔符；超长片段会自动按更细边界递归拆分，并以字符上限兜底。",
           displayGroup: "primary",
-          displayOrder: 5,
+          displayOrder: 4,
           enabled: true,
           visible: true,
           builtIn: true,
           updatedAt: "2026-09-02T12:00:00+08:00",
-          revision: 2,
+          revision: 3,
           status: "effective",
           statusLabel: "已启用",
           mineru: { service: "MinerU", fixed: true, configurable: false, display: "MinerU（固定解析服务）" },
@@ -1412,13 +1376,14 @@
             separator: "\n\n",
             separatorType: "paragraph",
             separatorPreset: "paragraph",
+            recursiveBoundaries: ["paragraph", "newline", "sentence", "whitespace", "character"],
+            keepSeparator: true,
             includeContext: true,
-            strategy: "delimiter_boundary",
+            parentChildEnabled: false,
+            strategy: "separator_recursive_fallback",
             strategyLabel: "分隔符切片",
-            targetTokens: 640,
-            maxTokens: 800,
-            overlapTokens: 32,
-            tableRule: "按解析文本中的所选分隔符切分，超长内容由字符上限兜底",
+            usesSemanticModel: false,
+            tableRule: "优先按所选分隔符切分；超长内容自动按更细边界递归拆分，最后按字符上限兜底",
             preserveLocators: ["page", "section", "table"]
           },
           indexContent: {
@@ -1466,6 +1431,7 @@
             separator: "\f",
             separatorType: "literal",
             includeContext: true,
+            parentChildEnabled: false,
             pagesPerChunk: 1,
             mergeShortPages: false,
             strategy: "page_boundary",
@@ -1522,6 +1488,7 @@
             separator: "",
             separatorType: "literal",
             includeContext: false,
+            parentChildEnabled: false,
             longDocumentFallback: "smart",
             strategy: "whole_document",
             strategyLabel: "整篇切片",
@@ -1617,11 +1584,10 @@
           retrievalModeLabel: "混合检索（系统默认）",
           bm25Candidates: 30,
           denseCandidates: 30,
-          fusionMethod: "weighted_rrf",
-          fusionWeights: { bm25: 0.45, dense: 0.55 },
+          fusionMethod: "rrf",
+          rrfK: 60,
           fusionCandidates: 30,
           filtersBeforeRetrieval: true,
-          permissionFilterEnabled: true,
           metadataFilterEnabled: true,
           deduplicationEnabled: true,
           deduplication: "same_document_section",
@@ -1632,8 +1598,6 @@
         operator: {
           rerankEnabled: true,
           rerankerModelId: "MODEL-RERANK-PRIMARY",
-          keywordWeight: 45,
-          semanticWeight: 55,
           finalTopK: 10,
           relevanceThreshold: 0.6,
           relevanceLevel: "balanced",
@@ -1651,21 +1615,14 @@
           knowledgeVersionId: "KV-20260821-02",
           runtimeSnapshot: {
             source: "online",
+            system: { retrievalMode: "hybrid", fusionMethod: "rrf", rrfK: 60 },
             operator: {
               rerankEnabled: true,
               rerankerModelId: "MODEL-RERANK-PRIMARY",
-              keywordWeight: 45,
-              semanticWeight: 55,
               finalTopK: 10,
               relevanceThreshold: 0.6,
               relevanceLevel: "balanced",
             },
-          },
-          identityContext: {
-            accessLevel: "L2",
-            accessLevelName: "敏感业务",
-            injectedUpstream: true,
-            readOnly: true,
           },
           filters: {
             documentTypes: ["合同", "审核报告", "整改材料"],
@@ -1738,6 +1695,10 @@
             },
           ],
           answerGenerated: false,
+          generatedAnswer: "",
+          answerCitations: [],
+          generationSnapshot: null,
+          answerMetrics: null,
           validationState: "validated",
           validationStateLabel: "已完成对比验证",
         },
@@ -1750,21 +1711,14 @@
           knowledgeVersionId: "KV-20260820-01",
           runtimeSnapshot: {
             source: "online",
+            system: { retrievalMode: "hybrid", fusionMethod: "rrf", rrfK: 60 },
             operator: {
               rerankEnabled: true,
               rerankerModelId: "MODEL-RERANK-PRIMARY",
-              keywordWeight: 45,
-              semanticWeight: 55,
               finalTopK: 10,
               relevanceThreshold: 0.6,
               relevanceLevel: "balanced",
             },
-          },
-          identityContext: {
-            accessLevel: "L1",
-            accessLevelName: "基础内部",
-            injectedUpstream: true,
-            readOnly: true,
           },
           comparison: {
             returnedCount: 8,
@@ -1818,6 +1772,10 @@
             },
           ],
           answerGenerated: false,
+          generatedAnswer: "",
+          answerCitations: [],
+          generationSnapshot: null,
+          answerMetrics: null,
           validationState: "validated",
           validationStateLabel: "测试完成",
         },
@@ -1833,140 +1791,15 @@
           emptyReason: "knowledge_base_disabled",
           emptyReasonLabel: "该知识库已关闭检索；启用后才能运行检索测试。",
           answerGenerated: false,
+          generatedAnswer: "",
+          answerCitations: [],
+          generationSnapshot: null,
+          answerMetrics: null,
           validationState: "not_run",
           validationStateLabel: "未运行",
         },
       ],
     },
-
-    skills: [
-      {
-        id: "SK-01",
-        name: "文档检索与引用",
-        category: "知识取证",
-        description: "从当前可检索内容中读取可定位证据。",
-        status: "available",
-        statusLabel: "可用",
-        enabled: true,
-        dependencies: { toolIds: ["TOOL-01", "TOOL-02"], skillIds: [] },
-        inputSummary: "研判问题、知识库范围、身份权限上下文",
-        outputSummary: "证据片段、来源文档、页码/章节定位与检索分数",
-        callsThisMonth: 12480,
-        successRate: 98.8,
-        avgLatencyMs: 684,
-        verification: { sampleName: "合同条款定位", lastResult: "passed", lastVerifiedAt: "2026-08-25T10:42:00+08:00" },
-        fallback: "无权或无证据时明确返回无可用证据",
-      },
-      {
-        id: "SK-02",
-        name: "结构化经营数据分析",
-        category: "数据分析",
-        description: "查询订单、库存、交付与供应商绩效数据，并执行确定性计算。",
-        status: "available",
-        statusLabel: "可用",
-        enabled: true,
-        dependencies: { toolIds: ["TOOL-03", "TOOL-04", "TOOL-05"], skillIds: [] },
-        inputSummary: "业务实体、时间范围、指标及统计粒度",
-        outputSummary: "带口径和时间范围的指标结果",
-        callsThisMonth: 9870,
-        successRate: 97.9,
-        avgLatencyMs: 526,
-        verification: { sampleName: "库存覆盖天数样例", lastResult: "passed", lastVerifiedAt: "2026-08-24T16:18:00+08:00" },
-        fallback: "结构化查询超时时不推断缺失数据",
-      },
-      {
-        id: "SK-03",
-        name: "供应商风险研判",
-        category: "专项研判",
-        description: "结合合同证据、履约数据和数值计算结果形成供应商风险判断。",
-        status: "available",
-        statusLabel: "可用",
-        enabled: true,
-        dependencies: { toolIds: [], skillIds: ["SK-01", "SK-02"] },
-        inputSummary: "供应商、研判期间、重点风险类型",
-        outputSummary: "证据化的风险等级、事实、影响和建议",
-        callsThisMonth: 3240,
-        successRate: 96.4,
-        avgLatencyMs: 2480,
-        verification: { sampleName: "海岳电子 Q3 风险", lastResult: "passed", lastVerifiedAt: "2026-08-25T11:06:00+08:00" },
-        fallback: "证据不足时只输出已知事实与局限",
-      },
-      {
-        id: "SK-04",
-        name: "库存与交付风险研判",
-        category: "专项研判",
-        description: "基于库存覆盖、交付达成与逾期情况判断供应中断风险。",
-        status: "available",
-        statusLabel: "可用",
-        enabled: true,
-        dependencies: { toolIds: ["TOOL-03", "TOOL-04"], skillIds: ["SK-02"] },
-        inputSummary: "物料/品类、供应商、交付窗口",
-        outputSummary: "库存与交付风险等级、缺口和建议",
-        callsThisMonth: 2760,
-        successRate: 97.1,
-        avgLatencyMs: 1920,
-        verification: { sampleName: "主控芯片交付缺口", lastResult: "passed", lastVerifiedAt: "2026-08-25T09:34:00+08:00" },
-        fallback: "查询失败时提示重试，不推断缺失数据",
-      },
-      {
-        id: "SK-05",
-        name: "政策趋势与供应链影响研判",
-        runtimeBinding: { id: "skill-policy-supply-chain", version: "v0.3" },
-        category: "专项研判",
-        description: "结合政策证据、业务快照和数值计算结果，研判多情景下的供应链影响与行动选项。",
-        status: "available",
-        statusLabel: "可用",
-        enabled: true,
-        dependencies: { toolIds: ["TOOL-04", "TOOL-05"], skillIds: ["SK-02"] },
-        inputSummary: "基准值、情景参数、影响对象与时间范围",
-        outputSummary: "基准/乐观/压力情景的量化影响",
-        callsThisMonth: 1120,
-        successRate: 95.8,
-        avgLatencyMs: 2860,
-        verification: { sampleName: "关税上浮 10% 影响", lastResult: "passed", lastVerifiedAt: "2026-08-23T15:18:00+08:00" },
-        fallback: "缺失参数时不生成伪精确数值",
-      },
-      {
-        id: "SK-06",
-        name: "报告图表生成",
-        category: "可视化",
-        description: "根据报告中的可视化意图调用已接入图表能力，仅控制图表生成。",
-        status: "available",
-        statusLabel: "可用",
-        enabled: true,
-        dependencies: { toolIds: ["TOOL-07"], skillIds: [] },
-        inputSummary: "可视化类型、数据与显示参数",
-        outputSummary: "报告中的图表图像",
-        callsThisMonth: 2940,
-        successRate: 93.6,
-        avgLatencyMs: 3480,
-        verification: { sampleName: "供应商风险图表试绘", lastResult: "passed", lastVerifiedAt: "2026-08-25T10:08:00+08:00" },
-        recoveryEffect: "启停只影响报告中的图表生成能力。",
-        disableImpact: {
-          visualizationCount: 25,
-          affectedSkillIds: [],
-          message: "停用后 25 种图表无法用于报告生成，报告正文仍可生成。",
-        },
-      },
-      {
-        id: "SK-07",
-        name: "外部政策检索",
-        category: "外部取证",
-        description: "从通过审批的外部政策允许域中检索证据。",
-        status: "disabled",
-        statusLabel: "已停用",
-        enabled: false,
-        dependencies: { toolIds: ["TOOL-06"], skillIds: [] },
-        disabledReason: "外部允许域审批未完成",
-        inputSummary: "政策主题、地区、时间范围",
-        outputSummary: "外部政策证据和来源定位",
-        callsThisMonth: 0,
-        successRate: null,
-        avgLatencyMs: null,
-        verification: { sampleName: "关税政策允许域验证", lastResult: "not_run", lastVerifiedAt: null },
-        fallback: "仅使用已管理的内部政策知识库",
-      },
-    ],
 
     enterpriseConnections: [
       {
@@ -2109,183 +1942,68 @@
       ],
     },
 
-    tools: [
-      {
-        id: "TOOL-01",
-        code: "knowledge_search",
-        name: "知识检索",
-        implementationType: "MCP / 只读",
-        status: "available",
-        statusLabel: "可用",
-        enabled: true,
-        description: "在权限前置过滤后返回证据片段和定位信息。",
-        dataScope: "已启用检索且符合访问等级的知识内容",
-        actionType: "read_only",
-        dependentSkillIds: ["SK-01", "SK-03"],
-        callsThisMonth: 18360,
-        successRate: 99.2,
-        avgLatencyMs: 412,
-        lastCheck: { at: "2026-08-25T14:27:00+08:00", result: "passed", sideEffectFree: true },
-      },
-      {
-        id: "TOOL-02",
-        code: "knowledge_read",
-        name: "知识原文读取",
-        implementationType: "MCP / 只读",
-        status: "available",
-        statusLabel: "可用",
-        enabled: true,
-        description: "按文档版本和定位读取证据上下文。",
-        dataScope: "检索结果指向的可访问文档版本",
-        actionType: "read_only",
-        dependentSkillIds: ["SK-01", "SK-03"],
-        callsThisMonth: 7420,
-        successRate: 99.5,
-        avgLatencyMs: 188,
-        lastCheck: { at: "2026-08-25T14:26:00+08:00", result: "passed", sideEffectFree: true },
-      },
-      {
-        id: "TOOL-03",
-        code: "structured_query",
-        name: "结构化业务查询",
-        implementationType: "内部 Tool / 只读",
-        status: "available",
-        statusLabel: "可用",
-        enabled: true,
-        description: "查询订单、库存、交付和供应商绩效的已治理数据。",
-        dataScope: "订单、库存、交付、供应商绩效",
-        actionType: "read_only",
-        dependentSkillIds: ["SK-02", "SK-04"],
-        callsThisMonth: 11240,
-        successRate: 96.8,
-        avgLatencyMs: 624,
-        aggregateFailureReasons: [
-          { reason: "上游查询超时", percentage: 72 },
-          { reason: "请求时间窗过大", percentage: 18 },
-          { reason: "计算参数缺失", percentage: 10 },
-        ],
-        lastCheck: { at: "2026-08-25T09:34:00+08:00", result: "passed", sideEffectFree: true },
-      },
-      {
-        id: "TOOL-04",
-        code: "deterministic_calculator",
-        name: "关税与成本计算",
-        runtimeBinding: { id: "tool-tariff-cost", version: "v0.2" },
-        implementationType: "内置计算",
-        status: "available",
-        statusLabel: "可用",
-        enabled: true,
-        description: "根据业务数据和计算参数执行关税、含税成本与毛利的确定性计算。",
-        dataScope: "业务数据、公式和计算参数",
-        actionType: "calculation",
-        dependentSkillIds: ["SK-02", "SK-04", "SK-05"],
-        callsThisMonth: 25600,
-        successRate: 99.9,
-        avgLatencyMs: 38,
-        lastCheck: { at: "2026-08-25T14:22:00+08:00", result: "passed", sideEffectFree: true },
-      },
-      {
-        id: "TOOL-05",
-        code: "entity_unit_normalizer",
-        name: "实体与单位归一",
-        implementationType: "内置处理",
-        status: "available",
-        statusLabel: "可用",
-        enabled: true,
-        description: "统一供应商主体、币种、数量单位和时间口径。",
-        dataScope: "研判请求中的实体、单位和时间表达",
-        actionType: "transformation",
-        dependentSkillIds: ["SK-02", "SK-05"],
-        callsThisMonth: 14830,
-        successRate: 99.7,
-        avgLatencyMs: 46,
-        lastCheck: { at: "2026-08-25T14:21:00+08:00", result: "passed", sideEffectFree: true },
-      },
-      {
-        id: "TOOL-06",
-        code: "external_policy_search",
-        name: "外部政策检索",
-        implementationType: "外部 Tool / 只读",
-        status: "disabled",
-        statusLabel: "已停用",
-        enabled: false,
-        description: "检索审批允许域内的外部政策证据。",
-        dataScope: "待审批的外部政策允许域",
-        actionType: "read_only_external",
-        dependentSkillIds: ["SK-07"],
-        callsThisMonth: 0,
-        successRate: null,
-        avgLatencyMs: null,
-        disabledReason: "外部允许域审批未完成",
-        lastCheck: { at: null, result: "not_run", sideEffectFree: true },
-      },
-      {
-        id: "TOOL-07",
-        code: "chart_render",
-        name: "图表渲染",
-        implementationType: "外部生成",
-        status: "available",
-        statusLabel: "可用",
-        enabled: true,
-        description: "根据 chart-visualization Skill 产生图表图片。",
-        dataScope: "经脱敏的图表数据",
-        actionType: "generation_external",
-        dependentSkillIds: ["SK-06"],
-        callsThisMonth: 3280,
-        successRate: 97.8,
-        avgLatencyMs: 914,
-        lastCheck: { at: "2026-08-25T10:08:00+08:00", result: "passed", sideEffectFree: true },
-      },
-      {
-        id: "TOOL-08",
-        code: "document_export",
-        name: "文档导出",
-        implementationType: "内部生成",
-        status: "available",
-        statusLabel: "可用",
-        enabled: true,
-        description: "生成 DOCX/PDF，不在运营端持久化报告正文或导出历史。",
-        dataScope: "当前请求的报告结构",
-        actionType: "generation_internal",
-        dependentSkillIds: [],
-        callsThisMonth: 2440,
-        successRate: 99.1,
-        avgLatencyMs: 1260,
-        lastCheck: { at: "2026-08-25T11:22:00+08:00", result: "passed", sideEffectFree: true },
-      },
-    ],
-
-    visualizations: visualizations,
-
     apiAccess: {
       clients: [
         {
-          id: "API-001",
-          name: "供应商风险工作台",
-          keyMasked: "sk_agent_•••••••6F2K",
-          lastUsedAt: "2026-08-25T14:18:00+08:00",
-          createdAt: "2026-03-18T09:30:00+08:00",
+          id: "API-003",
+          name: "供应链知识检索服务",
+          apiType: "retrieval",
+          keyMasked: "sk_retrieval_•••••••C7M3",
+          knowledgeBaseIds: ["KB-001", "KB-002"],
+          retrievalPolicy: { mode: "global" },
+          lastUsedAt: "2026-08-26T09:36:00+08:00",
+          createdAt: "2026-07-12T11:20:00+08:00",
           enabled: true,
           status: "active",
           statusLabel: "已启用",
-          permissionLevel: "L2",
         },
         {
-          id: "API-002",
-          name: "经营分析门户",
-          keyMasked: "sk_agent_•••••••A9D4",
-          lastUsedAt: "2026-08-24T16:42:00+08:00",
-          createdAt: "2026-04-02T14:10:00+08:00",
+          id: "API-004",
+          name: "合同条款检索组件",
+          apiType: "retrieval",
+          keyMasked: "sk_retrieval_•••••••H4Q8",
+          knowledgeBaseIds: ["KB-001"],
+          retrievalPolicy: {
+            mode: "custom",
+            operator: {
+              rerankEnabled: true,
+              rerankerModelId: "MODEL-RERANK-PRIMARY",
+              finalTopK: 8,
+              relevanceThreshold: 0.65,
+              relevanceLevel: "balanced",
+            },
+          },
+          lastUsedAt: null,
+          createdAt: "2026-08-18T15:05:00+08:00",
           enabled: false,
           status: "disabled",
           statusLabel: "已禁用",
-          permissionLevel: "L1",
         },
       ],
     },
 
     consumption: {
       reportingPeriod: { start: "2026-08-01", end: "2026-08-26", label: "本月" },
+      models: [
+        {
+          id: "MODEL-LLM-DEEPSEEK-V4-PRO",
+          name: "DeepSeek-V4-Pro",
+          typeLabel: "生成模型",
+          usageRatio: { apiRequests: 0.52, inputTokensM: 0.64, outputTokensM: 1 },
+        },
+        {
+          id: "MODEL-EMBEDDING-PRIMARY",
+          name: "Qwen3-Embedding-8B",
+          typeLabel: "向量模型",
+          usageRatio: { apiRequests: 0.28, inputTokensM: 0.24, outputTokensM: 0 },
+        },
+        {
+          id: "MODEL-RERANK-PRIMARY",
+          name: "Qwen3-Reranker-0.6B",
+          typeLabel: "Rerank 模型",
+          usageRatio: { apiRequests: 0.2, inputTokensM: 0.12, outputTokensM: 0 },
+        },
+      ],
       monthSummary: {
         inferenceCalls: 17140,
         apiRequests: 2932,
@@ -2326,7 +2044,7 @@
         { date: "2026-08-25", calls: 780, apiRequests: 132, inputTokensM: 10.4, outputTokensM: 2.2, totalTokensM: 12.6 },
         { date: "2026-08-26", calls: 760, apiRequests: 129, inputTokensM: 10.1, outputTokensM: 2.1, totalTokensM: 12.2 },
       ],
-      privacyBoundary: "只展示固定 Agent 的聚合调用、Token 和累计消耗，不展示模型名称、用户问题、单任务或报告内容。",
+      privacyBoundary: "只展示模型级聚合的 API 请求与 Token，不展示用户问题、单任务、模型输出或报告内容。",
     },
 
     configurationRecords: [
@@ -2339,51 +2057,9 @@
         objectName: "全局检索设置",
         action: "updated",
         actionLabel: "保存检索设置",
-        before: { keywordWeight: 50, semanticWeight: 50, finalTopK: 8, relevanceThreshold: 0.6, relevanceLevel: "balanced" },
-        after: { keywordWeight: 45, semanticWeight: 55, finalTopK: 10, relevanceThreshold: 0.6, relevanceLevel: "balanced" },
+        before: { finalTopK: 8, relevanceThreshold: 0.6, relevanceLevel: "balanced" },
+        after: { finalTopK: 10, relevanceThreshold: 0.6, relevanceLevel: "balanced" },
         impact: "后续 Query 检索使用新设置；知识库内容与索引不变。",
-        canCreateRollbackDraft: false,
-      },
-      {
-        id: "CR-002",
-        occurredAt: "2026-08-25T13:42:00+08:00",
-        actor: "运营管理员 A",
-        objectType: "knowledge_base",
-        objectId: "KB-001",
-        objectName: "供应商合规与合同库",
-        action: "access_level_changed",
-        actionLabel: "修改最低访问等级",
-        before: { minAccessLevel: "L1" },
-        after: { minAccessLevel: "L2" },
-        impact: "访问等级低于 L2 的请求将在检索前被过滤。",
-        canCreateRollbackDraft: false,
-      },
-      {
-        id: "CR-003",
-        occurredAt: "2026-08-25T11:08:00+08:00",
-        actor: "能力运营 B",
-        objectType: "skill",
-        objectId: "SK-06",
-        objectName: "报告图表生成",
-        action: "enabled",
-        actionLabel: "启用",
-        before: { status: "disabled", enabled: false },
-        after: { status: "available", enabled: true },
-        impact: "25 种图表恢复可用于报告生成。",
-        canCreateRollbackDraft: false,
-      },
-      {
-        id: "CR-006",
-        occurredAt: "2026-08-23T10:05:00+08:00",
-        actor: "能力运营 B",
-        objectType: "tool",
-        objectId: "TOOL-06",
-        objectName: "external_policy_search",
-        action: "disabled",
-        actionLabel: "停用",
-        before: { status: "available", enabled: true },
-        after: { status: "disabled", enabled: false },
-        impact: "SK-07 同步停用，外部政策取证不可调用。",
         canCreateRollbackDraft: false,
       },
       {
@@ -2421,7 +2097,7 @@
         id: "FLOW-KNOWLEDGE-IMPORT",
         name: "知识内容导入到可检索",
         steps: [
-          { key: "knowledge_base", label: "选择知识库与最低访问等级", route: "#/knowledge/KB-001" },
+          { key: "knowledge_base", label: "选择知识库", route: "#/knowledge/KB-001" },
           { key: "import", label: "上传文件并交给 MinerU 处理", route: "#/knowledge/KB-001?tab=imports" },
           { key: "resolve", label: "重试、替换或移除失败项", route: "#/knowledge/KB-001?tab=imports&batch=IMP-0825-03" },
           { key: "build", label: "为处理完成的文件构建索引", route: "#/knowledge/KB-001?tab=imports" },
@@ -2445,28 +2121,17 @@
         completionEvidence: ["全局设置已保存", "检索测试保留结果", "配置记录新增保存操作"],
       },
       {
-        id: "FLOW-CAPABILITY-CHANGE",
-        name: "Skill 目录管理",
-        steps: [
-          { key: "upload", label: "上传 Skill 目录并登记名称与描述", route: "#/skills" },
-          { key: "review", label: "查看并按需调整 Skill 基础信息", route: "#/skills" },
-          { key: "enable", label: "依赖能力就绪后按需启停", route: "#/skills" },
-          { key: "operate", label: "停用后删除不再使用的 Skill", route: "#/skills" },
-        ],
-        failureSafety: "依赖 Tool 未启用时不能启用 Skill；Tool 由底层能力层维护，运营端只查看绑定信息。",
-        completionEvidence: ["Skill 已进入统一目录", "名称与描述已保存", "启用状态与可调用状态一致"],
-      },
-      {
         id: "FLOW-API-ACCESS",
         name: "API 密钥管理",
         steps: [
-          { key: "create", label: "填写名称、绑定权限并创建密钥", route: "#/api-access" },
-          { key: "secret", label: "一次性保存新密钥", route: "#/api-access" },
+          { key: "scope", label: "填写名称并选择可访问知识库", route: "#/api-access" },
+          { key: "strategy", label: "选择全局或独立检索策略", route: "#/api-access" },
+          { key: "secret", label: "生成并一次性保存新密钥", route: "#/api-access" },
           { key: "operate", label: "按需禁用或启用密钥", route: "#/api-access" },
           { key: "delete", label: "删除不再使用的密钥", route: "#/api-access" },
         ],
-        failureSafety: "密钥明文不写入状态；数据访问受绑定权限等级约束；删除后密钥立即失效且不再保留在列表中。",
-        completionEvidence: ["密钥绑定数据权限", "密钥状态更新", "列表只保留现存密钥", "密钥明文只显示一次"],
+        failureSafety: "检索 API 密钥明文不写入状态；删除后密钥立即失效且不再保留在列表中。",
+        completionEvidence: ["检索 API 密钥创建成功", "密钥状态更新", "列表只保留现存密钥", "密钥明文只显示一次"],
       },
     ],
   };
@@ -2485,8 +2150,15 @@
       longDocumentFallback: chunking.longDocumentFallback,
       mergeShortChunks: chunking.mergeShortChunks,
       includeContext: chunking.includeContext,
+      parentChildEnabled: chunking.parentChildEnabled === true,
       indexContent: deepClone(profile.indexContent || {})
     };
+    if (chunking.parentChildEnabled) {
+      snapshot.parentChunkStrategy = chunking.parentChunkStrategy;
+      snapshot.retrievalUnit = chunking.retrievalUnit;
+      snapshot.contextUnit = chunking.contextUnit;
+      snapshot.deduplicateByParent = chunking.deduplicateByParent === true;
+    }
     if (chunking.mode === "semantic") {
       snapshot.semanticSensitivity = chunking.semanticSensitivity;
       snapshot.breakpointPercentile = chunking.breakpointPercentile;
@@ -2508,166 +2180,34 @@
     knowledgeBase.processingParametersSnapshot = seedProcessingParametersSnapshot(profile);
   });
 
-  function scifactScoreAt(index) {
-    return Math.max(0.45, 0.96 - Math.max(0, index) * 0.045);
+  if (supplyChainDemo) {
+    var supplyChainDocuments = supplyChainDemo.documents || [];
+    TEMPLATE.knowledgeBases.unshift(deepClone(supplyChainDemo.knowledgeBase));
+    TEMPLATE.documents = deepClone(supplyChainDocuments).concat(TEMPLATE.documents);
+    TEMPLATE.chunks = deepClone(supplyChainDemo.chunks || []).concat(TEMPLATE.chunks);
+    if (supplyChainDemo.importBatch) TEMPLATE.importBatches.unshift(deepClone(supplyChainDemo.importBatch));
+    if (supplyChainDemo.knowledgeVersion) TEMPLATE.knowledgeVersions.unshift(deepClone(supplyChainDemo.knowledgeVersion));
+    if (supplyChainDemo.retrievalTest && TEMPLATE.rag && TEMPLATE.rag.retrievalTests) {
+      TEMPLATE.rag.retrievalTests.unshift(deepClone(supplyChainDemo.retrievalTest));
+    }
+    if (TEMPLATE.overview && TEMPLATE.overview.metrics) {
+      var metrics = TEMPLATE.overview.metrics;
+      if (metrics.knowledgeBases) {
+        metrics.knowledgeBases.total += 1;
+        metrics.knowledgeBases.enabled += 1;
+      }
+      if (metrics.retrievalAvailability) metrics.retrievalAvailability.available += 1;
+      if (metrics.documents) {
+        metrics.documents.total += supplyChainDocuments.length;
+        metrics.documents.searchable += supplyChainDocuments.filter(function searchable(doc) { return doc.searchable; }).length;
+      }
+    }
+    if (TEMPLATE.overview && TEMPLATE.overview.ragPipeline) {
+      var sourceStage = TEMPLATE.overview.ragPipeline.find(function source(stage) { return stage.key === "source"; });
+      if (sourceStage) sourceStage.value = "5 库";
+    }
   }
 
-  function scifactCandidateEvidence(testCase) {
-    return (testCase.fusionOrder || []).map(function mapCandidate(documentId) {
-      var documentItem = scifactMini.corpus.find(function findDocument(item) { return item.id === documentId; });
-      var fusionIndex = testCase.fusionOrder.indexOf(documentId);
-      var rerankIndex = (testCase.rerankOrder || testCase.fusionOrder).indexOf(documentId);
-      return {
-        documentId: documentId,
-        sourceDocumentId: documentItem && documentItem.sourceDocumentId,
-        documentName: documentItem ? documentItem.title : documentId,
-        documentVersion: "scifact-mini-v1",
-        locator: "Abstract / S1-S2",
-        excerpt: documentItem ? documentItem.abstract.slice(0, 2).join(" ") : "",
-        fusionScore: scifactScoreAt(fusionIndex),
-        rerankScore: scifactScoreAt(rerankIndex)
-      };
-    });
-  }
-
-  if (scifactMini.corpus.length && scifactMini.cases.length) {
-    TEMPLATE.knowledgeBases.push({
-      id: "KB-EVAL-SCIFACT",
-      name: "SciFact Mini 检索评测库",
-      purpose: "只读公开基准子集：用 6 条带 Gold 标注的科学 claim 验证检索参数与排序效果。",
-      createdAt: "2026-09-03T09:00:00+08:00",
-      updatedAt: "2026-09-03T09:00:00+08:00",
-      enabled: true,
-      enabledState: "enabled",
-      enabledStateLabel: "检索已启用",
-      retrievalStatus: "available",
-      retrievalStatusLabel: "可评测",
-      minAccessLevel: "L1",
-      minAccessLevelLabel: "基础内部",
-      documentCounts: {
-        total: scifactMini.corpus.length,
-        searchable: scifactMini.corpus.length,
-        firstImportProcessing: 0,
-        pendingActivation: 0,
-        updatingWithPreviousVersionAvailable: 0
-      },
-      openImportIssueCount: 0,
-      currentIngestionProfileId: "ING-01",
-      currentIngestionProfileName: "官方摘要句子切片（冻结）",
-      boundEmbeddingModelId: "MODEL-EMBEDDING-PRIMARY",
-      boundVectorDimension: 4096,
-      currentKnowledgeVersionId: "KV-SCIFACT-MINI-V1",
-      contentUpdatedAt: "2026-09-03T09:00:00+08:00",
-      availabilityCheckedAt: "2026-09-03T09:00:00+08:00",
-      benchmarkReadOnly: true,
-      benchmarkLabel: "只读评测基准",
-      evaluationDataset: {
-        id: scifactMini.id,
-        name: scifactMini.name,
-        corpusVersion: scifactMini.corpusVersion,
-        language: scifactMini.language,
-        caseCount: scifactMini.cases.length,
-        documentCount: scifactMini.corpus.length,
-        claimLicense: "CC BY 4.0",
-        corpusLicense: "ODC-By 1.0",
-        attribution: "SciFact · Wadden et al., EMNLP 2020",
-        scopeNote: "Demo Mini 子集；不可与完整 SciFact / BEIR 榜单直接比较。"
-      },
-      hint: "基准内容与 Gold 标注已锁定；保留查看、预览、下载和检索测试。"
-    });
-
-    scifactMini.corpus.forEach(function addSciFactDocument(documentItem) {
-      TEMPLATE.documents.push({
-        id: documentItem.id,
-        localAssetId: documentItem.id,
-        knowledgeBaseId: "KB-EVAL-SCIFACT",
-        name: documentItem.title + ".txt",
-        documentType: "科学摘要",
-        pageCount: 1,
-        fileSizeBytes: documentItem.abstract.join(" ").length,
-        fileSizeLabel: "本地评测语料",
-        mimeType: "text/plain;charset=utf-8",
-        contentHash: "scifact:" + documentItem.sourceDocumentId,
-        characterCount: documentItem.abstract.join(" ").length,
-        chunkCount: documentItem.abstract.length,
-        upstreamAccessLevel: "L1",
-        effectiveAccessLevel: "L1",
-        searchable: true,
-        countsTowardDocumentTotal: true,
-        status: "ready",
-        statusLabel: "基准已锁定",
-        statusProgress: 100,
-        currentVersion: "scifact-mini-v1",
-        lifecycleStatus: "effective",
-        lifecycleStatusLabel: "可检索",
-        importedAt: "2026-09-03T09:00:00+08:00",
-        sourceType: "evaluation_dataset",
-        sourceTypeLabel: "公开评测集",
-        sourceDocumentId: documentItem.sourceDocumentId,
-        sourcePreview: documentItem.abstract.join("\n\n"),
-        versions: [{ version: "scifact-mini-v1", status: "effective", processedAt: "2026-09-03T09:00:00+08:00", searchable: true }]
-      });
-    });
-
-    var firstSciFactCase = scifactMini.cases[0];
-    TEMPLATE.rag.retrievalTests.unshift({
-      id: "RT-SCIFACT-MINI",
-      name: "SciFact Mini 检索评测",
-      createdAt: "2026-09-03T09:00:00+08:00",
-      question: firstSciFactCase.query,
-      knowledgeBaseId: "KB-EVAL-SCIFACT",
-      knowledgeVersionId: "KV-SCIFACT-MINI-V1",
-      activeEvaluationCaseId: firstSciFactCase.id,
-      evaluationSuite: {
-        datasetId: scifactMini.id,
-        datasetName: scifactMini.name,
-        corpusVersion: scifactMini.corpusVersion,
-        caseCount: scifactMini.cases.length,
-        metricScope: "macro"
-      },
-      evaluationCases: scifactMini.cases.map(function mapCase(testCase) {
-        return {
-          id: testCase.id,
-          sourceClaimId: testCase.sourceClaimId,
-          question: testCase.query,
-          goldDocumentIds: testCase.goldDocumentIds.slice(),
-          goldSentenceIndexes: deepClone(testCase.goldSentenceIndexes),
-          fixtureEvidence: scifactCandidateEvidence(testCase)
-        };
-      }),
-      comparison: { returnedCount: 0, expectedEvidenceHit: 0, expectedEvidenceTotal: firstSciFactCase.goldDocumentIds.length, irrelevantCount: 0 },
-      fixtureEvidence: scifactCandidateEvidence(firstSciFactCase),
-      fixtureAvailable: true,
-      evidence: [],
-      runtimeSnapshot: null,
-      executionStages: [],
-      answerGenerated: false,
-      validationState: "not_run",
-      validationStateLabel: "未运行",
-      emptyReasonLabel: "选择预置评测题并运行检索。"
-    });
-  }
-
-  var skillIcons = ["file-search", "chart-no-axes-combined", "shield-alert", "package-search", "chart-spline", "chart-column", "globe"];
-  var toolIcons = ["search", "file-text", "database", "calculator", "combine", "globe", "chart-column", "file-down"];
-  TEMPLATE.skills.forEach(function markBuiltInSkill(item, index) {
-    item.icon = item.icon || skillIcons[index] || "sparkles";
-    // Skill 在运营端是统一可管理对象，不暴露内置/上传来源差异。
-    // userUploaded 仅保留为旧 UI 的操作入口兼容开关，所有 Skill 取值一致。
-    item.sourceType = "managed";
-    item.sourceTypeLabel = "统一管理";
-    item.userUploaded = true;
-    item.editable = true;
-    item.deletable = true;
-  });
-  TEMPLATE.tools.forEach(function markBuiltInTool(item, index) {
-    item.icon = item.icon || toolIcons[index] || "wrench";
-    item.sourceType = "built_in";
-    item.sourceTypeLabel = "内置";
-    item.userUploaded = false;
-    item.editable = true;
-    item.deletable = false;
-  });
   TEMPLATE.documents.forEach(function markLocalUpload(item) {
     item.localAssetId = item.localAssetId || item.id;
     if (!item.sourceType) {

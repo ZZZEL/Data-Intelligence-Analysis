@@ -210,21 +210,6 @@
   display: block;
 }
 
-.sidebar-account-popover__meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 9px;
-  border-bottom: 1px solid var(--border-soft);
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.sidebar-account-popover__meta strong {
-  color: var(--text-2);
-  font-weight: 650;
-}
-
 .sidebar-account-popover__action {
   display: flex;
   width: 100%;

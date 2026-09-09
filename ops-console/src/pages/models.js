@@ -81,6 +81,7 @@
   function modelGroups(state) {
     var catalog = modelCatalog(state);
     return [
+      { kind: "llm", title: "LLM 模型", icon: "bot", models: list(catalog.llmModels) },
       { kind: "embedding", title: "向量模型", icon: "binary", models: list(catalog.embeddingModels) },
       { kind: "reranker", title: "Rerank 模型", icon: "list-filter", models: list(catalog.rerankerModels) },
     ];
@@ -106,14 +107,23 @@
     "</div>";
   }
 
+  function parameterScale(model) {
+    if (model && model.parameters) return String(model.parameters);
+    var count = Number(model && model.parameterCountB);
+    if (!Number.isFinite(count) || count < 1) return "—";
+    return count >= 1000 ? (count / 1000).toFixed(count % 1000 === 0 ? 0 : 1) + "T" : dom.formatNumber(count) + "B";
+  }
+
   function modelRows(group) {
     return group.models.map(function row(model) {
-      var dimensionCell = group.kind === "embedding"
+      var metricCell = group.kind === "embedding"
         ? '<td class="models-table__dimension"><div class="table-primary">' + dom.escape(model.dimension ? dom.formatNumber(model.dimension) + " 维" : "—") + "</div></td>"
-        : '<td class="models-table__dimension" aria-label="不适用"></td>';
+        : group.kind === "llm"
+          ? '<td class="models-table__dimension"><div class="table-primary">' + dom.escape(parameterScale(model)) + "</div></td>"
+          : '<td class="models-table__dimension" aria-label="不适用"></td>';
       return '<tr data-model-row data-model-kind="' + group.kind + '" data-model-id="' + dom.escape(model.id) + '">' +
-        '<td><div class="capability-name"><span class="capability-icon">' + dom.icon(group.icon, 16) + '</span><div class="model-identity"><div class="table-primary">' + dom.escape(text(model.alias || model.name, "未命名模型")) + '</div></div></div></td>' +
-        dimensionCell +
+        '<td><div class="model-name-cell"><span class="model-icon">' + dom.icon(group.icon, 16) + '</span><div class="model-identity"><div class="table-primary">' + dom.escape(text(model.alias || model.name, "未命名模型")) + '</div></div></div></td>' +
+        metricCell +
         '<td>' + connectionCell(model) + "</td>" +
         '<td>' + rowActions(group.kind, model) + "</td>" +
       "</tr>";
@@ -121,19 +131,19 @@
   }
 
   function groupTable(group) {
-    var dimensionHeader = group.kind === "embedding" ? "向量维度" : "";
-    var secondaryAriaLabel = dimensionHeader || "不适用";
+    var metricHeader = group.kind === "embedding" ? "向量维度" : group.kind === "llm" ? "参数规模" : "";
+    var secondaryAriaLabel = metricHeader || "不适用";
     var columns = '<colgroup><col class="models-table__col models-table__col--name"><col class="models-table__col models-table__col--dimension"><col class="models-table__col models-table__col--connection"><col class="models-table__col models-table__col--actions"></colgroup>';
     return '<section class="models-group" data-model-group="' + group.kind + '">' +
       '<div class="models-group__header"><div class="models-group__identity"><span class="models-group__icon">' + dom.icon(group.icon, 17) + '</span><h2>' + group.title + '</h2><span class="models-group__count" data-model-group-count>' + group.models.length + "</span></div></div>" +
-      '<div class="models-group__surface"><div class="table-wrap"><table class="data-table models-table models-table--' + group.kind + '">' + columns + '<thead><tr><th>模型名称</th><th aria-label="' + dom.escape(secondaryAriaLabel) + '">' + dimensionHeader + "</th><th>连接状态</th><th>操作</th></tr></thead><tbody>" + modelRows(group) + "</tbody></table></div>" +
+      '<div class="models-group__surface"><div class="table-wrap"><table class="data-table models-table models-table--' + group.kind + '">' + columns + '<thead><tr><th>模型名称</th><th aria-label="' + dom.escape(secondaryAriaLabel) + '">' + metricHeader + "</th><th>连接状态</th><th>操作</th></tr></thead><tbody>" + modelRows(group) + "</tbody></table></div>" +
       '<div class="models-group__empty" data-model-group-empty hidden>没有匹配的' + group.title + "</div></div>" +
     "</section>";
   }
 
   function modelPayload(scope, current) {
     var selectedType = scope.querySelector('[name="model-kind"]:checked');
-    var kind = selectedType ? selectedType.value : (current && current.kind) || "embedding";
+    var kind = selectedType ? selectedType.value : (current && current.kind) || "llm";
     var apiKeyValue = scope.querySelector('[data-model-field="apiKey"]').value.trim();
     var currentMaskedKey = current && current.model ? apiKeyMasked(current.model) : "";
     var apiKeyUnchanged = Boolean(currentMaskedKey && currentMaskedKey !== "未配置" && apiKeyValue === currentMaskedKey);
@@ -141,6 +151,7 @@
       kind: kind,
       name: scope.querySelector('[data-model-field="name"]').value.trim(),
       dimension: null,
+      parameterCountB: kind === "llm" ? Number(scope.querySelector('[data-model-field="parameterCountB"]').value) : null,
       endpoint: scope.querySelector('[data-model-field="endpoint"]').value.trim(),
       apiKey: apiKeyUnchanged ? "" : apiKeyValue,
       apiKeyUnchanged: apiKeyUnchanged,
@@ -151,6 +162,7 @@
 
   function validatePayload(payload, current) {
     if (!payload.name || !payload.endpoint) return "请填写模型名称和 API 地址。";
+    if (payload.kind === "llm" && (!Number.isFinite(payload.parameterCountB) || payload.parameterCountB < 25)) return "LLM 总参数量需为 25B 或以上。";
     if (!payload.apiKey && !payload.apiKeyUnchanged) return "请填写 API Key。";
     return "";
   }
@@ -171,15 +183,25 @@
   function toggleTypeFields(scope) {
     var selected = scope.querySelector('[name="model-kind"]:checked');
     var dimension = scope.querySelector("[data-model-dimension-field]");
+    var parameter = scope.querySelector("[data-model-parameter-field]");
     var primaryRow = scope.querySelector(".model-editor__primary-row");
     var endpoint = scope.querySelector('[data-model-field="endpoint"]');
     var isEmbedding = Boolean(selected && selected.value === "embedding");
+    var isLlm = Boolean(selected && selected.value === "llm");
     if (dimension) {
       dimension.hidden = !isEmbedding;
       dimension.setAttribute("aria-hidden", isEmbedding ? "false" : "true");
     }
-    if (primaryRow) primaryRow.classList.toggle("has-dimension", isEmbedding);
-    if (endpoint && selected) endpoint.placeholder = selected.value === "embedding" ? "model-gateway.internal/v1/embeddings" : "model-gateway.internal/v1/rerank";
+    if (parameter) {
+      parameter.hidden = !isLlm;
+      parameter.setAttribute("aria-hidden", isLlm ? "false" : "true");
+    }
+    if (primaryRow) primaryRow.classList.toggle("has-metric", isEmbedding || isLlm);
+    if (endpoint && selected) endpoint.placeholder = selected.value === "embedding"
+      ? "model-gateway.internal/v1/embeddings"
+      : selected.value === "llm"
+        ? "model-gateway.internal/v1/chat/completions"
+        : "model-gateway.internal/v1/rerank";
     scope.querySelectorAll("[data-model-kind-card]").forEach(function each(card) {
       var input = card.querySelector('input[name="model-kind"]');
       card.classList.toggle("is-selected", Boolean(input && input.checked));
@@ -229,15 +251,17 @@
 
   function editorBody(current) {
     var model = current && current.model ? current.model : {};
-    var kind = current ? current.kind : "embedding";
+    var kind = current ? current.kind : "llm";
     var locked = current ? " disabled" : "";
     var keyValue = current && apiKeyMasked(model) !== "未配置" ? apiKeyMasked(model) : "";
     return '<div class="model-editor"><fieldset class="model-type-fieldset" aria-required="true">' + dom.requiredLabel("模型类型", { tag: "legend" }) + '<div class="model-type-cards">' +
+      '<label class="model-type-card' + (kind === "llm" ? " is-selected" : "") + '" data-model-kind-card><input type="radio" name="model-kind" value="llm" required aria-required="true"' + (kind === "llm" ? " checked" : "") + locked + '><span class="model-type-card__icon">' + dom.icon("bot", 18) + '</span><span><strong>LLM 模型</strong><small>生成回答与执行分析推理</small></span></label>' +
       '<label class="model-type-card' + (kind === "embedding" ? " is-selected" : "") + '" data-model-kind-card><input type="radio" name="model-kind" value="embedding" required aria-required="true"' + (kind === "embedding" ? " checked" : "") + locked + '><span class="model-type-card__icon">' + dom.icon("binary", 18) + '</span><span><strong>向量模型</strong><small>将文本转换为语义向量</small></span></label>' +
       '<label class="model-type-card' + (kind === "reranker" ? " is-selected" : "") + '" data-model-kind-card><input type="radio" name="model-kind" value="reranker" required aria-required="true"' + (kind === "reranker" ? " checked" : "") + locked + '><span class="model-type-card__icon">' + dom.icon("list-filter", 18) + '</span><span><strong>Rerank 模型</strong><small>对召回结果重新排序</small></span></label>' +
       "</div></fieldset>" +
-      '<div class="model-editor__fields"><div class="model-editor__primary-row' + (kind === "embedding" ? " has-dimension" : "") + '"><div class="form-field">' + dom.requiredLabel("模型名称", { forId: "model-name" }) + '<input id="model-name" class="field" maxlength="48" value="' + dom.escape(text(model.alias || model.name, "")) + '" placeholder="输入模型名称" required aria-required="true" data-model-field="name"></div>' +
-      '<div class="form-field model-editor__dimension" data-model-dimension-field aria-hidden="' + (kind === "embedding" ? "false" : "true") + '"' + (kind === "embedding" ? "" : " hidden") + '><label class="form-label" for="model-dimension">向量维度</label><input id="model-dimension" class="field field--readonly" type="text" inputmode="numeric" value="' + dom.escape(model.dimension ? String(model.dimension) : "") + '" readonly data-model-field="dimension"></div></div>' +
+      '<div class="model-editor__fields"><div class="model-editor__primary-row' + (kind === "embedding" || kind === "llm" ? " has-metric" : "") + '"><div class="form-field">' + dom.requiredLabel("模型名称", { forId: "model-name" }) + '<input id="model-name" class="field" maxlength="48" value="' + dom.escape(text(model.alias || model.name, "")) + '" placeholder="输入模型名称" required aria-required="true" data-model-field="name"></div>' +
+      '<div class="form-field model-editor__dimension" data-model-dimension-field aria-hidden="' + (kind === "embedding" ? "false" : "true") + '"' + (kind === "embedding" ? "" : " hidden") + '><label class="form-label" for="model-dimension">向量维度</label><input id="model-dimension" class="field field--readonly" type="text" inputmode="numeric" value="' + dom.escape(model.dimension ? String(model.dimension) : "") + '" readonly data-model-field="dimension"></div>' +
+      '<div class="form-field model-editor__parameters" data-model-parameter-field aria-hidden="' + (kind === "llm" ? "false" : "true") + '"' + (kind === "llm" ? "" : " hidden") + '>' + dom.requiredLabel("总参数量", { forId: "model-parameters" }) + '<div class="field-with-suffix"><input id="model-parameters" class="field" type="number" inputmode="numeric" min="25" step="1" value="' + dom.escape(model.parameterCountB ? String(model.parameterCountB) : "") + '" placeholder="至少 25" required aria-required="true" data-model-field="parameterCountB"><span>B</span></div></div></div>' +
       '<div class="form-field form-field--full">' + dom.requiredLabel("API 地址", { forId: "model-endpoint" }) + '<input id="model-endpoint" class="field" value="' + dom.escape(apiEndpoint(model) === "未配置" ? "" : apiEndpoint(model)) + '" placeholder="model-gateway.internal/v1/embeddings" required aria-required="true" data-model-field="endpoint"></div>' +
       '<div class="form-field form-field--full">' + dom.requiredLabel("API Key", { forId: "model-key" }) + '<input id="model-key" class="field" type="text" autocomplete="off" value="' + dom.escape(keyValue) + '" placeholder="输入 API Key" required aria-required="true" data-model-field="apiKey"></div></div>' +
     "</div>";
@@ -293,7 +317,9 @@
     scope.querySelectorAll('[name="model-kind"]').forEach(function each(field) {
       field.addEventListener("change", function changeKind() {
         var dimensionField = scope.querySelector('[data-model-field="dimension"]');
+        var parameterField = scope.querySelector('[data-model-field="parameterCountB"]');
         if (dimensionField) dimensionField.value = "";
+        if (parameterField) parameterField.value = "";
         toggleTypeFields(scope);
         setDraftTestState(scope, "idle");
       });
@@ -337,11 +363,11 @@
       title: "删除模型",
       confirmLabel: "删除",
       confirmVariant: "danger",
-      body: '<p class="dialog-copy">删除“' + dom.escape(text(model.alias || model.name, "该模型")) + '”后将无法恢复；正在被知识库或全局检索设置使用的模型不能删除。</p>',
+      body: '<p class="dialog-copy">删除“' + dom.escape(text(model.alias || model.name, "该模型")) + '”后将无法恢复；正在被知识库、全局检索、API Key 独立策略或默认回答生成使用的模型不能删除。</p>',
       onConfirm: function onConfirm() {
         var result = invoke("deleteRagModel", [kind, id]);
         if (!result) {
-          overlay.toast("模型未删除", "请先解除知识库或全局检索设置中的模型引用。", "warning");
+          overlay.toast("模型未删除", "请先解除知识库、全局检索、API Key 独立策略或默认回答生成中的模型引用。", "warning");
           return false;
         }
         overlay.toast("模型已删除", "模型配置已从目录移除。", "success");

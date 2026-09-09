@@ -3,11 +3,17 @@
 
   var dom = OpsDemo.ui.dom;
   var charts = OpsDemo.ui.charts;
+  var router = OpsDemo.core.router;
   var rangeState = {
     key: "month",
     customStart: "",
     customEnd: ""
   };
+
+  var METRIC_TABS = [
+    { key: "tokens", label: "Token 消耗" },
+    { key: "requests", label: "API 请求次数" }
+  ];
 
   var RANGE_OPTIONS = [
     { key: "today", label: "今天" },
@@ -113,12 +119,46 @@
       total.apiRequests += Number(item.apiRequests) || 0;
       total.inputTokensM += Number(item.inputTokensM) || 0;
       total.outputTokensM += Number(item.outputTokensM) || 0;
+      total.peakApiRequests = Math.max(total.peakApiRequests, Number(item.apiRequests) || 0);
       return total;
-    }, { apiRequests: 0, inputTokensM: 0, outputTokensM: 0 });
+    }, { apiRequests: 0, inputTokensM: 0, outputTokensM: 0, peakApiRequests: 0 });
 
     result.inputTokensM = round(result.inputTokensM, 1);
     result.outputTokensM = round(result.outputTokensM, 1);
+    result.totalTokensM = round(result.inputTokensM + result.outputTokensM, 1);
+    result.averageApiRequests = daily.length ? round(result.apiRequests / daily.length, 0) : 0;
     return result;
+  }
+
+  function activeMetric(route) {
+    return route && route.query && route.query.metric === "requests" ? "requests" : "tokens";
+  }
+
+  function availableModels(consumption) {
+    return list(consumption && consumption.models).filter(function filter(model) {
+      return Boolean(model) && (model.kind === "llm" || model.type === "llm" || model.typeLabel === "生成模型");
+    });
+  }
+
+  function selectedModel(consumption, route) {
+    var selectedId = route && route.query ? route.query.model : "";
+    return availableModels(consumption).find(function find(model) { return model.id === selectedId; }) || null;
+  }
+
+  function dailyForModel(daily, model) {
+    if (!model) return daily;
+    var ratio = model.usageRatio || {};
+    return daily.map(function map(item) {
+      var inputTokensM = round((Number(item.inputTokensM) || 0) * (Number(ratio.inputTokensM) || 0), 1);
+      var outputTokensM = round((Number(item.outputTokensM) || 0) * (Number(ratio.outputTokensM) || 0), 1);
+      return {
+        date: item.date,
+        apiRequests: round((Number(item.apiRequests) || 0) * (Number(ratio.apiRequests) || 0), 0),
+        inputTokensM: inputTokensM,
+        outputTokensM: outputTokensM,
+        totalTokensM: round(inputTokensM + outputTokensM, 1)
+      };
+    });
   }
 
   function tokenValue(value) {
@@ -127,6 +167,55 @@
 
   function summaryCell(label, value) {
     return '<div class="summary-cell"><div class="summary-cell__label">' + dom.escape(label) + '</div><div class="summary-cell__value">' + dom.escape(value) + "</div></div>";
+  }
+
+  function routeWithFilters(route, updates) {
+    var query = Object.assign({}, route && route.query || {}, updates || {});
+    if (query.metric === "tokens") delete query.metric;
+    if (!query.model || query.model === "all") delete query.model;
+    var queryText = Object.keys(query).sort().map(function map(key) {
+      return encodeURIComponent(key) + "=" + encodeURIComponent(query[key]);
+    }).join("&");
+    return "consumption" + (queryText ? "?" + queryText : "");
+  }
+
+  function renderMetricTabs(metric) {
+    return '<div class="tabs consumption-tabs" role="tablist" aria-label="消耗统计类型">' + METRIC_TABS.map(function map(item) {
+      var active = item.key === metric;
+      return '<button type="button" id="consumption-tab-' + item.key + '" class="tab' + (active ? " is-active" : "") + '" role="tab" aria-selected="' + (active ? "true" : "false") + '" aria-controls="consumption-' + item.key + '-panel" data-consumption-tab="' + item.key + '">' + item.label + "</button>";
+    }).join("") + "</div>";
+  }
+
+  function renderModelControl(consumption, route) {
+    var current = selectedModel(consumption, route);
+    var options = ['<option value="all"' + (!current ? " selected" : "") + '>全部模型</option>'].concat(availableModels(consumption).map(function map(model) {
+      return '<option value="' + dom.escape(model.id) + '"' + (current && current.id === model.id ? " selected" : "") + ">" + dom.escape(model.name) + "</option>";
+    })).join("");
+
+    return '<label class="consumption-model-control"><span class="consumption-model-label">模型</span>' +
+      '<select class="select-field consumption-model-select" aria-label="筛选模型" data-consumption-model>' + options + "</select></label>";
+  }
+
+  function renderTokenPanel(summary, range) {
+    return '<div class="consumption-view-content" id="consumption-tokens-panel" role="tabpanel" aria-labelledby="consumption-tab-tokens">' +
+      '<div class="summary-strip consumption-summary consumption-summary--tokens">' +
+        summaryCell("Token 总量", tokenValue(summary.totalTokensM)) +
+        summaryCell("输入 Token", tokenValue(summary.inputTokensM)) +
+        summaryCell("输出 Token", tokenValue(summary.outputTokensM)) +
+      "</div>" +
+      '<section class="panel consumption-chart-panel"><div class="panel__header"><h2 class="panel__title">Token 消耗</h2></div><div class="panel__body"><div class="chart-box consumption-chart" role="img" aria-label="' + dom.escape(range.label + " 输入与输出 Token 消耗柱状图") + '" data-consumption-token></div></div></section>' +
+    "</div>";
+  }
+
+  function renderRequestPanel(summary, range) {
+    return '<div class="consumption-view-content" id="consumption-requests-panel" role="tabpanel" aria-labelledby="consumption-tab-requests">' +
+      '<div class="summary-strip consumption-summary consumption-summary--requests">' +
+        summaryCell("API 请求次数", dom.formatNumber(summary.apiRequests)) +
+        summaryCell("日均请求次数", dom.formatNumber(summary.averageApiRequests)) +
+        summaryCell("单日峰值", dom.formatNumber(summary.peakApiRequests)) +
+      "</div>" +
+      '<section class="panel consumption-chart-panel"><div class="panel__header"><h2 class="panel__title">API 请求次数</h2></div><div class="panel__body"><div class="chart-box consumption-chart" role="img" aria-label="' + dom.escape(range.label + " API 请求次数折线图") + '" data-consumption-request></div></div></section>' +
+    "</div>";
   }
 
   function renderRangeControl(daily) {
@@ -151,23 +240,18 @@
     var consumption = state.consumption || {};
     var daily = list(consumption.daily);
     var range = resolveRange(daily);
-    var selectedDaily = rowsInRange(daily, range);
+    var metric = activeMetric(route);
+    var filteredDaily = dailyForModel(daily, selectedModel(consumption, route));
+    var selectedDaily = rowsInRange(filteredDaily, range);
     var summary = aggregate(selectedDaily);
 
     return dom.pageHeader({
       title: "消耗统计",
       toolbar: { end: renderRangeControl(daily) }
     }) +
-      '<div class="page-content consumption-page">' +
-      '<div class="summary-strip consumption-summary">' +
-        summaryCell("API 请求次数", dom.formatNumber(summary.apiRequests)) +
-        summaryCell("输入 Token", tokenValue(summary.inputTokensM)) +
-        summaryCell("输出 Token", tokenValue(summary.outputTokensM)) +
-      "</div>" +
-      '<div class="consumption-chart-grid">' +
-        '<section class="panel consumption-chart-panel"><div class="panel__header"><h2 class="panel__title">Token 消耗</h2></div><div class="panel__body"><div class="chart-box consumption-chart" role="img" aria-label="' + dom.escape(range.label + " 输入与输出 Token 消耗柱状图") + '" data-consumption-token></div></div></section>' +
-        '<section class="panel consumption-chart-panel"><div class="panel__header"><h2 class="panel__title">API 请求次数</h2></div><div class="panel__body"><div class="chart-box consumption-chart" role="img" aria-label="' + dom.escape(range.label + " API 请求次数折线图") + '" data-consumption-request></div></div></section>' +
-      "</div>" +
+      '<div class="page-content page-content--flush-top consumption-page">' +
+      '<div class="consumption-view-header">' + renderMetricTabs(metric) + renderModelControl(consumption, route) + "</div>" +
+      (metric === "requests" ? renderRequestPanel(summary, range) : renderTokenPanel(summary, range)) +
       "</div>";
   }
 
@@ -181,12 +265,16 @@
     var consumption = state.consumption || {};
     var daily = list(consumption.daily);
     var range = resolveRange(daily);
-    var selectedDaily = rowsInRange(daily, range);
+    var filteredDaily = dailyForModel(daily, selectedModel(consumption, route));
+    var selectedDaily = rowsInRange(filteredDaily, range);
     var rangeSelect = root.querySelector("[data-consumption-range]");
+    var modelSelect = root.querySelector("[data-consumption-model]");
+    var tokenChart = root.querySelector("[data-consumption-token]");
+    var requestChart = root.querySelector("[data-consumption-request]");
     var labels = selectedDaily.map(function map(item) { return shortDate(item.date); });
     var labelInterval = labels.length <= 7 ? 0 : Math.max(1, Math.ceil(labels.length / 8) - 1);
 
-    charts.bar(root.querySelector("[data-consumption-token]"), labels, selectedDaily.map(function map(item) { return item.inputTokensM; }), {
+    if (tokenChart) charts.bar(tokenChart, labels, selectedDaily.map(function map(item) { return item.inputTokensM; }), {
       color: ["#1769e8", "#9abcf0"],
       grid: { left: 54, right: 18, top: 42, bottom: 34, containLabel: false },
       tooltip: {
@@ -237,7 +325,7 @@
       }]
     });
 
-    charts.line(root.querySelector("[data-consumption-request]"), labels, selectedDaily.map(function map(item) { return item.apiRequests; }), {
+    if (requestChart) charts.line(requestChart, labels, selectedDaily.map(function map(item) { return item.apiRequests; }), {
       grid: { left: 54, right: 18, top: 28, bottom: 34, containLabel: false },
       tooltip: {
         trigger: "axis",
@@ -273,6 +361,19 @@
         itemStyle: { color: "#1769e8", borderColor: "#fff", borderWidth: 1 }
       }]
     });
+
+    Array.from(root.querySelectorAll("[data-consumption-tab]")).forEach(function each(tab) {
+      tab.addEventListener("click", function selectMetric() {
+        if (tab.getAttribute("aria-selected") === "true") return;
+        router.navigate(routeWithFilters(route, { metric: tab.getAttribute("data-consumption-tab") }));
+      });
+    });
+
+    if (modelSelect) {
+      modelSelect.addEventListener("change", function changeModel(event) {
+        router.navigate(routeWithFilters(route, { model: event.target.value }));
+      });
+    }
 
     if (rangeSelect) {
       rangeSelect.addEventListener("change", function changeRange(event) {

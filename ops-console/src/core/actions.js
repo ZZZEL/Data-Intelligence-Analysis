@@ -43,14 +43,26 @@
     return state.meta.currentUser.displayName;
   }
 
+  function isRetrievalApiType(value) {
+    return String(value || "").trim().toLowerCase() === "retrieval";
+  }
+
+  function isRetrievalApiKey(item) {
+    return Boolean(item) && isRetrievalApiType(item.apiType);
+  }
+
+  function apiKeyName(item) {
+    return String(item && (item.name || item.applicationName) || "").trim();
+  }
+
   function apiSecret() {
     var random = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-    return "sk_agent_" + random.slice(0, 24);
+    return "sk_retrieval_" + random.slice(0, 24);
   }
 
   function maskedApiSecret(secret) {
     var value = String(secret || "");
-    return "sk_agent_•••••••" + value.slice(-4).toUpperCase();
+    return "sk_retrieval_•••••••" + value.slice(-4).toUpperCase();
   }
 
   function record(state, change) {
@@ -76,15 +88,6 @@
       return total + batch.items.filter(function each(item) { return item.status === "failed"; }).length;
     }, 0);
 
-    ["available", "unavailable", "disabled"].forEach(function each(status) {
-      metrics.skills[status] = state.skills.filter(function filter(item) { return item.status === status; }).length;
-      metrics.tools[status] = state.tools.filter(function filter(item) { return item.status === status; }).length;
-    });
-    metrics.skills.total = state.skills.length;
-    metrics.tools.total = state.tools.length;
-    metrics.visualizations.defined = state.visualizations.length;
-    metrics.visualizations.integrated = state.visualizations.filter(function each(item) { return item.integrationStatus === "integrated"; }).length;
-    metrics.visualizations.notIntegrated = metrics.visualizations.defined - metrics.visualizations.integrated;
     metrics.consumption.totalTokensM = state.consumption.monthSummary.totalTokensM;
 
     var openImportIssues = metrics.importIssues.open;
@@ -115,18 +118,50 @@
     return result;
   }
 
-  // Fixed-length is retained only for existing profile snapshots.
+  // `recursive` and `boundaryMode` remain readable for old snapshots. New
+  // snapshots use one separator strategy whose selected boundary recurses to
+  // finer built-in boundaries when a piece is still oversized.
   var PROCESSING_MODES = ["smart", "semantic", "structure", "separator", "recursive", "fixed", "page", "whole_document"];
   var RECURSIVE_BOUNDARIES = ["paragraph", "newline", "sentence", "whitespace", "character"];
+  var SENTENCE_SEPARATOR = "。！？.!?";
+  var SEPARATOR_BY_TYPE = {
+    structure: "\n\n",
+    paragraph: "\n\n",
+    newline: "\n",
+    zh_period: "。",
+    zh_exclamation: "！",
+    zh_question: "？",
+    en_period: ".",
+    en_exclamation: "!",
+    en_question: "?",
+    sentence: SENTENCE_SEPARATOR
+  };
+  var SEPARATOR_TYPE_BY_LITERAL = {
+    "\n\n": "paragraph",
+    "\n": "newline",
+    "。": "zh_period",
+    "！": "zh_exclamation",
+    "？": "zh_question",
+    ".": "en_period",
+    "!": "en_exclamation",
+    "?": "en_question"
+  };
+  var SEPARATOR_TYPES = ["structure", "paragraph", "newline", "zh_period", "zh_exclamation", "zh_question", "en_period", "en_exclamation", "en_question", "sentence", "custom", "literal"];
+
+  function separatorFallbackBoundaries(separatorType) {
+    if (separatorType === "paragraph") return RECURSIVE_BOUNDARIES.slice();
+    if (separatorType === "newline") return RECURSIVE_BOUNDARIES.slice(1);
+    if (separatorType === "sentence") return RECURSIVE_BOUNDARIES.slice(2);
+    return [separatorType || "paragraph", "whitespace", "character"];
+  }
 
   function processingModeLabel(mode) {
+    if (mode === "separator") return "分隔符切片";
     return {
       smart: "自动切片",
       semantic: "语义切片",
       structure: "结构切片",
-      recursive: "递归切块",
       fixed: "固定长度",
-      separator: "分隔符切片",
       page: "按页切片",
       whole_document: "整篇切片"
     }[mode] || "自动切片";
@@ -138,12 +173,16 @@
       headingPath: true,
       pageNumber: true,
       tableText: true,
+      formulaText: true,
       imageText: false
     }, fallback || {});
     var patch = input || {};
-    ["documentName", "headingPath", "pageNumber", "tableText", "imageText"].forEach(function each(key) {
+    ["tableText", "formulaText", "imageText"].forEach(function each(key) {
       if (Object.prototype.hasOwnProperty.call(patch, key)) base[key] = patch[key] === true;
     });
+    base.documentName = true;
+    base.headingPath = true;
+    base.pageNumber = true;
     return base;
   }
 
@@ -152,6 +191,7 @@
       structuredContent: mode === "smart" || mode === "structure",
       pageLocator: mode === "page" || indexContent.pageNumber === true,
       tableContent: indexContent.tableText === true,
+      formulaContent: indexContent.formulaText === true,
       imageText: indexContent.imageText === true
     });
   }
@@ -162,17 +202,19 @@
     var baseChunking = source.chunking || {};
     var input = Object.assign({}, parameters && parameters.chunking || {}, parameters || {});
     delete input.chunking;
-    var mode = input.mode || baseChunking.mode || "smart";
-    if (PROCESSING_MODES.indexOf(mode) < 0) return null;
+    var requestedMode = input.mode || baseChunking.mode || "smart";
+    if (PROCESSING_MODES.indexOf(requestedMode) < 0) return null;
+    var baseMode = baseChunking.mode || "smart";
+    var mode = requestedMode === "recursive" ? "separator" : requestedMode;
 
     var maxChars = Number(Object.prototype.hasOwnProperty.call(input, "maxChars") ? input.maxChars : (baseChunking.maxChars || 1200));
     var overlapPercent = Number(Object.prototype.hasOwnProperty.call(input, "overlapPercent") ? input.overlapPercent : (baseChunking.overlapPercent || 0));
     if (!Number.isFinite(maxChars) || !Number.isFinite(overlapPercent)) return null;
-    if (["smart", "semantic", "structure", "recursive", "fixed", "separator"].indexOf(mode) >= 0 && (maxChars < 200 || maxChars > 10000)) return null;
-    if (mode !== "fixed" && !Number.isInteger(maxChars)) return null;
+    if (["smart", "semantic", "structure", "fixed", "separator"].indexOf(mode) >= 0 && (maxChars < 200 || maxChars > 10000)) return null;
+    if (!Number.isInteger(maxChars)) return null;
     if ((mode === "page" || mode === "whole_document") && (maxChars < 200 || maxChars > 50000)) return null;
     if (mode === "semantic" || mode === "page" || mode === "whole_document") overlapPercent = 0;
-    if (overlapPercent < 0 || overlapPercent > 50 || (mode !== "fixed" && !Number.isInteger(overlapPercent))) return null;
+    if (overlapPercent < 0 || overlapPercent > 50 || !Number.isInteger(overlapPercent)) return null;
 
     var semanticSensitivity = input.semanticSensitivity || baseChunking.semanticSensitivity || "balanced";
     if (mode === "semantic" && ["low", "balanced", "high"].indexOf(semanticSensitivity) < 0) return null;
@@ -181,43 +223,33 @@
     var semanticMinChars = Math.min(maxChars, Math.max(100, Math.min(400, Math.round(maxChars * 0.2))));
     if (mode === "semantic") overlapPercent = 0;
 
-    var sentenceSeparator = "。！？.!?";
-    var separatorByType = {
-      structure: "\n\n",
-      paragraph: "\n\n",
-      newline: "\n",
-      zh_period: "。",
-      zh_exclamation: "！",
-      zh_question: "？",
-      en_period: ".",
-      en_exclamation: "!",
-      en_question: "?",
-      sentence: sentenceSeparator
-    };
-    var separatorTypeByLiteral = {
-      "\n\n": "paragraph",
-      "\n": "newline",
-      "。": "zh_period",
-      "！": "zh_exclamation",
-      "？": "zh_question",
-      ".": "en_period",
-      "!": "en_exclamation",
-      "?": "en_question"
-    };
     var hasInputSeparatorType = Object.prototype.hasOwnProperty.call(input, "separatorType") || Object.prototype.hasOwnProperty.call(input, "separatorPreset");
     var baseSeparatorType = baseChunking.separatorPreset || baseChunking.separatorType || "";
-    var separatorType = input.separatorType || input.separatorPreset || baseSeparatorType || (mode === "structure" ? "structure" : "paragraph");
-    if (mode === "page" || mode === "whole_document") separatorType = "literal";
-    if (mode === "structure") separatorType = "structure";
-    if (mode === "separator" && !hasInputSeparatorType && baseChunking.mode !== "separator") separatorType = "paragraph";
-    if (["structure", "paragraph", "newline", "zh_period", "zh_exclamation", "zh_question", "en_period", "en_exclamation", "en_question", "sentence", "custom", "literal"].indexOf(separatorType) < 0) return null;
     var hasInputSeparator = Object.prototype.hasOwnProperty.call(input, "separator");
     var hasInputCustomSeparator = Object.prototype.hasOwnProperty.call(input, "customSeparator");
+    var hasExplicitSeparator = hasInputSeparatorType || hasInputSeparator || hasInputCustomSeparator;
+    var hasInputBoundaryMode = Object.prototype.hasOwnProperty.call(input, "boundaryMode");
+    var legacyAutomaticSeparator = requestedMode === "recursive" || input.boundaryMode === "auto" ||
+      (!hasExplicitSeparator && !hasInputBoundaryMode && (baseMode === "recursive" || baseChunking.boundaryMode === "auto"));
+    var mayInheritBaseSeparator = mode === "separator" && (baseMode === "separator" || baseMode === "recursive") && !legacyAutomaticSeparator;
+    var separatorType = legacyAutomaticSeparator && mode === "separator" ? "paragraph" :
+      (input.separatorType || input.separatorPreset || (mayInheritBaseSeparator ? baseSeparatorType : "") || (mode === "structure" ? "structure" : "paragraph"));
+    if (mode === "page" || mode === "whole_document") separatorType = "literal";
+    if (mode === "structure") separatorType = "structure";
+    if (SEPARATOR_TYPES.indexOf(separatorType) < 0) return null;
     var legacySeparator = hasInputSeparator ? String(input.separator || "") : String(baseChunking.separator || "");
     var customSeparator = hasInputCustomSeparator ? String(input.customSeparator || "") : String(baseChunking.customSeparator || "");
+    if (mode === "separator" && !legacyAutomaticSeparator && !hasInputSeparatorType && (!baseSeparatorType || hasInputSeparator)) {
+      if (Object.prototype.hasOwnProperty.call(SEPARATOR_TYPE_BY_LITERAL, legacySeparator)) separatorType = SEPARATOR_TYPE_BY_LITERAL[legacySeparator];
+      else if (legacySeparator === SENTENCE_SEPARATOR) separatorType = "sentence";
+      else if (legacySeparator) {
+        separatorType = "custom";
+        customSeparator = legacySeparator;
+      } else if (hasInputCustomSeparator && customSeparator) separatorType = "custom";
+    }
     if (separatorType === "literal") {
-      if (Object.prototype.hasOwnProperty.call(separatorTypeByLiteral, legacySeparator)) separatorType = separatorTypeByLiteral[legacySeparator];
-      else if (legacySeparator === sentenceSeparator) separatorType = "sentence";
+      if (Object.prototype.hasOwnProperty.call(SEPARATOR_TYPE_BY_LITERAL, legacySeparator)) separatorType = SEPARATOR_TYPE_BY_LITERAL[legacySeparator];
+      else if (legacySeparator === SENTENCE_SEPARATOR) separatorType = "sentence";
       else if (!legacySeparator) separatorType = "paragraph";
       else if (mode === "separator") {
         separatorType = "custom";
@@ -226,12 +258,14 @@
     }
     if (separatorType === "custom" && !customSeparator && hasInputSeparator) customSeparator = legacySeparator;
     if (separatorType === "custom" && !customSeparator && !hasInputCustomSeparator && (baseSeparatorType === "custom" || baseSeparatorType === "literal")) customSeparator = String(baseChunking.separator || "");
-    if (separatorType === "custom" && Object.prototype.hasOwnProperty.call(separatorTypeByLiteral, customSeparator)) separatorType = separatorTypeByLiteral[customSeparator];
-    else if (separatorType === "custom" && customSeparator === sentenceSeparator) separatorType = "sentence";
+    if (separatorType === "custom" && Object.prototype.hasOwnProperty.call(SEPARATOR_TYPE_BY_LITERAL, customSeparator)) separatorType = SEPARATOR_TYPE_BY_LITERAL[customSeparator];
+    else if (separatorType === "custom" && customSeparator === SENTENCE_SEPARATOR) separatorType = "sentence";
     else if (separatorType === "custom" && !customSeparator) separatorType = "paragraph";
-    if (mode === "separator" && separatorType === "structure") mode = "structure";
+    if (mode === "separator" && separatorType === "structure") {
+      mode = "structure";
+    }
     if (mode === "structure") separatorType = "structure";
-    var separator = Object.prototype.hasOwnProperty.call(separatorByType, separatorType) ? separatorByType[separatorType] : (customSeparator || legacySeparator);
+    var separator = Object.prototype.hasOwnProperty.call(SEPARATOR_BY_TYPE, separatorType) ? SEPARATOR_BY_TYPE[separatorType] : (customSeparator || legacySeparator);
     if (mode === "page" || mode === "whole_document") {
       separatorType = "literal";
       separator = mode === "page" ? "\f" : "";
@@ -242,6 +276,14 @@
     if (!Number.isInteger(pagesPerChunk) || pagesPerChunk < 1 || pagesPerChunk > 10) return null;
     var longDocumentFallback = mode === "whole_document" ? input.longDocumentFallback || baseChunking.longDocumentFallback || "smart" : "smart";
     if (["smart", "stop"].indexOf(longDocumentFallback) < 0) return null;
+    var parentChildEnabled = mode !== "whole_document" && (Object.prototype.hasOwnProperty.call(input, "parentChildEnabled") ? input.parentChildEnabled === true : baseChunking.parentChildEnabled === true);
+    var includeContext = mode !== "whole_document";
+    var contextPolicy = mode === "whole_document" ? "none" : parentChildEnabled ? "enhanced" : "standard";
+    if (mode === "whole_document") {
+      contextPolicy = "none";
+      includeContext = false;
+      parentChildEnabled = false;
+    }
 
     var indexPatch = Object.assign({}, parameters && parameters.indexContent || {}, input);
     var indexContent = processingIndexContent(indexPatch, source.indexContent);
@@ -257,15 +299,17 @@
       pagesPerChunk: pagesPerChunk,
       longDocumentFallback: longDocumentFallback,
       mergeShortChunks: Object.prototype.hasOwnProperty.call(input, "mergeShortChunks") ? input.mergeShortChunks === true : baseChunking.mergeShortChunks !== false,
-      includeContext: Object.prototype.hasOwnProperty.call(input, "includeContext") ? input.includeContext === true : baseChunking.includeContext !== false
+      includeContext: includeContext,
+      contextPolicy: contextPolicy,
+      parentChildEnabled: parentChildEnabled
     });
-    if (mode !== baseChunking.mode) {
+    delete source.chunking.boundaryMode;
+    if (mode !== baseMode || requestedMode === "recursive") {
       source.chunking.strategy = {
         smart: "auto_structure_recursive_length_fallback",
         semantic: "semantic_boundary",
         structure: "parsed_structure_boundary",
-        separator: "delimiter_boundary",
-        recursive: "recursive_character",
+        separator: "separator_recursive_fallback",
         fixed: "fixed_length",
         page: "page_boundary",
         whole_document: "whole_document"
@@ -286,15 +330,12 @@
         delete source.chunking[key];
       });
     }
-    if (mode === "recursive") {
+    if (mode === "separator") {
       Object.assign(source.chunking, {
-        strategy: "recursive_character",
-        recursiveBoundaries: RECURSIVE_BOUNDARIES.slice(),
+        strategy: "separator_recursive_fallback",
+        recursiveBoundaries: separatorFallbackBoundaries(separatorType),
         keepSeparator: true,
         usesSemanticModel: false
-      });
-      ["separator", "separatorType", "separatorPreset", "customSeparator", "targetTokens", "maxTokens", "overlapTokens"].forEach(function removeSingleBoundaryField(key) {
-        delete source.chunking[key];
       });
     } else {
       delete source.chunking.recursiveBoundaries;
@@ -305,7 +346,19 @@
     }
     if (mode === "whole_document") {
       source.chunking.includeContext = false;
+      source.chunking.parentChildEnabled = false;
+      source.chunking.contextPolicy = "none";
       source.chunking.maxDocumentChars = maxChars;
+    }
+    if (source.chunking.parentChildEnabled) {
+      source.chunking.parentChunkStrategy = "parsed_section_or_adjacent_window";
+      source.chunking.retrievalUnit = "child";
+      source.chunking.contextUnit = "parent";
+      source.chunking.deduplicateByParent = true;
+    } else {
+      ["parentChunkStrategy", "retrievalUnit", "contextUnit", "deduplicateByParent"].forEach(function removeParentChildField(key) {
+        delete source.chunking[key];
+      });
     }
     source.indexContent = indexContent;
     source.requirements = processingRequirements(mode, indexContent, source.requirements);
@@ -324,21 +377,62 @@
   function processingParametersSnapshot(profileSnapshot) {
     if (!profileSnapshot || !profileSnapshot.chunking) return null;
     var chunking = profileSnapshot.chunking;
+    var mode = chunking.mode === "recursive" ? "separator" : chunking.mode;
+    var separator = String(chunking.separator || "");
+    var customSeparator = String(chunking.customSeparator || "");
+    var storedSeparatorType = chunking.separatorPreset || chunking.separatorType || "";
+    var separatorType = chunking.mode === "recursive" || chunking.boundaryMode === "auto" ? "paragraph" : storedSeparatorType;
+    if (mode === "separator" && !separatorType) {
+      if (Object.prototype.hasOwnProperty.call(SEPARATOR_TYPE_BY_LITERAL, separator)) separatorType = SEPARATOR_TYPE_BY_LITERAL[separator];
+      else if (separator === SENTENCE_SEPARATOR) separatorType = "sentence";
+      else if (separator) {
+        separatorType = "custom";
+        customSeparator = separator;
+      } else if (customSeparator) separatorType = "custom";
+      else separatorType = "paragraph";
+    }
+    if (mode === "separator" && separatorType === "literal") {
+      if (Object.prototype.hasOwnProperty.call(SEPARATOR_TYPE_BY_LITERAL, separator)) separatorType = SEPARATOR_TYPE_BY_LITERAL[separator];
+      else if (separator === SENTENCE_SEPARATOR) separatorType = "sentence";
+      else if (separator) {
+        separatorType = "custom";
+        customSeparator = separator;
+      } else separatorType = "paragraph";
+    }
+    if (mode === "separator" && separatorType === "custom") {
+      if (Object.prototype.hasOwnProperty.call(SEPARATOR_TYPE_BY_LITERAL, customSeparator)) separatorType = SEPARATOR_TYPE_BY_LITERAL[customSeparator];
+      else if (customSeparator === SENTENCE_SEPARATOR) separatorType = "sentence";
+      else if (!customSeparator) separatorType = "paragraph";
+    }
+    if (mode === "separator" && SEPARATOR_TYPES.indexOf(separatorType) < 0) separatorType = "paragraph";
+    if (mode === "separator" && separatorType === "structure") mode = "structure";
+    if (mode === "separator") separator = Object.prototype.hasOwnProperty.call(SEPARATOR_BY_TYPE, separatorType) ? SEPARATOR_BY_TYPE[separatorType] : customSeparator;
+    if (separatorType !== "custom") customSeparator = "";
     var snapshot = {
-      mode: chunking.mode,
+      mode: mode,
       maxChars: chunking.maxChars,
       overlapPercent: chunking.overlapPercent,
-      separator: chunking.separator,
-      separatorType: chunking.separatorType,
-      separatorPreset: chunking.separatorPreset,
-      customSeparator: chunking.customSeparator,
+      separator: mode === "separator" ? separator : chunking.separator,
+      separatorType: mode === "separator" ? separatorType : chunking.separatorType,
+      separatorPreset: mode === "separator" ? separatorType : chunking.separatorPreset,
+      customSeparator: mode === "separator" ? customSeparator : chunking.customSeparator,
       pagesPerChunk: chunking.pagesPerChunk,
       longDocumentFallback: chunking.longDocumentFallback,
       mergeShortChunks: chunking.mergeShortChunks,
       includeContext: chunking.includeContext,
+      contextPolicy: chunking.contextPolicy,
+      parentChildEnabled: chunking.parentChildEnabled === true,
       indexContent: OpsDemo.utils.clone(profileSnapshot.indexContent || {})
     };
-    if (chunking.mode === "semantic") {
+    if (chunking.parentChildEnabled) {
+      Object.assign(snapshot, {
+        parentChunkStrategy: chunking.parentChunkStrategy,
+        retrievalUnit: chunking.retrievalUnit,
+        contextUnit: chunking.contextUnit,
+        deduplicateByParent: chunking.deduplicateByParent === true
+      });
+    }
+    if (mode === "semantic") {
       Object.assign(snapshot, {
         semanticSensitivity: chunking.semanticSensitivity,
         breakpointPercentile: chunking.breakpointPercentile,
@@ -347,11 +441,11 @@
         fallbackMode: chunking.fallbackMode
       });
     }
-    if (chunking.mode === "recursive") {
-      snapshot.strategy = chunking.strategy;
-      snapshot.recursiveBoundaries = chunking.recursiveBoundaries.slice();
-      snapshot.keepSeparator = chunking.keepSeparator;
+    if (mode === "separator") {
+      snapshot.strategy = "separator_recursive_fallback";
+      snapshot.keepSeparator = true;
       snapshot.usesSemanticModel = false;
+      snapshot.recursiveBoundaries = separatorFallbackBoundaries(separatorType);
     }
     return snapshot;
   }
@@ -408,19 +502,33 @@
   function getProcessingProfileCompatibility(profile, parseConfig) {
     var missing = [];
     var requirements = profile && profile.requirements || {};
+    var indexContent = processingIndexContent(profile && profile.indexContent || {});
     var config = normalizeMineruParseConfig(null, parseConfig || {}) || normalizeMineruParseConfig();
-    if (requirements.tableContent && config.tableEnabled === false) missing.push("表格解析");
-    if (requirements.imageText && !config.imageAnalysisEnabled) missing.push("图片 / 图表内容理解");
+    if ((requirements.tableContent || indexContent.tableText === true) && config.tableEnabled === false) missing.push("表格解析");
+    if ((requirements.formulaContent || indexContent.formulaText === true) && config.formulaEnabled === false) missing.push("公式解析");
+    if ((requirements.imageText || indexContent.imageText === true) && !config.imageAnalysisEnabled) missing.push("图片 / 图表内容理解");
     var profileAvailable = Boolean(profile);
     var message = "系统预置处理方案可用";
     if (!profile) message = "系统预置处理方案不可用";
-    else if (missing.length) message = "可使用；以下解析内容不会进入索引：" + missing.join("、");
     return {
       compatible: profileAvailable,
       completeOutput: profileAvailable && !missing.length,
       missing: missing,
       message: message
     };
+  }
+
+  function alignProcessingIndexWithParseConfig(profileSnapshot, parseConfig) {
+    if (!profileSnapshot || !profileSnapshot.chunking) return profileSnapshot;
+    var aligned = OpsDemo.utils.clone(profileSnapshot);
+    var config = normalizeMineruParseConfig(null, parseConfig || {}) || normalizeMineruParseConfig();
+    var indexContent = processingIndexContent(aligned.indexContent || {}, aligned.indexContent || {});
+    if (config.tableEnabled === false) indexContent.tableText = false;
+    if (config.formulaEnabled === false) indexContent.formulaText = false;
+    if (!config.imageAnalysisEnabled) indexContent.imageText = false;
+    aligned.indexContent = indexContent;
+    aligned.requirements = processingRequirements(aligned.chunking.mode, indexContent, aligned.requirements);
+    return aligned;
   }
 
 
@@ -477,8 +585,6 @@
       characterCount: Number(input.characterCount == null ? 32000 : input.characterCount),
       chunkCount: Number(input.chunkCount == null ? 72 : input.chunkCount),
       chunkingEstimate: input.chunkingEstimate ? OpsDemo.utils.clone(input.chunkingEstimate) : null,
-      upstreamAccessLevel: input.accessLevel,
-      effectiveAccessLevel: input.accessLevel,
       searchable: false,
       countsTowardDocumentTotal: true,
       importedAt: input.importedAt || nowIso(),
@@ -521,8 +627,6 @@
         enabledStateLabel: "检索已关闭",
         retrievalStatus: "disabled",
         retrievalStatusLabel: "已关闭",
-        minAccessLevel: input.minAccessLevel || "L1",
-        minAccessLevelLabel: input.minAccessLevelLabel || "基础内部",
         documentCounts: { total: 0, searchable: 0, firstImportProcessing: 0, pendingActivation: 0, updatingWithPreviousVersionAvailable: 0 },
         openImportIssueCount: 0,
         currentIngestionProfileId: null,
@@ -547,7 +651,6 @@
         before: null,
         after: {
           enabled: false,
-          minAccessLevel: knowledgeBase.minAccessLevel,
           ingestionProfileId: knowledgeBase.currentIngestionProfileId
         },
         impact: "知识库已创建，当前未启用检索；下一步可导入文件。"
@@ -558,9 +661,10 @@
 
   function updateKnowledgeBase(id, payload) {
     var input = payload || {};
+    if (Object.keys(input).some(function unsupported(key) { return key !== "name" && key !== "purpose"; })) return null;
     return commit("knowledge-base-updated", function mutate(state) {
       var knowledgeBase = find(state.knowledgeBases, id);
-      if (!knowledgeBase || knowledgeBase.benchmarkReadOnly) return null;
+      if (!knowledgeBase) return null;
       var name = String(input.name == null ? knowledgeBase.name : input.name).trim();
       var purpose = String(input.purpose == null ? knowledgeBase.purpose : input.purpose).trim();
       if (!name || !purpose) return null;
@@ -577,7 +681,7 @@
         actionLabel: "编辑",
         before: before,
         after: { name: knowledgeBase.name, purpose: knowledgeBase.purpose },
-        impact: "更新知识库名称与描述；文件、索引、权限和检索状态未改变。"
+        impact: "更新知识库名称与描述；文件、索引和检索状态未改变。"
       });
       return knowledgeBase;
     });
@@ -586,7 +690,7 @@
   function deleteKnowledgeBase(id) {
     return commit("knowledge-base-deleted", function mutate(state) {
       var knowledgeBase = find(state.knowledgeBases, id);
-      if (!knowledgeBase || knowledgeBase.enabled || knowledgeBase.benchmarkReadOnly) return null;
+      if (!knowledgeBase || knowledgeBase.enabled) return null;
       var before = {
         name: knowledgeBase.name,
         purpose: knowledgeBase.purpose,
@@ -598,6 +702,10 @@
       state.importBatches = (state.importBatches || []).filter(function filter(item) { return item.knowledgeBaseId !== id; });
       state.knowledgeVersions = (state.knowledgeVersions || []).filter(function filter(item) { return item.knowledgeBaseId !== id; });
       if (state.rag) state.rag.retrievalTests = (state.rag.retrievalTests || []).filter(function filter(item) { return item.knowledgeBaseId !== id; });
+      (state.apiAccess && state.apiAccess.clients || []).forEach(function removeApiKeyBinding(item) {
+        if (!isRetrievalApiKey(item) || !Array.isArray(item.knowledgeBaseIds)) return;
+        item.knowledgeBaseIds = item.knowledgeBaseIds.filter(function keep(knowledgeBaseId) { return knowledgeBaseId !== id; });
+      });
       if (state.overview && state.overview.pendingItems) {
         state.overview.pendingItems = state.overview.pendingItems.filter(function filter(item) {
           return String(item.route || "").indexOf("/knowledge/" + id) < 0;
@@ -622,7 +730,7 @@
     var isLocal = id === "local-documents";
     return commit("knowledge-base-onboarding-configured", function mutate(state) {
       var knowledgeBase = isLocal ? getLocalDocumentImportContext(input.batchId) : find(state.knowledgeBases, id);
-      if (!knowledgeBase || knowledgeBase.benchmarkReadOnly) return null;
+      if (!knowledgeBase) return null;
       if (isLocal && !input.batchId) return null;
       if (input.completed && !isLocal && !isKnowledgeBaseEmbeddingReady(state, knowledgeBase)) return null;
       var before = {
@@ -642,7 +750,13 @@
       }
 
       if (input.completed && (!selectedProcessingProfile || !getProcessingProfileCompatibility(selectedProcessingProfile, nextParseConfig).compatible)) return null;
+      if (selectedProcessingSnapshot) selectedProcessingSnapshot = alignProcessingIndexWithParseConfig(selectedProcessingSnapshot, nextParseConfig);
       knowledgeBase.mineruParseConfig = nextParseConfig;
+      if (!input.ingestionProfileId && !input.completed && knowledgeBase.processingProfileSnapshot) {
+        var alignedExistingSnapshot = alignProcessingIndexWithParseConfig(knowledgeBase.processingProfileSnapshot, knowledgeBase.mineruParseConfig);
+        knowledgeBase.processingProfileSnapshot = OpsDemo.utils.clone(alignedExistingSnapshot);
+        knowledgeBase.processingParametersSnapshot = processingParametersSnapshot(alignedExistingSnapshot);
+      }
 
       if (input.ingestionProfileId) {
         var nextProfile = selectedProcessingProfile;
@@ -664,6 +778,7 @@
         }
         completionSnapshot = completionSnapshot || processingProfileSnapshot(selectedProcessingProfile, suppliedProcessingParameters);
         if (!completionSnapshot) return null;
+        completionSnapshot = alignProcessingIndexWithParseConfig(completionSnapshot, knowledgeBase.mineruParseConfig);
         knowledgeBase.processingProfileSnapshot = OpsDemo.utils.clone(completionSnapshot);
         knowledgeBase.processingParametersSnapshot = processingParametersSnapshot(completionSnapshot);
         knowledgeBase.onboardingCompletedAt = nowIso();
@@ -716,7 +831,6 @@
               id: documentId,
               localAssetId: reusableLocalAssetId(state, item.contentHash) || documentId,
               knowledgeBaseId: isLocal ? null : id,
-              accessLevel: knowledgeBase.minAccessLevel,
               name: item.fileName,
               size: item.fileSizeBytes,
               type: item.type,
@@ -778,7 +892,7 @@
   function setKnowledgeBaseEnabled(id, enabled) {
     return commit("knowledge-base-enabled", function mutate(state) {
       var knowledgeBase = find(state.knowledgeBases, id);
-      if (!knowledgeBase || knowledgeBase.benchmarkReadOnly) return null;
+      if (!knowledgeBase) return null;
       if (enabled) {
         if (!knowledgeBase.currentKnowledgeVersionId || !isKnowledgeBaseEmbeddingReady(state, knowledgeBase)) return null;
       }
@@ -801,7 +915,7 @@
         actionLabel: enabled ? "启用检索" : "关闭检索",
         before: { state: before },
         after: { state: knowledgeBase.enabledStateLabel },
-        impact: enabled ? "恢复接收符合访问等级的检索请求。" : "停止新检索请求，文件和权限配置均保留。"
+        impact: enabled ? "恢复接收检索请求。" : "停止新检索请求，文件和索引均保留。"
       });
       return knowledgeBase;
     });
@@ -826,7 +940,10 @@
         contentHash: contentHash,
         characterCount: source.characterCount != null && Number.isFinite(Number(source.characterCount)) ? Number(source.characterCount) : (source.sourcePreview ? String(source.sourcePreview).length : null),
         sourceFile: source.sourceFile || (typeof source.arrayBuffer === "function" ? source : null),
-        sourcePreview: String(source.sourcePreview || "")
+        sourcePreview: String(source.sourcePreview || ""),
+        identityDecision: source.identityDecision || null,
+        targetFileId: source.targetFileId || null,
+        targetFolderId: source.targetFolderId || null
       };
     });
   }
@@ -884,11 +1001,15 @@
     }
     var estimatedChunkChars = Math.max(200, Math.round(maxChars * fillRate));
     var semantic = mode === "semantic";
+    var chunkCount = Math.max(1, Math.ceil(characterCount / estimatedChunkChars));
+    var parentChildEnabled = mode !== "whole_document" && chunking.parentChildEnabled === true;
     return {
       characterCount: characterCount,
-      chunkCount: Math.max(1, Math.ceil(characterCount / estimatedChunkChars)),
+      chunkCount: chunkCount,
       estimatedChunkChars: estimatedChunkChars,
       boundaryFillRate: fillRate,
+      parentChildEnabled: parentChildEnabled,
+      parentChunkCount: parentChildEnabled && chunkCount > 1 ? Math.ceil(chunkCount / 3) : 0,
       extraEmbeddingCostLevel: semantic ? "high" : "none",
       extraEmbeddingCostLabel: semantic ? "较高" : "无额外切片向量计算",
       embeddingStages: semantic ? [
@@ -921,25 +1042,100 @@
     };
   }
 
-  function recursiveTextChunks(text, chunking) {
-    var maxChars = chunking.maxChars;
-    var overlapChars = Math.floor(maxChars * chunking.overlapPercent / 100);
-    // Keep separators in the preceding piece; only oversized pieces descend.
-    var boundaries = [/\r?\n(?:[ \t]*\r?\n)+/g, /\r\n|\r|\n/g, /[。！？]+|[.!?]+(?=\s|$)/g, /[^\S\r\n]+/g];
+  function runtimeChunkLimits(chunking) {
+    var config = chunking || {};
+    var maxChars = Math.max(1, Math.floor(Number(config.maxChars) || 1200));
+    var overlapPercent = Math.max(0, Math.min(50, Number(config.overlapPercent) || 0));
+    return {
+      maxChars: maxChars,
+      overlapChars: Math.min(maxChars - 1, Math.floor(maxChars * overlapPercent / 100))
+    };
+  }
+
+  function fixedTextChunks(text, chunking) {
+    var value = String(text || "");
+    if (!value) return [];
+    var limits = runtimeChunkLimits(chunking);
+    var step = Math.max(1, limits.maxChars - limits.overlapChars);
+    var chunks = [];
+    for (var offset = 0; offset < value.length; offset += step) {
+      var chunk = value.slice(offset, offset + limits.maxChars);
+      if (chunk) chunks.push(chunk);
+      if (offset + limits.maxChars >= value.length) break;
+    }
+    return chunks;
+  }
+
+  function splitKeepingBoundary(value, pattern) {
+    var pieces = [];
+    var start = 0;
+    var match;
+    pattern.lastIndex = 0;
+    while ((match = pattern.exec(value))) {
+      var end = match.index + match[0].length;
+      pieces.push(value.slice(start, end));
+      start = end;
+      if (!match[0].length) pattern.lastIndex += 1;
+    }
+    if (start < value.length) pieces.push(value.slice(start));
+    return pieces.length ? pieces : [value];
+  }
+
+  function splitKeepingLiteralBoundary(value, separator) {
+    if (!separator) return [value];
+    var pieces = [];
+    var start = 0;
+    var boundaryIndex;
+    while ((boundaryIndex = value.indexOf(separator, start)) >= 0) {
+      var end = boundaryIndex + separator.length;
+      pieces.push(value.slice(start, end));
+      start = end;
+    }
+    if (start < value.length) pieces.push(value.slice(start));
+    return pieces.length ? pieces : [value];
+  }
+
+  function separatorBoundaryPlan(chunking) {
+    var config = chunking || {};
+    var separatorType = config.mode === "recursive" || config.boundaryMode === "auto" ? "paragraph" : (config.separatorPreset || config.separatorType || "paragraph");
+    if (separatorType === "paragraph") return [
+      { name: "paragraph", pattern: /\r?\n(?:[ \t]*\r?\n)+/g },
+      { name: "newline", pattern: /\r\n|\r|\n/g },
+      { name: "sentence", pattern: /[。！？]+|[.!?]+(?=\s|$)/g },
+      { name: "whitespace", pattern: /\s+/g }
+    ];
+    if (separatorType === "newline") return [
+      { name: "newline", pattern: /\r\n|\r|\n/g },
+      { name: "sentence", pattern: /[。！？]+|[.!?]+(?=\s|$)/g },
+      { name: "whitespace", pattern: /\s+/g }
+    ];
+    if (separatorType === "sentence") return [
+      { name: "sentence", pattern: /[。！？]+|[.!?]+(?=\s|$)/g },
+      { name: "whitespace", pattern: /\s+/g }
+    ];
+    var separator = Object.prototype.hasOwnProperty.call(SEPARATOR_BY_TYPE, separatorType) ? SEPARATOR_BY_TYPE[separatorType] : String(config.customSeparator || config.separator || "");
+    if (!separator) return separatorBoundaryPlan({ separatorType: "paragraph" });
+    return [
+      { name: separatorType, literal: separator },
+      { name: "whitespace", pattern: /\s+/g }
+    ];
+  }
+
+  function separatorTextChunks(text, chunking) {
+    var value = String(text || "");
+    if (!value) return [];
+    var limits = runtimeChunkLimits(chunking);
+    var maxChars = limits.maxChars;
+    var overlapChars = limits.overlapChars;
+    var boundaries = separatorBoundaryPlan(chunking);
+    // The selected separator is always tried first. Only an oversized piece
+    // descends to the next finer boundary, ending with character fallback.
     function splitPieces(value, level) {
       if (value.length <= maxChars) return [value];
       if (level >= boundaries.length) return Array.from(value);
-      var pattern = new RegExp(boundaries[level].source, "g");
-      var pieces = [];
-      var start = 0;
-      var match;
-      while ((match = pattern.exec(value))) {
-        var end = match.index + match[0].length;
-        pieces.push(value.slice(start, end));
-        start = end;
-      }
-      if (!pieces.length) return splitPieces(value, level + 1);
-      if (start < value.length) pieces.push(value.slice(start));
+      var boundary = boundaries[level];
+      var pieces = boundary.literal ? splitKeepingLiteralBoundary(value, boundary.literal) : splitKeepingBoundary(value, new RegExp(boundary.pattern.source, "g"));
+      if (pieces.length === 1 && pieces[0] === value) return splitPieces(value, level + 1);
       return pieces.reduce(function descend(result, piece) {
         return result.concat(splitPieces(piece, level + 1));
       }, []);
@@ -960,13 +1156,108 @@
     return chunks;
   }
 
+  function recursiveTextChunks(text, chunking) {
+    return separatorTextChunks(text, Object.assign({}, chunking || {}, {
+      mode: "separator",
+      separatorType: "paragraph",
+      separatorPreset: "paragraph",
+      separator: "\n\n"
+    }));
+  }
+
+  function buildParentChunkHierarchy(chunks, chunking, documentItem) {
+    var items = chunks || [];
+    var config = chunking || {};
+    var context = documentItem || {};
+    var relationFields = ["parentChunkId", "chunkType", "hierarchyLevel", "retrievalRole", "contextExpansion"];
+    items.forEach(function clearExistingRelation(chunk) {
+      relationFields.forEach(function removeField(key) { delete chunk[key]; });
+      if (!chunk.metadata) return;
+      relationFields.forEach(function removeMetadataField(key) { delete chunk.metadata[key]; });
+    });
+    if (config.parentChildEnabled !== true || config.mode === "whole_document" || items.length < 2) return [];
+
+    var childLimit = Math.max(200, Number(config.maxChars || 1200));
+    var parentLimit = Math.min(30000, Math.max(childLimit * 3, childLimit + 1));
+    var groups = [];
+    var pending = [];
+    var pendingLength = 0;
+    var pendingSection = "";
+
+    function sectionPath(chunk) {
+      var metadata = chunk.metadata || {};
+      return String(metadata.sectionPath || metadata.headingPath || "").trim();
+    }
+    function flush() {
+      if (!pending.length) return;
+      groups.push(pending);
+      pending = [];
+      pendingLength = 0;
+      pendingSection = "";
+    }
+
+    items.forEach(function groupChild(chunk) {
+      var contentLength = String(chunk.content || chunk.text || "").length;
+      var childSection = sectionPath(chunk);
+      var sectionChanged = pending.length && pendingSection && childSection && childSection !== pendingSection;
+      if (pending.length && (sectionChanged || pendingLength + contentLength > parentLimit)) flush();
+      pending.push(chunk);
+      pendingLength += contentLength;
+      if (!pendingSection && childSection) pendingSection = childSection;
+    });
+    flush();
+
+    return groups.map(function createParent(group, index) {
+      var parentId = OpsDemo.utils.id("PARENT");
+      var parentSection = sectionPath(group[0]);
+      var childIds = group.map(function childId(chunk) { return chunk.id; });
+      var parentContent = group.map(function childContent(chunk) { return String(chunk.content || chunk.text || ""); }).join("");
+      group.forEach(function linkChild(chunk) {
+        chunk.parentChunkId = parentId;
+        chunk.chunkType = "child";
+        chunk.hierarchyLevel = 1;
+        chunk.retrievalRole = "search";
+        chunk.contextExpansion = "parent";
+        chunk.metadata = Object.assign({}, chunk.metadata || {}, {
+          parentChunkId: parentId,
+          chunkType: "child",
+          hierarchyLevel: 1,
+          retrievalRole: "search",
+          contextExpansion: "parent"
+        });
+      });
+      return {
+        id: parentId,
+        documentId: context.id || null,
+        knowledgeBaseId: context.knowledgeBaseId || null,
+        index: index + 1,
+        characterCount: parentContent.length,
+        content: parentContent,
+        childChunkIds: childIds,
+        chunkType: "parent",
+        hierarchyLevel: 0,
+        retrievalRole: "context",
+        origin: "system",
+        createdAt: nowIso(),
+        status: "context_only",
+        metadata: {
+          sectionPath: parentSection || "正文",
+          parentBoundary: parentSection ? "parsed_section" : "adjacent_window"
+        }
+      };
+    });
+  }
+
   function addImportPreviewChunks(state, documentItem, shape) {
     var sourceText = String(documentItem.sourcePreview || "");
     var contents = [];
     var previewSize = shape.estimatedChunkChars;
     var chunking = documentItem.processingProfileSnapshot && documentItem.processingProfileSnapshot.chunking || {};
-    if (sourceText && chunking.mode === "recursive") {
-      contents = recursiveTextChunks(sourceText, chunking);
+    var mode = chunking.mode === "recursive" ? "separator" : chunking.mode;
+    if (sourceText && mode === "separator") {
+      contents = chunking.mode === "recursive" ? recursiveTextChunks(sourceText, chunking) : separatorTextChunks(sourceText, chunking);
+    } else if (sourceText && mode === "fixed") {
+      contents = fixedTextChunks(sourceText, chunking);
     } else if (sourceText) {
       for (var offset = 0; offset < sourceText.length; offset += previewSize) {
         contents.push(sourceText.slice(offset, offset + previewSize));
@@ -979,8 +1270,8 @@
       ];
     }
     state.chunks = state.chunks || [];
-    contents.forEach(function addPreviewChunk(content, index) {
-      state.chunks.push({
+    var createdChunks = contents.map(function createPreviewChunk(content, index) {
+      return {
         id: OpsDemo.utils.id("CHK"),
         documentId: documentItem.id,
         knowledgeBaseId: documentItem.knowledgeBaseId,
@@ -990,8 +1281,11 @@
         origin: "import",
         createdAt: nowIso(),
         status: "processed"
-      });
+      };
     });
+    createdChunks.forEach(function savePreviewChunk(chunk) { state.chunks.push(chunk); });
+    documentItem.parentChunks = buildParentChunkHierarchy(createdChunks, chunking, documentItem);
+    documentItem.parentChunkCount = documentItem.parentChunks.length;
     documentItem.chunkCount = contents.length;
   }
 
@@ -1097,7 +1391,7 @@
     var deferredRequested = isLocal || Boolean(payload && payload.deferred);
     return commit("knowledge-import-started", function mutate(state) {
       var knowledgeBase = isLocal ? getLocalDocumentImportContext() : find(state.knowledgeBases, knowledgeBaseId);
-      if (!knowledgeBase || knowledgeBase.benchmarkReadOnly) return null;
+      if (!knowledgeBase) return null;
       var deferred = deferredRequested || !knowledgeBase.currentIngestionProfileId;
       if (!deferred && !isKnowledgeBaseEmbeddingReady(state, knowledgeBase)) return null;
       var currentProcessingProfile = deferred ? null : knowledgeBase.processingProfileSnapshot;
@@ -1106,6 +1400,7 @@
       var effectiveParseConfig = normalizeMineruParseConfig(null, knowledgeBase.mineruParseConfig || {}) || normalizeMineruParseConfig();
       knowledgeBase.mineruParseConfig = effectiveParseConfig;
       if (!deferred && !getProcessingProfileCompatibility(currentProcessingProfile, effectiveParseConfig).compatible) return null;
+      if (!deferred) currentProcessingProfile = alignProcessingIndexWithParseConfig(currentProcessingProfile, effectiveParseConfig);
       var batch = {
         id: OpsDemo.utils.id("IMP"),
         knowledgeBaseId: isLocal ? null : knowledgeBaseId,
@@ -1117,7 +1412,7 @@
         ingestionProfileId: deferred ? null : knowledgeBase.currentIngestionProfileId,
         mineruParseConfig: deferred ? null : Object.assign({}, effectiveParseConfig),
         processingProfileSnapshot: deferred ? null : OpsDemo.utils.clone(currentProcessingProfile),
-        processingParametersSnapshot: deferred ? null : OpsDemo.utils.clone(knowledgeBase.processingParametersSnapshot || processingParametersSnapshot(currentProcessingProfile)),
+        processingParametersSnapshot: deferred ? null : OpsDemo.utils.clone(processingParametersSnapshot(currentProcessingProfile)),
         embeddingModelIdSnapshot: deferred ? null : knowledgeBase.boundEmbeddingModelId,
         inputCount: fileCandidates.length,
         successCount: 0,
@@ -1202,7 +1497,6 @@
             id: documentId,
             localAssetId: reusableLocalAssetId(state, candidate.contentHash) || documentId,
             knowledgeBaseId: knowledgeBaseId,
-            accessLevel: knowledgeBase.minAccessLevel,
             name: candidate.name,
             size: candidate.size,
             type: candidate.type,
@@ -1252,8 +1546,10 @@
       var knowledgeBase = batch && find(state.knowledgeBases, batch.knowledgeBaseId);
       if (!batch || !item || !documentItem || !knowledgeBase || item.operation !== "replace" || item.status !== "replacement_staged") return null;
       if (!isKnowledgeBaseEmbeddingReady(state, knowledgeBase)) return null;
+      var parseConfig = batch.mineruParseConfig || knowledgeBase.mineruParseConfig;
       var processingProfile = batch.processingProfileSnapshot || knowledgeBase.processingProfileSnapshot;
-      if (!processingProfile || !getProcessingProfileCompatibility(processingProfile, batch.mineruParseConfig || knowledgeBase.mineruParseConfig).compatible) return null;
+      if (!processingProfile || !getProcessingProfileCompatibility(processingProfile, parseConfig).compatible) return null;
+      processingProfile = alignProcessingIndexWithParseConfig(processingProfile, parseConfig);
 
       if (existingDocumentContentHash(documentItem) === item.contentHash) {
         item.operation = "skip";
@@ -1366,7 +1662,7 @@
       var documentItem = find(state.documents, documentId);
       if (!documentItem) return null;
       var knowledgeBase = find(state.knowledgeBases, documentItem.knowledgeBaseId);
-      if (!knowledgeBase || knowledgeBase.benchmarkReadOnly) return null;
+      if (!knowledgeBase) return null;
       var documentChunks = (state.chunks || []).filter(function filter(item) { return item.documentId === documentId; });
       var visibleMaxIndex = documentChunks.reduce(function max(value, item) { return Math.max(value, Number(item.index || 0)); }, 0);
       var nextIndex = Math.max(Number(documentItem.chunkCount || 0), visibleMaxIndex) + 1;
@@ -1422,7 +1718,6 @@
       var documentItem = find(state.documents, id);
       if (!documentItem) return null;
       var knowledgeBase = find(state.knowledgeBases, documentItem.knowledgeBaseId);
-      if (knowledgeBase && knowledgeBase.benchmarkReadOnly) return null;
       var deletedChunks = (state.chunks || []).filter(function filter(item) { return item.documentId === id; });
       state.documents.splice(state.documents.indexOf(documentItem), 1);
       state.chunks = (state.chunks || []).filter(function filter(item) { return item.documentId !== id; });
@@ -1533,7 +1828,6 @@
       state.documents.unshift(createImportedDocument({
         id: item.documentId,
         knowledgeBaseId: knowledgeBase.id,
-        accessLevel: knowledgeBase.minAccessLevel,
         name: item.fileName,
         documentType: "合规证明",
         pageCount: 8,
@@ -1684,11 +1978,17 @@
     return kind === "ingestion" ? state.rag.ingestionProfiles : [];
   }
 
+  function normalizeRagModelKind(kind) {
+    return kind === "llm" || kind === "reranker" ? kind : "embedding";
+  }
+
   function ragModelList(state, kind) {
     if (!state.rag || !state.rag.modelCatalog) return [];
-    return kind === "embedding"
-      ? state.rag.modelCatalog.embeddingModels
-      : state.rag.modelCatalog.rerankerModels;
+    var catalog = state.rag.modelCatalog;
+    var normalizedKind = normalizeRagModelKind(kind);
+    if (normalizedKind === "llm") return catalog.llmModels || [];
+    if (normalizedKind === "reranker") return catalog.rerankerModels || [];
+    return catalog.embeddingModels || [];
   }
 
   function findRagModel(state, kind, id) {
@@ -1744,9 +2044,26 @@
   }
 
   function modelKindFromId(state, id) {
+    if (findRagModel(state, "llm", id)) return "llm";
     if (findRagModel(state, "embedding", id)) return "embedding";
     if (findRagModel(state, "reranker", id)) return "reranker";
     return null;
+  }
+
+  function readLlmParameterCount(input, current) {
+    if (input && Object.prototype.hasOwnProperty.call(input, "parameterCountB") && input.parameterCountB != null) {
+      var explicit = Number(input.parameterCountB);
+      return Number.isFinite(explicit) && explicit >= 25 ? Math.round(explicit) : null;
+    }
+    var stored = Number(current && current.parameterCountB);
+    if (Number.isFinite(stored) && stored >= 25) return Math.round(stored);
+    return null;
+  }
+
+  function llmParameterLabel(parameterCountB) {
+    return parameterCountB >= 1000
+      ? (parameterCountB / 1000).toFixed(parameterCountB % 1000 === 0 ? 0 : 1) + "T"
+      : parameterCountB + "B";
   }
 
   function modelConnectionResult(apiConfig, options) {
@@ -1783,7 +2100,7 @@
     var input = payload || {};
     var state = store.getState();
     var currentKind = input.id ? modelKindFromId(state, input.id) : null;
-    var kind = currentKind || (input.kind === "reranker" ? "reranker" : "embedding");
+    var kind = currentKind || normalizeRagModelKind(input.kind);
     var current = input.id ? findRagModel(state, kind, input.id) : null;
     if (input.id && !current) return null;
     var apiConfig = normalizeModelApiConfig(input.apiConfig || input, current && current.apiConfig);
@@ -1800,13 +2117,13 @@
     var input = payload || {};
     var snapshot = store.getState();
     var existingKind = input.id ? modelKindFromId(snapshot, input.id) : null;
-    var kind = existingKind || (input.kind === "reranker" ? "reranker" : "embedding");
+    var kind = existingKind || normalizeRagModelKind(input.kind);
     if (existingKind && input.kind && input.kind !== existingKind) return null;
     var existingModel = input.id ? findRagModel(snapshot, kind, input.id) : null;
     if (input.id && !existingModel) return null;
 
     var name = String(input.name == null ? existingModel && existingModel.alias || "" : input.name).trim();
-    var allModels = ragModelList(snapshot, "embedding").concat(ragModelList(snapshot, "reranker"));
+    var allModels = ragModelList(snapshot, "llm").concat(ragModelList(snapshot, "embedding"), ragModelList(snapshot, "reranker"));
     if (!name || allModels.some(function some(item) {
       return item.id !== (existingModel && existingModel.id) && String(item.alias || "").toLowerCase() === name.toLowerCase();
     })) return null;
@@ -1814,6 +2131,8 @@
     var apiConfig = normalizeModelApiConfig(input.apiConfig || input, existingModel && existingModel.apiConfig);
     if (!apiConfig) return null;
     var dimension = kind === "embedding" ? readEmbeddingDimension(input, apiConfig, existingModel) : null;
+    var parameterCountB = kind === "llm" ? readLlmParameterCount(input, existingModel) : null;
+    if (kind === "llm" && parameterCountB == null) return null;
     var connection = modelConnectionResult(apiConfig, input);
     if (!connection.passed) return null;
 
@@ -1824,8 +2143,9 @@
       var created = !model;
       var timestamp = nowIso();
       if (!model) {
+        var idPrefix = kind === "embedding" ? "MODEL-EMBEDDING" : kind === "llm" ? "MODEL-LLM" : "MODEL-RERANK";
         model = {
-          id: OpsDemo.utils.id(kind === "embedding" ? "MODEL-EMBEDDING" : "MODEL-RERANK"),
+          id: OpsDemo.utils.id(idPrefix),
           createdAt: timestamp,
         };
         ragModelList(state, kind).push(model);
@@ -1833,10 +2153,23 @@
       model.alias = name;
       model.apiConfig = apiConfig;
       model.updatedAt = timestamp;
-      if (kind === "embedding") model.dimension = Math.round(dimension);
-      else {
+      if (kind === "llm" && state.rag && state.rag.answerGeneration && state.rag.answerGeneration.modelId === model.id) {
+        state.rag.answerGeneration.model = name;
+      }
+      if (kind === "embedding") {
+        model.dimension = Math.round(dimension);
+        delete model.parameterCountB;
+        delete model.parameters;
+      } else if (kind === "llm") {
+        var parameterChanged = Number(model.parameterCountB) !== parameterCountB;
+        model.parameterCountB = parameterCountB;
+        if (!model.parameters || parameterChanged) model.parameters = llmParameterLabel(parameterCountB);
         delete model.dimension;
         delete model.capability;
+      } else {
+        delete model.dimension;
+        delete model.capability;
+        delete model.parameterCountB;
       }
       applyModelConnectionState(model, connection);
 
@@ -1886,11 +2219,25 @@
         return { type: "knowledge_base", id: item.id, name: item.name };
       });
     }
+    if (kind === "llm") {
+      var generation = state.rag && state.rag.answerGeneration;
+      return generation && generation.modelId === id
+        ? [{ type: "answer_generation", id: "ANSWER-GENERATION-01", name: "默认回答生成" }]
+        : [];
+    }
     var settings = state.rag && state.rag.retrievalSettings;
     var operator = settings && settings.operator;
-    return operator && operator.rerankEnabled && operator.rerankerModelId === id
+    var usages = operator && operator.rerankEnabled && operator.rerankerModelId === id
       ? [{ type: "retrieval_settings", id: "QUERY-RUNTIME-01", name: "全局检索设置" }]
       : [];
+    (state.apiAccess && state.apiAccess.clients || []).forEach(function findApiKeyUsage(item) {
+      var policy = item && item.retrievalPolicy;
+      var policyOperator = policy && policy.mode === "custom" && policy.operator;
+      if (isRetrievalApiKey(item) && policyOperator && policyOperator.rerankEnabled && policyOperator.rerankerModelId === id) {
+        usages.push({ type: "api_key", id: item.id, name: apiKeyName(item) });
+      }
+    });
+    return usages;
   }
 
   function getRagModelUsage(kind, id) {
@@ -1913,7 +2260,7 @@
         actionLabel: "删除模型",
         before: { kind: kind },
         after: null,
-        impact: "未被知识库或全局检索设置引用的模型已删除。",
+        impact: "未被知识库、全局检索或默认回答生成引用的模型已删除。",
       });
       return model;
     });
@@ -1942,9 +2289,9 @@
     else if (current.relevanceThreshold != null) candidate = Number(current.relevanceThreshold);
     else if (current.relevanceLevel != null) candidate = retrievalThresholdForLevel(state, String(current.relevanceLevel));
     else candidate = 0.6;
-    var scaled = Math.round(Number(candidate) * 10);
-    if (!Number.isFinite(candidate) || Math.abs(Number(candidate) - scaled / 10) > 1e-9 || scaled < 4 || scaled > 9) return null;
-    return scaled / 10;
+    var scaled = Math.round(Number(candidate) * 100);
+    if (!Number.isFinite(candidate) || Math.abs(Number(candidate) - scaled / 100) > 1e-9 || scaled < 40 || scaled > 90) return null;
+    return scaled / 100;
   }
 
   function retrievalEvidenceScore(item, source) {
@@ -1952,39 +2299,135 @@
     return Number.isFinite(score) ? score : null;
   }
 
-  function normalizedKeywordWeight(state, source, current) {
-    var candidate;
-    if (source.keywordWeight != null) candidate = Number(source.keywordWeight);
-    else if (source.semanticWeight != null) candidate = 100 - Number(source.semanticWeight);
-    else if (current.keywordWeight != null) candidate = Number(current.keywordWeight);
-    else if (current.semanticWeight != null) candidate = 100 - Number(current.semanticWeight);
-    else {
-      var weights = state.rag && state.rag.retrievalSettings && state.rag.retrievalSettings.system && state.rag.retrievalSettings.system.fusionWeights || {};
-      candidate = Math.round(Number(weights.bm25 == null ? 0.5 : weights.bm25) * 100);
+  var RETRIEVAL_FUSION_CONFIG = Object.freeze({ method: "rrf", rrfK: 60 });
+  var ANSWER_GENERATION_CONFIG = Object.freeze({
+    modelId: "MODEL-LLM-DEEPSEEK-V4-PRO",
+    model: "DeepSeek-V4-Pro",
+    temperature: 0.2,
+    citationsEnabled: true
+  });
+
+  function applyFixedRetrievalFusion(settings) {
+    if (!settings) return null;
+    settings.system = settings.system || {};
+    settings.system.fusionMethod = RETRIEVAL_FUSION_CONFIG.method;
+    settings.system.rrfK = RETRIEVAL_FUSION_CONFIG.rrfK;
+    // Historical weights are intentionally ignored: RRF combines branch ranks,
+    // not weighted branch scores.
+    delete settings.system.fusionWeights;
+    if (settings.operator) {
+      delete settings.operator.keywordWeight;
+      delete settings.operator.semanticWeight;
     }
-    if (!Number.isInteger(candidate) || candidate < 10 || candidate > 90 || candidate % 5 !== 0) return null;
-    if (source.semanticWeight != null && Number(source.semanticWeight) !== 100 - candidate) return null;
-    return candidate;
+    return settings.system;
+  }
+
+  function applyFixedAnswerGeneration(rag) {
+    if (!rag) return null;
+    rag.answerGeneration = {
+      modelId: ANSWER_GENERATION_CONFIG.modelId,
+      model: ANSWER_GENERATION_CONFIG.model,
+      temperature: ANSWER_GENERATION_CONFIG.temperature,
+      citationsEnabled: ANSWER_GENERATION_CONFIG.citationsEnabled
+    };
+    return rag.answerGeneration;
+  }
+
+  function normalizedAnswerSentence(value) {
+    var sentence = String(value || "").trim();
+    if (!sentence) return "";
+    return /[。！？.!?]$/.test(sentence) ? sentence : sentence + "。";
+  }
+
+  function answerCitation(item, index) {
+    var score = Number(item && item.retrievalScore);
+    return {
+      index: index + 1,
+      marker: "[" + (index + 1) + "]",
+      rank: Number(item && item.rank || index + 1),
+      documentId: item && item.documentId || null,
+      documentName: item && item.documentName || "",
+      locator: item && item.locator || "",
+      excerpt: item && item.excerpt || "",
+      retrievalScore: Number.isFinite(score) ? score : null
+    };
+  }
+
+  function deterministicAnswerResult(question, evidence, config) {
+    var sources = (evidence || []).slice(0, 3);
+    if (!sources.length) {
+      return {
+        text: "当前没有检索到满足相关度阈值的证据，暂时无法基于该知识库回答这个问题。",
+        citations: [],
+        insufficientEvidence: true
+      };
+    }
+    var citations = config.citationsEnabled ? sources.map(answerCitation) : [];
+    var statements = sources.map(function mapSource(item, index) {
+      var marker = config.citationsEnabled ? " [" + (index + 1) + "]" : "";
+      return normalizedAnswerSentence(item.excerpt) + marker;
+    });
+    return {
+      text: "根据知识库中检索到的证据，" + statements.join(" "),
+      citations: citations,
+      insufficientEvidence: false,
+      question: String(question || "")
+    };
+  }
+
+  function roundedAnswerMetric(value) {
+    var numeric = Number(value);
+    if (!Number.isFinite(numeric)) return null;
+    return Number(Math.max(0, Math.min(1, numeric)).toFixed(3));
+  }
+
+  function simulatedGenerationLatency(question, evidence, answer) {
+    return 160 + Math.ceil(String(question || "").length * 1.5) + (evidence || []).length * 38 + Math.ceil(String(answer || "").length * 0.45);
+  }
+
+  function answerQualityMetrics(question, evidence, answerResult, config) {
+    var sources = evidence || [];
+    var scores = sources.map(function mapScore(item) { return Number(item.retrievalScore); }).filter(Number.isFinite);
+    var averageScore = scores.length ? scores.reduce(function sum(total, value) { return total + value; }, 0) / scores.length : 0;
+    return {
+      faithfulness: sources.length ? 1 : null,
+      answerRelevance: sources.length ? roundedAnswerMetric(averageScore) : 0,
+      citationCoverage: sources.length ? (config.citationsEnabled && answerResult.citations.length ? 1 : 0) : null,
+      generationLatencyMs: simulatedGenerationLatency(question, sources.slice(0, 3), answerResult.text)
+    };
+  }
+
+  function retrievalSystemSnapshot(state) {
+    var settings = state.rag && state.rag.retrievalSettings;
+    var system = OpsDemo.utils.clone(settings && settings.system || {});
+    system.fusionMethod = RETRIEVAL_FUSION_CONFIG.method;
+    system.rrfK = RETRIEVAL_FUSION_CONFIG.rrfK;
+    delete system.fusionWeights;
+    ["bm25Candidates", "denseCandidates", "fusionCandidates"].forEach(function normalizeCandidateLimit(key) {
+      var value = Number(system[key]);
+      system[key] = Number.isFinite(value) && value >= 1 ? Math.floor(value) : 30;
+    });
+    return system;
   }
 
   function deriveRetrievalPlan(state, operator) {
-    var system = state.rag && state.rag.retrievalSettings && state.rag.retrievalSettings.system || {};
-    var keywordWeight = Number(operator.keywordWeight || 50);
-    var totalBranchCandidates = Math.max(
-      Number(operator.finalTopK || 10),
-      Number(system.bm25Candidates || 30) + Number(system.denseCandidates || 30)
-    );
-    var keywordCandidates = Math.max(1, Math.round(totalBranchCandidates * keywordWeight / 100));
-    var semanticCandidates = Math.max(1, totalBranchCandidates - keywordCandidates);
+    var system = retrievalSystemSnapshot(state);
+    var finalTopK = Math.max(1, Number(operator.finalTopK || 10));
+    var keywordCandidates = Math.max(finalTopK, Math.floor(Number(system.bm25Candidates || 30)));
+    var semanticCandidates = Math.max(finalTopK, Math.floor(Number(system.denseCandidates || 30)));
+    var totalBranchCandidates = keywordCandidates + semanticCandidates;
     var fusionCandidates = Math.max(
-      Number(operator.finalTopK || 10),
-      Math.min(totalBranchCandidates, Number(system.fusionCandidates || 30))
+      finalTopK,
+      Math.min(totalBranchCandidates, Math.floor(Number(system.fusionCandidates || 30)))
     );
     return {
       keywordCandidates: keywordCandidates,
       semanticCandidates: semanticCandidates,
       fusionCandidates: fusionCandidates,
-      rerankCandidates: operator.rerankEnabled ? fusionCandidates : 0
+      rerankCandidates: operator.rerankEnabled ? fusionCandidates : 0,
+      fusionMethod: RETRIEVAL_FUSION_CONFIG.method,
+      rrfK: RETRIEVAL_FUSION_CONFIG.rrfK,
+      relevanceScoreKind: "normalized_fusion_score"
     };
   }
 
@@ -1994,10 +2437,8 @@
     var rerankEnabled = source.rerankEnabled == null ? Boolean(current.rerankEnabled) : Boolean(source.rerankEnabled);
     var rerankerModelId = source.rerankerModelId == null ? current.rerankerModelId : String(source.rerankerModelId || "");
     var finalTopK = Number(source.finalTopK == null ? current.finalTopK || 10 : source.finalTopK);
-    var keywordWeight = normalizedKeywordWeight(state, source, current);
     var relevanceThreshold = normalizedRetrievalThreshold(state, source, current);
     if (!Number.isInteger(finalTopK) || finalTopK < 5 || finalTopK > 20) return null;
-    if (keywordWeight == null) return null;
     if (relevanceThreshold == null) return null;
     if (rerankEnabled) {
       var model = findRagModel(state, "reranker", rerankerModelId);
@@ -2007,8 +2448,6 @@
     return {
       rerankEnabled: rerankEnabled,
       rerankerModelId: rerankEnabled ? rerankerModelId : null,
-      keywordWeight: keywordWeight,
-      semanticWeight: 100 - keywordWeight,
       finalTopK: finalTopK,
       relevanceThreshold: relevanceThreshold,
       relevanceLevel: retrievalLevelForThreshold(relevanceThreshold),
@@ -2020,6 +2459,7 @@
     return commit("retrieval-settings-updated", function mutate(state) {
       var settings = state.rag && state.rag.retrievalSettings;
       if (!settings) return null;
+      applyFixedRetrievalFusion(settings);
       var normalized = normalizeRetrievalOperator(state, payload, settings.operator);
       if (!normalized) return null;
       var before = OpsDemo.utils.clone(settings.operator);
@@ -2044,6 +2484,7 @@
     return commit("retrieval-settings-previewed", function mutate(state) {
       var settings = state.rag && state.rag.retrievalSettings;
       if (!settings) return null;
+      applyFixedRetrievalFusion(settings);
       var normalized = normalizeRetrievalOperator(state, payload, settings.operator);
       if (!normalized) return null;
       normalized.updatedAt = settings.operator.updatedAt;
@@ -2077,24 +2518,73 @@
       runtimeSnapshot: null,
       executionStages: [],
       answerGenerated: false,
+      answerGenerationEnabled: false,
       validationState: "not_run",
       validationStateLabel: "未运行",
       emptyReasonLabel: "尚无测试结果。"
     };
   }
 
+  function retrievalBranchRanks(items, scoreKey, rankKey) {
+    var ranks = items.map(function emptyRank() { return null; });
+    var candidates = items.map(function withIndex(item, index) { return { item: item, index: index }; }).filter(function hasBranchSignal(entry) {
+      return entry.item[rankKey] != null && entry.item[rankKey] !== "" && Number.isFinite(Number(entry.item[rankKey])) ||
+        entry.item[scoreKey] != null && entry.item[scoreKey] !== "" && Number.isFinite(Number(entry.item[scoreKey]));
+    });
+    var allExplicit = candidates.length && candidates.every(function hasExplicitRank(entry) {
+      var rank = Number(entry.item[rankKey]);
+      return Number.isInteger(rank) && rank > 0;
+    });
+    if (allExplicit) {
+      candidates.forEach(function assignExplicit(entry) { ranks[entry.index] = Number(entry.item[rankKey]); });
+      return ranks;
+    }
+    candidates = candidates.filter(function hasScore(entry) { return entry.item[scoreKey] != null && entry.item[scoreKey] !== "" && Number.isFinite(Number(entry.item[scoreKey])); });
+    candidates.sort(function sortBranch(left, right) {
+      return Number(right.item[scoreKey]) - Number(left.item[scoreKey]) || String(left.item.documentId || "").localeCompare(String(right.item.documentId || ""));
+    });
+    candidates.forEach(function assignDerived(entry, index) { ranks[entry.index] = index + 1; });
+    return ranks;
+  }
+
+  function applyRrfRankingScores(items, rrfK) {
+    var bm25Ranks = retrievalBranchRanks(items, "bm25Score", "bm25Rank");
+    var denseRanks = retrievalBranchRanks(items, "denseScore", "denseRank");
+    var hasComputedScore = false;
+    items.forEach(function scoreCandidate(item, index) {
+      var score = 0;
+      var branchCount = 0;
+      [bm25Ranks[index], denseRanks[index]].forEach(function addRank(rank) {
+        if (!Number.isFinite(rank)) return;
+        score += 1 / (rrfK + rank);
+        branchCount += 1;
+      });
+      if (!branchCount) return;
+      item.rrfScore = Number(score.toFixed(8));
+      item.rrfK = rrfK;
+      hasComputedScore = true;
+    });
+    return hasComputedScore || items.some(function hasFixtureRrf(item) { return item.rrfScore != null && item.rrfScore !== "" && Number.isFinite(Number(item.rrfScore)); });
+  }
+
   function rankedRetrievalFixture(state, fixtureEvidence, operator) {
     var fixture = OpsDemo.utils.clone(fixtureEvidence || []);
     var scoreSource = operator.rerankEnabled ? "rerank" : "fusion";
+    var derivedPlan = deriveRetrievalPlan(state, operator);
+    var hasRrfRanking = applyRrfRankingScores(fixture, derivedPlan.rrfK);
+    derivedPlan.fusionRankingSource = hasRrfRanking ? "computed_rrf" : "fixture_normalized_fusion_score";
     fixture.sort(function sort(left, right) {
-      var leftScore = retrievalEvidenceScore(left, "fusion");
-      var rightScore = retrievalEvidenceScore(right, "fusion");
+      var leftScore = hasRrfRanking ? Number(left.rrfScore) : retrievalEvidenceScore(left, "fusion");
+      var rightScore = hasRrfRanking ? Number(right.rrfScore) : retrievalEvidenceScore(right, "fusion");
+      if (hasRrfRanking) {
+        if (!Number.isFinite(leftScore)) leftScore = null;
+        if (!Number.isFinite(rightScore)) rightScore = null;
+      }
       if (leftScore == null && rightScore == null) return String(left.documentId || "").localeCompare(String(right.documentId || ""));
       if (leftScore == null) return 1;
       if (rightScore == null) return -1;
       return rightScore - leftScore || String(left.documentId || "").localeCompare(String(right.documentId || ""));
     });
-    var derivedPlan = deriveRetrievalPlan(state, operator);
     fixture = fixture.slice(0, derivedPlan.fusionCandidates);
     if (operator.rerankEnabled) {
       fixture.sort(function sortReranked(left, right) {
@@ -2123,43 +2613,6 @@
     };
   }
 
-  function evaluateRetrievalCase(state, evaluationCase, operator) {
-    var ranked = rankedRetrievalFixture(state, evaluationCase.fixtureEvidence, operator);
-    var goldDocumentIds = evaluationCase.goldDocumentIds || [];
-    var goldLookup = {};
-    goldDocumentIds.forEach(function addGold(id) { goldLookup[id] = true; });
-    ranked.evidence.forEach(function markEvidence(item) {
-      var relevant = Boolean(goldLookup[item.documentId]);
-      item.relevanceMark = relevant ? "relevant" : "irrelevant";
-      item.relevanceMarkLabel = relevant ? "相关" : "非相关";
-    });
-    var hitLookup = {};
-    ranked.evidence.forEach(function collectHit(item) {
-      if (goldLookup[item.documentId]) hitLookup[item.documentId] = true;
-    });
-    var relevantCount = ranked.evidence.filter(function filter(item) { return item.relevanceMark === "relevant"; }).length;
-    var irrelevantCount = ranked.evidence.length - relevantCount;
-    var firstRelevant = ranked.evidence.find(function find(item) { return item.relevanceMark === "relevant"; });
-    var precisionDenominator = Number(operator.finalTopK || 0);
-    ranked.metrics = {
-      returnedCount: ranked.evidence.length,
-      relevantCount: relevantCount,
-      irrelevantCount: irrelevantCount,
-      goldHitCount: Object.keys(hitLookup).length,
-      goldTotal: goldDocumentIds.length,
-      precisionAtK: precisionDenominator ? relevantCount / precisionDenominator : 0,
-      recallAtK: goldDocumentIds.length ? Object.keys(hitLookup).length / goldDocumentIds.length : null,
-      reciprocalRankAtK: firstRelevant ? 1 / firstRelevant.rank : 0
-    };
-    return ranked;
-  }
-
-  function simulatedRetrievalLatency(evaluationCase, operator, candidateCount, derivedPlan) {
-    var questionLength = String(evaluationCase && evaluationCase.question || "").length;
-    var rerankCost = operator.rerankEnabled ? 28 + Math.min(candidateCount, Number(derivedPlan.rerankCandidates || candidateCount)) * 2 : 0;
-    return 24 + Math.ceil(candidateCount * 1.8) + Math.ceil(questionLength * 0.35) + rerankCost;
-  }
-
   function runRetrievalTest(payload) {
     var input = payload || {};
     return commit("retrieval-test-run", function mutate(state) {
@@ -2167,8 +2620,11 @@
       var knowledgeBaseId = input.knowledgeBaseId || (requestedTest && requestedTest.knowledgeBaseId);
       var knowledgeBase = find(state.knowledgeBases, knowledgeBaseId);
       var searchableCount = knowledgeBase && knowledgeBase.documentCounts ? Number(knowledgeBase.documentCounts.searchable || 0) : 0;
-      if (!knowledgeBase || !knowledgeBase.enabled || !searchableCount) return null;
+      if (!knowledgeBase || !searchableCount) return null;
       if (!isKnowledgeBaseEmbeddingReady(state, knowledgeBase)) return null;
+      applyFixedRetrievalFusion(state.rag && state.rag.retrievalSettings);
+      var answerGeneration = applyFixedAnswerGeneration(state.rag);
+      var generateAnswer = input.generateAnswer === true;
       var online = state.rag && state.rag.retrievalSettings && state.rag.retrievalSettings.operator;
       var preview = input.useDraft === false ? null : state.rag && state.rag.retrievalTestDraft;
       var hasOperatorOverrides = Boolean(input.operatorOverrides && typeof input.operatorOverrides === "object");
@@ -2184,65 +2640,40 @@
       } else if (question) {
         test.question = question;
       }
-      var scoreSource;
-      var derivedPlan;
-      var evidenceForRun;
-      var relevantCount;
-      var irrelevantCount;
-      var expectedTotal;
-      var evaluationCases = test.evaluationCases || [];
-      if (evaluationCases.length) {
-        var selectedCase = evaluationCases.find(function findCase(item) { return item.id === input.evaluationCaseId; }) ||
-          evaluationCases.find(function findCase(item) { return item.id === test.activeEvaluationCaseId; }) ||
-          evaluationCases.find(function findCase(item) { return item.question === question; }) || evaluationCases[0];
-        if (!selectedCase) return null;
-        test.activeEvaluationCaseId = selectedCase.id;
-        test.question = selectedCase.question;
-        test.fixtureEvidence = OpsDemo.utils.clone(selectedCase.fixtureEvidence || []);
-        var selectedEvaluation = evaluateRetrievalCase(state, selectedCase, operator);
-        evidenceForRun = selectedEvaluation.evidence;
-        scoreSource = selectedEvaluation.scoreSource;
-        derivedPlan = selectedEvaluation.derivedPlan;
-        relevantCount = selectedEvaluation.metrics.goldHitCount;
-        irrelevantCount = selectedEvaluation.metrics.irrelevantCount;
-        expectedTotal = selectedEvaluation.metrics.goldTotal;
-        var precisionTotal = 0;
-        var recallTotal = 0;
-        var reciprocalRankTotal = 0;
-        var latencyTotal = 0;
-        var validCaseCount = 0;
-        evaluationCases.forEach(function evaluateSuiteCase(evaluationCase) {
-          if (!(evaluationCase.goldDocumentIds || []).length) return;
-          var result = evaluationCase.id === selectedCase.id ? selectedEvaluation : evaluateRetrievalCase(state, evaluationCase, operator);
-          precisionTotal += result.metrics.precisionAtK;
-          recallTotal += result.metrics.recallAtK;
-          reciprocalRankTotal += result.metrics.reciprocalRankAtK;
-          latencyTotal += simulatedRetrievalLatency(evaluationCase, operator, result.candidateCount, result.derivedPlan);
-          validCaseCount += 1;
-        });
-        test.evaluationMetrics = {
-          k: operator.finalTopK,
-          precisionAtK: validCaseCount ? precisionTotal / validCaseCount : null,
-          recallAtK: validCaseCount ? recallTotal / validCaseCount : null,
-          mrrAtK: validCaseCount ? reciprocalRankTotal / validCaseCount : null,
-          retrievalLatencyMs: validCaseCount ? Math.round(latencyTotal / validCaseCount) : null,
-          latencyKind: "simulated",
-          aggregation: "macro",
-          sampleCount: validCaseCount,
-          excludedCount: evaluationCases.length - validCaseCount
+      if (!test.fixtureEvidence) test.fixtureEvidence = OpsDemo.utils.clone(test.evidence || []);
+      var rankedFixture = rankedRetrievalFixture(state, test.fixtureAvailable === false ? [] : test.fixtureEvidence, operator);
+      var evidenceForRun = rankedFixture.evidence;
+      var scoreSource = rankedFixture.scoreSource;
+      var derivedPlan = rankedFixture.derivedPlan;
+      var relevantCount = evidenceForRun.filter(function filter(item) { return item.relevanceMark === "relevant"; }).length;
+      var irrelevantCount = evidenceForRun.filter(function filter(item) { return item.relevanceMark === "irrelevant"; }).length;
+      var expectedTotal = (test.fixtureEvidence || []).filter(function filter(item) { return item.relevanceMark === "relevant"; }).length;
+      var runAt = nowIso();
+      if (generateAnswer) {
+        var answerResult = deterministicAnswerResult(test.question, evidenceForRun, answerGeneration);
+        test.answerGenerationEnabled = true;
+        test.answerGenerated = true;
+        test.generatedAnswer = answerResult.text;
+        test.answerCitations = answerResult.citations;
+        test.answerMetrics = answerQualityMetrics(test.question, evidenceForRun, answerResult, answerGeneration);
+        test.generationSnapshot = {
+          enabled: true,
+          model: answerGeneration.model,
+          temperature: answerGeneration.temperature,
+          citationsEnabled: answerGeneration.citationsEnabled,
+          generatedAt: runAt,
+          sourceEvidenceCount: evidenceForRun.length,
+          status: answerResult.insufficientEvidence ? "insufficient_evidence" : "completed",
+          simulated: true
         };
       } else {
-        if (!test.fixtureEvidence) test.fixtureEvidence = OpsDemo.utils.clone(test.evidence || []);
-        var rankedFixture = rankedRetrievalFixture(state, test.fixtureAvailable === false ? [] : test.fixtureEvidence, operator);
-        evidenceForRun = rankedFixture.evidence;
-        scoreSource = rankedFixture.scoreSource;
-        derivedPlan = rankedFixture.derivedPlan;
-        relevantCount = evidenceForRun.filter(function filter(item) { return item.relevanceMark === "relevant"; }).length;
-        irrelevantCount = evidenceForRun.filter(function filter(item) { return item.relevanceMark === "irrelevant"; }).length;
-        expectedTotal = (test.fixtureEvidence || []).filter(function filter(item) { return item.relevanceMark === "relevant"; }).length;
-        test.evaluationMetrics = null;
+        test.answerGenerationEnabled = false;
+        test.answerGenerated = false;
+        test.generatedAnswer = "";
+        test.answerCitations = [];
+        test.answerMetrics = null;
+        test.generationSnapshot = null;
       }
-      var runAt = nowIso();
       test.comparison = {
         returnedCount: evidenceForRun.length,
         expectedEvidenceHit: relevantCount,
@@ -2256,13 +2687,14 @@
       test.runtimeSnapshot = {
         source: settingsKey,
         scoreSource: scoreSource,
-        system: OpsDemo.utils.clone(state.rag.retrievalSettings.system),
+        system: retrievalSystemSnapshot(state),
         derivedPlan: derivedPlan,
         operator: OpsDemo.utils.clone(operator)
       };
-      test.executionStages = ["hybrid_retrieval", "permission_filter", "metadata_filter", "deduplication"]
+      test.executionStages = ["hybrid_retrieval", "metadata_filter", "deduplication"]
         .concat(operator.rerankEnabled ? ["rerank"] : [])
-        .concat(["result_control"]);
+        .concat(["result_control"])
+        .concat(generateAnswer ? ["answer_generation", "answer_evaluation"] : []);
       test.lastRunAt = runAt;
       test.validationState = "validated";
       test.validationStateLabel = "测试完成";
@@ -2271,327 +2703,82 @@
     }, input.silentRender === true ? { silentRender: true } : null);
   }
 
-  function capabilityList(state, type) {
-    if (type === "tool" || type === "tools") return state.tools;
-    if (type === "visualization" || type === "visualizations") return state.visualizations;
-    return state.skills;
-  }
-
-  function capabilityKind(type) {
-    if (type === "tool" || type === "tools") return "tool";
-    if (type === "skill" || type === "skills") return "skill";
-    return null;
-  }
-
-  function normalizedCapabilityToolIds(state, value) {
-    if (!Array.isArray(value)) return null;
-    var supplied = value.map(function map(id) { return String(id || "").trim(); }).filter(function filter(id, index, all) {
-      return id && all.indexOf(id) === index;
-    });
-    return supplied.every(function every(id) { return Boolean(find(state.tools, id)); }) ? supplied : null;
-  }
-
-  function normalizedToolCode(value) {
-    var code = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_").replace(/[^a-z0-9_]/g, "").replace(/^_+|_+$/g, "");
-    return /^[a-z][a-z0-9_]{1,63}$/.test(code) ? code : null;
-  }
-
-  function nextUploadedToolCode(state, preferred, id) {
-    var base = normalizedToolCode(preferred) || "uploaded_tool";
-    var code = base;
-    var suffix = 2;
-    while (state.tools.some(function some(tool) { return tool.id !== id && tool.code === code; })) {
-      code = base.slice(0, Math.max(1, 63 - String(suffix).length - 1)) + "_" + suffix;
-      suffix += 1;
+  function normalizeApiKeyKnowledgeBaseIds(state, value) {
+    if (!Array.isArray(value) || !value.length) return null;
+    var knownIds = (state.knowledgeBases || []).map(function map(item) { return item.id; });
+    var normalized = [];
+    for (var index = 0; index < value.length; index += 1) {
+      var id = String(value[index] || "").trim();
+      if (!id || knownIds.indexOf(id) < 0) return null;
+      if (normalized.indexOf(id) < 0) normalized.push(id);
     }
-    return code;
+    return normalized.length ? normalized : null;
   }
 
-  function uploadedPackageMetadata(input) {
-    var source = input && input.file || {};
-    var supplied = input && input.packageMeta || {};
-    var fileName = String(input && (input.fileName || input.packageName) || supplied.fileName || source.name || "").trim();
-    if (!fileName) return null;
-    var fileCount = Number(input && input.fileCount != null ? input.fileCount : supplied.fileCount == null ? 1 : supplied.fileCount);
-    var totalBytes = Number(input && input.totalBytes != null ? input.totalBytes : input && input.fileSize != null ? input.fileSize : supplied.totalBytes != null ? supplied.totalBytes : source.size);
-    if (!Number.isFinite(fileCount) || fileCount < 1 || Math.floor(fileCount) !== fileCount) return null;
+  function normalizeApiKeyRetrievalPolicy(state, value) {
+    if (!value || typeof value !== "object") return null;
+    var mode = String(value.mode || "").trim().toLowerCase();
+    if (mode === "global") return { mode: "global" };
+    if (mode !== "custom") return null;
+    var source = value.operator && typeof value.operator === "object" ? value.operator : value;
+    if (!["rerankEnabled", "finalTopK", "relevanceThreshold"].every(function required(key) {
+      return Object.prototype.hasOwnProperty.call(source, key);
+    })) return null;
+    var normalized = normalizeRetrievalOperator(state, source, {});
+    if (!normalized) return null;
+    delete normalized.updatedAt;
+    return { mode: "custom", operator: normalized };
+  }
+
+  function resolveApiKeyRetrievalConfig(id, knowledgeBaseId) {
+    var state = store.getState();
+    var apiKey = find(state.apiAccess && state.apiAccess.clients, id);
+    var targetId = String(knowledgeBaseId || "").trim();
+    var knowledgeBase = find(state.knowledgeBases, targetId);
+    if (!isRetrievalApiKey(apiKey) || apiKey.enabled === false || apiKey.status === "disabled") return null;
+    if (!Array.isArray(apiKey.knowledgeBaseIds) || apiKey.knowledgeBaseIds.indexOf(targetId) < 0) return null;
+    if (!knowledgeBase || !knowledgeBase.enabled || knowledgeBase.retrievalStatus !== "available") return null;
+    var policy = normalizeApiKeyRetrievalPolicy(state, apiKey.retrievalPolicy || { mode: "global" });
+    if (!policy) return null;
+    var settings = state.rag && state.rag.retrievalSettings;
+    var operator = policy.mode === "custom"
+      ? policy.operator
+      : normalizeRetrievalOperator(state, settings && settings.operator || {}, settings && settings.operator || {});
+    if (!operator) return null;
     return {
-      fileName: fileName,
-      rootName: String(input && input.rootName || supplied.rootName || fileName.replace(/\.[^.]+$/, "")).trim(),
-      fileCount: fileCount,
-      totalBytes: Number.isFinite(totalBytes) && totalBytes >= 0 ? totalBytes : 0,
-      fileType: String(input && input.fileType || supplied.fileType || source.type || "application/octet-stream"),
-      manifestPath: String(input && input.manifestPath || supplied.manifestPath || "").trim(),
-      importedAt: nowIso()
+      apiKeyId: apiKey.id,
+      knowledgeBaseId: knowledgeBase.id,
+      source: policy.mode,
+      system: retrievalSystemSnapshot(state),
+      operator: OpsDemo.utils.clone(operator)
     };
-  }
-
-  function statusLabel(status) {
-    return status === "available" ? "可用" : status === "disabled" ? "已停用" : "不可用";
-  }
-
-  function recomputeCapabilityDependencies(state) {
-    state.tools.forEach(function resetTool(tool) {
-      if (tool.enabled === false) tool.status = "disabled";
-      else if (!tool.status || tool.status === "disabled") tool.status = "available";
-      tool.statusLabel = statusLabel(tool.status);
-      tool.dependentSkillIds = [];
-    });
-
-    state.skills.forEach(function rebuildToolReferences(skill) {
-      ((skill.dependencies && skill.dependencies.toolIds) || []).forEach(function each(toolId) {
-        var tool = find(state.tools, toolId);
-        if (tool && tool.dependentSkillIds.indexOf(skill.id) < 0) tool.dependentSkillIds.push(skill.id);
-      });
-    });
-
-    state.skills.forEach(function reset(skill) {
-      if (!skill.enabled) {
-        skill.status = "disabled";
-        skill.statusLabel = "已停用";
-      } else {
-        skill.status = "available";
-        skill.statusLabel = "可用";
-      }
-    });
-
-    for (var pass = 0; pass < 4; pass += 1) {
-      state.skills.forEach(function derive(skill) {
-        if (!skill.enabled) return;
-        var toolDependencies = ((skill.dependencies && skill.dependencies.toolIds) || []).map(function map(id) { return find(state.tools, id); });
-        var skillDependencies = ((skill.dependencies && skill.dependencies.skillIds) || []).map(function map(id) { return find(state.skills, id); });
-        var statuses = toolDependencies.concat(skillDependencies).map(function map(item) { return !item || item.enabled === false ? "disabled" : item.status; });
-        var derived = statuses.some(function some(value) { return value === "disabled" || value === "unavailable"; }) ? "unavailable" : "available";
-        skill.status = derived;
-        skill.statusLabel = statusLabel(derived);
-      });
-    }
-
-    var visualizationSkill = find(state.skills, "SK-06");
-    var visualizationToolsAvailable = Boolean(visualizationSkill) && ((visualizationSkill.dependencies && visualizationSkill.dependencies.toolIds) || []).every(function every(toolId) {
-      var tool = find(state.tools, toolId);
-      return Boolean(tool && tool.enabled !== false && tool.status === "available");
-    });
-    state.visualizations.forEach(function each(visualization) {
-      if (visualization.integrationStatus !== "integrated") return;
-      if (!visualizationSkill || !visualizationSkill.enabled) {
-        visualization.runtimeStatus = "disabled_by_skill";
-        visualization.runtimeStatusLabel = "上游 Skill 已停用";
-      } else if (visualizationSkill.status !== "available" || !visualizationToolsAvailable) {
-        visualization.runtimeStatus = "unavailable_by_dependency";
-        visualization.runtimeStatusLabel = "依赖能力不可用";
-      } else {
-        visualization.runtimeStatus = "available";
-        visualization.runtimeStatusLabel = "可用";
-      }
-    });
-  }
-
-  function toggleCapability(type, id, enabled) {
-    return commit("capability-toggled", function mutate(state) {
-      var kind = capabilityKind(type);
-      var item = kind ? find(capabilityList(state, kind), id) : null;
-      if (!item) return null;
-      var nextEnabled = Boolean(enabled);
-      if (item.enabled === nextEnabled) return item;
-      if (!nextEnabled && kind === "tool") {
-        var usedByEnabledSkill = state.skills.some(function some(skill) {
-          if (!skill.enabled || skill.id === item.id) return false;
-          var dependencyIds = ((skill.dependencies && skill.dependencies.toolIds) || []);
-          return dependencyIds.indexOf(item.id) >= 0;
-        });
-        if (usedByEnabledSkill) return null;
-      }
-      if (nextEnabled && kind === "skill") {
-        var dependencies = item.dependencies || {};
-        var dependencyItems = (dependencies.toolIds || []).map(function map(toolId) { return find(state.tools, toolId); })
-          .concat((dependencies.skillIds || []).map(function map(skillId) { return find(state.skills, skillId); }));
-        if (dependencyItems.some(function some(dependency) { return !dependency || dependency.enabled === false || dependency.status !== "available"; })) return null;
-      }
-      var before = item.statusLabel;
-      item.enabled = nextEnabled;
-      if (kind === "tool" && nextEnabled) {
-        item.status = "available";
-        item.statusLabel = "可用";
-      }
-      recomputeCapabilityDependencies(state);
-      record(state, {
-        objectType: kind,
-        objectId: item.id,
-        objectName: item.name,
-        action: nextEnabled ? "enabled" : "disabled",
-        actionLabel: nextEnabled ? "启用" : "停用",
-        before: { status: before },
-        after: { status: item.statusLabel },
-        impact: item.fallback || item.recoveryEffect || "相关依赖能力已同步更新状态。"
-      });
-      return item;
-    });
-  }
-
-  function createCapabilityFromUpload(type, payload) {
-    var input = payload || {};
-    return commit("capability-uploaded", function mutate(state) {
-      var kind = capabilityKind(type);
-      var name = String(input.name || "").trim();
-      var description = String(input.description || "").trim();
-      var packageMeta = uploadedPackageMetadata(input);
-      if (!kind || !name || !description || !packageMeta || !packageMeta.rootName) return null;
-      if (capabilityList(state, kind).some(function some(item) { return String(item.name).toLowerCase() === name.toLowerCase(); })) return null;
-      var enabled = false;
-      var createdAt = nowIso();
-      var item = {
-        id: OpsDemo.utils.id(kind === "skill" ? "SK" : "TOOL"),
-        name: name,
-        description: description,
-        icon: String(input.icon || (kind === "skill" ? "sparkles" : "wrench")),
-        enabled: enabled,
-        status: enabled ? "available" : "disabled",
-        statusLabel: enabled ? "可用" : "已停用",
-        callsThisMonth: 0,
-        successRate: null,
-        avgLatencyMs: null,
-        sourceType: kind === "skill" ? "managed" : "uploaded",
-        sourceTypeLabel: kind === "skill" ? "统一管理" : "上传",
-        userUploaded: true,
-        editable: true,
-        deletable: true,
-        packageMeta: packageMeta,
-        upload: {
-          name: packageMeta.fileName,
-          size: packageMeta.totalBytes,
-          type: packageMeta.fileType,
-          uploadedAt: packageMeta.importedAt
-        },
-        createdAt: createdAt,
-        updatedAt: createdAt
-      };
-      if (kind === "skill") {
-        var toolIds = normalizedCapabilityToolIds(state, input.toolIds || []);
-        if (!toolIds) return null;
-        if (input.skillMarkdown != null || input.manifestSource != null) {
-          item.skillMarkdown = String(input.skillMarkdown != null ? input.skillMarkdown : input.manifestSource);
-        }
-        item.category = String(input.category || "自定义能力").trim() || "自定义能力";
-        item.dependencies = { toolIds: toolIds, skillIds: [] };
-        item.inputSummary = String(input.inputSummary || "由上传的 Skill 定义");
-        item.outputSummary = String(input.outputSummary || "由上传的 Skill 定义");
-        state.skills.unshift(item);
-      } else {
-        item.code = nextUploadedToolCode(state, input.code || name);
-        item.implementationType = String(input.implementationType || "上传 Tool").trim() || "上传 Tool";
-        item.dataScope = String(input.dataScope || "由上传的 Tool 定义");
-        item.actionType = String(input.actionType || "custom");
-        item.dependentSkillIds = [];
-        state.tools.unshift(item);
-      }
-      recomputeCapabilityDependencies(state);
-      record(state, {
-        objectType: kind,
-        objectId: item.id,
-        objectName: item.name,
-        action: kind === "skill" ? "created" : "uploaded",
-        actionLabel: kind === "skill" ? "添加" : "上传",
-        before: null,
-        after: { enabled: item.enabled, fileName: packageMeta.fileName, fileCount: packageMeta.fileCount },
-        impact: kind === "skill" ? "该 Skill 已加入目录，并按绑定 Tool 状态决定是否可调用。" : "该 Tool 已加入目录，可供 Skill 绑定。"
-      });
-      return item;
-    });
-  }
-
-  function updateCapability(type, id, patch) {
-    var input = patch || {};
-    return commit("capability-updated", function mutate(state) {
-      var kind = capabilityKind(type);
-      var item = kind ? find(capabilityList(state, kind), id) : null;
-      if (!item) return null;
-      if (kind === "tool" && (item.userUploaded !== true || item.enabled !== false || item.editable === false)) return null;
-      var name = input.name == null ? item.name : String(input.name || "").trim();
-      var description = input.description == null ? item.description : String(input.description || "").trim();
-      if (!name || !description) return null;
-      if (capabilityList(state, kind).some(function some(candidate) { return candidate.id !== id && String(candidate.name).toLowerCase() === name.toLowerCase(); })) return null;
-      var nextToolCode = null;
-      if (kind === "skill" && input.toolIds != null) {
-        var suppliedToolIds = normalizedCapabilityToolIds(state, input.toolIds);
-        var currentToolIds = ((item.dependencies && item.dependencies.toolIds) || []).slice();
-        if (!suppliedToolIds || suppliedToolIds.length !== currentToolIds.length || suppliedToolIds.some(function some(toolId) { return currentToolIds.indexOf(toolId) < 0; })) return null;
-      }
-      if (kind === "tool" && input.code != null) {
-        nextToolCode = normalizedToolCode(input.code);
-        if (!nextToolCode || state.tools.some(function some(tool) { return tool.id !== id && tool.code === nextToolCode; })) return null;
-      }
-      var before = { name: item.name, description: item.description };
-      item.name = name;
-      item.description = description;
-      if (kind === "tool") {
-        if (input.icon != null) item.icon = String(input.icon || "wrench");
-        if (input.code != null) item.code = nextToolCode;
-        if (input.implementationType != null) item.implementationType = String(input.implementationType || "上传 Tool").trim() || "上传 Tool";
-      }
-      item.updatedAt = nowIso();
-      recomputeCapabilityDependencies(state);
-      record(state, {
-        objectType: kind,
-        objectId: item.id,
-        objectName: item.name,
-        action: "updated",
-        actionLabel: "编辑",
-        before: before,
-        after: { name: item.name, description: item.description },
-        impact: kind === "skill" ? "Skill 的名称与描述已更新，系统维护的 Tool 依赖保持不变。" : "目录中的基础信息已更新。"
-      });
-      return item;
-    });
-  }
-
-  function deleteCapability(type, id) {
-    return commit("capability-deleted", function mutate(state) {
-      var kind = capabilityKind(type);
-      var items = kind ? capabilityList(state, kind) : [];
-      var item = find(items, id);
-      if (!item || item.enabled !== false) return null;
-      if (kind === "tool" && (item.userUploaded !== true || item.deletable === false)) return null;
-      var referenced = kind === "tool" && state.skills.some(function some(skill) {
-        return skill.enabled && ((skill.dependencies && skill.dependencies.toolIds) || []).indexOf(id) >= 0;
-      });
-      if (referenced) return null;
-      items.splice(items.indexOf(item), 1);
-      recomputeCapabilityDependencies(state);
-      record(state, {
-        objectType: kind,
-        objectId: item.id,
-        objectName: item.name,
-        action: "deleted",
-        actionLabel: "删除",
-        before: { fileName: item.packageMeta && item.packageMeta.fileName },
-        after: null,
-        impact: kind === "skill" ? "Skill 已从目录移除。" : "用户上传的 Tool 已从目录移除。"
-      });
-      return item;
-    });
   }
 
   function createApiKey(payload) {
     var input = payload || {};
     return commit("api-key-created", function mutate(state) {
       var name = String(input.name || input.applicationName || "").trim();
-      var permissionLevel = String(input.permissionLevel || input.accessLevel || "").toUpperCase();
-      var validPermissionLevels = (state.meta && state.meta.accessLevels || []).map(function map(level) { return level.code; });
-      if (!validPermissionLevels.length) validPermissionLevels = ["L1", "L2", "L3"];
+      var hasExplicitApiType = Object.prototype.hasOwnProperty.call(input, "apiType");
+      var apiType = "retrieval";
       var apiAccess = state.apiAccess || (state.apiAccess = { clients: [] });
       apiAccess.clients = apiAccess.clients || [];
-      if (!name || validPermissionLevels.indexOf(permissionLevel) < 0 || apiAccess.clients.some(function some(item) { return String(item.name || "").toLowerCase() === name.toLowerCase(); })) return null;
+      var knowledgeBaseIds = normalizeApiKeyKnowledgeBaseIds(state, input.knowledgeBaseIds);
+      var retrievalPolicy = normalizeApiKeyRetrievalPolicy(state, input.retrievalPolicy);
+      if ((hasExplicitApiType && !isRetrievalApiType(input.apiType)) || !name || apiAccess.clients.some(function some(item) {
+        return isRetrievalApiKey(item) && apiKeyName(item).toLowerCase() === name.toLowerCase();
+      }) || !knowledgeBaseIds || !retrievalPolicy) return null;
 
       var key = apiSecret();
       var createdAt = nowIso();
       var apiKey = {
         id: OpsDemo.utils.id("API"),
         name: name,
+        apiType: apiType,
         keyMasked: maskedApiSecret(key),
+        knowledgeBaseIds: knowledgeBaseIds,
+        retrievalPolicy: retrievalPolicy,
         createdAt: createdAt,
         lastUsedAt: null,
-        permissionLevel: permissionLevel,
         enabled: true,
         status: "active",
         statusLabel: "已启用"
@@ -2600,12 +2787,17 @@
       record(state, {
         objectType: "api_key",
         objectId: apiKey.id,
-        objectName: apiKey.name,
+        objectName: apiKeyName(apiKey),
         action: "created",
         actionLabel: "创建密钥",
         before: null,
-        after: { status: apiKey.status, permissionLevel: apiKey.permissionLevel },
-        impact: "新密钥仅在创建完成后显示一次。"
+        after: {
+          apiType: apiKey.apiType,
+          status: apiKey.status,
+          knowledgeBaseIds: apiKey.knowledgeBaseIds.slice(),
+          retrievalPolicyMode: apiKey.retrievalPolicy.mode
+        },
+        impact: "新密钥仅可访问已配置的知识库，并按所选检索策略执行；完整密钥只显示一次。"
       });
       return { key: key };
     });
@@ -2614,9 +2806,8 @@
   function setApiKeyEnabled(id, enabled) {
     return commit("api-key-status-changed", function mutate(state) {
       var apiKey = find(state.apiAccess && state.apiAccess.clients, id);
-      if (!apiKey) return null;
+      if (!isRetrievalApiKey(apiKey)) return null;
       var nextEnabled = Boolean(enabled);
-      if (!apiKey.permissionLevel || ["L1", "L2", "L3"].indexOf(apiKey.permissionLevel) < 0) apiKey.permissionLevel = "L1";
       if (apiKey.enabled === nextEnabled) return apiKey;
       var before = { status: apiKey.status, enabled: apiKey.enabled };
       apiKey.enabled = nextEnabled;
@@ -2625,11 +2816,11 @@
       record(state, {
         objectType: "api_key",
         objectId: apiKey.id,
-        objectName: apiKey.name,
+        objectName: apiKeyName(apiKey),
         action: nextEnabled ? "enabled" : "disabled",
         actionLabel: nextEnabled ? "启用" : "禁用",
         before: before,
-        after: { status: apiKey.status, enabled: apiKey.enabled },
+        after: { apiType: apiKey.apiType, status: apiKey.status, enabled: apiKey.enabled },
         impact: nextEnabled ? "该密钥恢复调用。" : "该密钥停止接受新调用，记录保留。"
       });
       return apiKey;
@@ -2640,15 +2831,15 @@
     return commit("api-key-deleted", function mutate(state) {
       var clients = state.apiAccess && state.apiAccess.clients || [];
       var apiKey = find(clients, id);
-      if (!apiKey) return null;
+      if (!isRetrievalApiKey(apiKey)) return null;
       clients.splice(clients.indexOf(apiKey), 1);
       record(state, {
         objectType: "api_key",
         objectId: apiKey.id,
-        objectName: apiKey.name,
+        objectName: apiKeyName(apiKey),
         action: "deleted",
         actionLabel: "删除密钥",
-        before: { status: apiKey.status, keyMasked: apiKey.keyMasked, permissionLevel: apiKey.permissionLevel || "L1" },
+        before: { apiType: apiKey.apiType, status: apiKey.status, keyMasked: apiKey.keyMasked },
         after: null,
         impact: "密钥已立即失效并从密钥列表删除。"
       });
@@ -3360,6 +3551,30 @@
     return null;
   }
 
+  store.registerInitializer(function initializeApiAccessClients(state) {
+    var clients = state.apiAccess && state.apiAccess.clients || [];
+    var defaultKnowledgeBaseIds = (state.knowledgeBases || []).map(function map(item) { return item.id; });
+    clients.forEach(function normalizeLegacyClient(item) {
+      if (!item.name && item.applicationName) item.name = String(item.applicationName).trim();
+      var knowledgeBaseIds = normalizeApiKeyKnowledgeBaseIds(state, item.knowledgeBaseIds);
+      item.knowledgeBaseIds = knowledgeBaseIds || defaultKnowledgeBaseIds.slice();
+      item.retrievalPolicy = normalizeApiKeyRetrievalPolicy(state, item.retrievalPolicy) || { mode: "global" };
+    });
+  });
+
+  // Shared validation and text segmentation used by the file/KB pipeline.
+  OpsDemo.core.processing = {
+    normalizeParseConfig: normalizeMineruParseConfig,
+    alignIndexWithParseConfig: alignProcessingIndexWithParseConfig,
+    profileSnapshot: processingProfileSnapshot,
+    parametersSnapshot: processingParametersSnapshot,
+    normalizeFiles: normalizeFiles,
+    createDocument: createImportedDocument,
+    estimateShape: estimateDocumentShape,
+    buildPreviewChunks: addImportPreviewChunks,
+    buildParentHierarchy: buildParentChunkHierarchy
+  };
+
   OpsDemo.core.actions = {
     createKnowledgeBase: createKnowledgeBase,
     updateKnowledgeBase: updateKnowledgeBase,
@@ -3390,12 +3605,8 @@
     previewRetrievalSettings: previewRetrievalSettings,
     clearRetrievalTestDraft: clearRetrievalTestDraft,
     runRetrievalTest: runRetrievalTest,
-    toggleCapability: toggleCapability,
-    setCapabilityEnabled: toggleCapability,
-    createCapabilityFromUpload: createCapabilityFromUpload,
-    updateCapability: updateCapability,
-    deleteCapability: deleteCapability,
     createApiKey: createApiKey,
+    resolveApiKeyRetrievalConfig: resolveApiKeyRetrievalConfig,
     setApiKeyEnabled: setApiKeyEnabled,
     deleteApiKey: deleteApiKey,
     createApiClient: createApiKey,

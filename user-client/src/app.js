@@ -14,13 +14,12 @@
   var homeSession = { id: 'new', title: '新对话', isNew: true };
   var sessionSequence = 0;
   var dialogReturnFocus = null;
+  var reportReferenceHighlightTimer = null;
 
   var state = {
     view: 'chat',
     activeSessionId: homeSession.id,
-    templateRouteId: null,
-    outputProfiles: JSON.parse(JSON.stringify(DATA.outputProfiles || [])),
-    draggedChapter: null,
+    agentApiAccess: JSON.parse(JSON.stringify(DATA.agentApiAccess || { clients: [] })),
     stage: scenario.result.stage,
     replaying: false,
     replayTimer: null,
@@ -30,11 +29,21 @@
     runId: 0,
     waitingFor: null,
     composerDraft: '',
+    webSearchEnabled: false,
+    deepThinkingEnabled: false,
     thoughtRevision: '',
     thoughtDraft: scenario.interaction.originalText,
     thoughtEditorOpen: false,
+    thoughtEditorOrigin: null,
     thoughtRevisionTarget: scenario.interaction.target,
+    thoughtBaseText: scenario.interaction.originalText,
     thoughtEditorTarget: null,
+    analysisVersion: 'latest',
+    versionNumber: 1,
+    versionHistory: [],
+    currentOutcome: null,
+    versionMenuOpen: false,
+    thoughtAttentionTimer: null,
     pendingFiles: [],
     sessions: DATA.sessions.map(function copySession(session) { return Object.assign({}, session); }),
     customSessions: [],
@@ -52,7 +61,13 @@
       .replaceAll("'", '&#039;');
   }
 
-  function renderInlineMarkdown(value) {
+  function safeReferenceUrl(value) {
+    var url = String(value == null ? '' : value).trim();
+    return /^https?:\/\//i.test(url) ? url : '';
+  }
+
+  function renderInlineMarkdown(value, options) {
+    var citationMode = options && options.citationMode === 'document' ? 'document' : 'interactive';
     var codeTokens = [];
     var output = escapeHtml(value).replace(/`([^`]+)`/g, function protectCode(match, content) {
       var token = '@@INLINE_CODE_' + codeTokens.length + '@@';
@@ -60,6 +75,16 @@
       return token;
     });
     output = output.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    output = output.replace(/\[\^([a-z0-9-]+)\]/gi, function renderCitation(match, sourceId) {
+      var source = sourceById(sourceId);
+      if (!source) return '';
+      var number = sourceNumber(sourceId);
+      var label = '查看依据 ' + number + '：' + source.title + '，' + source.locator;
+      if (citationMode === 'document') {
+        return '<a class="report-citation" href="#report-reference-' + number + '" aria-label="' + escapeHtml(label) + '" title="' + escapeHtml(label) + '">[' + number + ']</a>';
+      }
+      return '<button class="source-citation" type="button" data-action="open-source" data-source-id="' + escapeHtml(sourceId) + '" aria-label="' + escapeHtml(label) + '" title="' + escapeHtml(label) + '"><span aria-hidden="true">[' + number + ']</span></button>';
+    });
     codeTokens.forEach(function restoreCode(code, index) {
       output = output.replace('@@INLINE_CODE_' + index + '@@', code);
     });
@@ -79,15 +104,19 @@
     });
   }
 
-  function renderMarkdown(markdown) {
+  function renderMarkdown(markdown, options) {
     var lines = String(markdown == null ? '' : markdown).replace(/\r/g, '').trim().split('\n');
     var html = [];
     var paragraph = [];
     var listType = '';
 
+    function renderInline(value) {
+      return renderInlineMarkdown(value, options);
+    }
+
     function flushParagraph() {
       if (!paragraph.length) return;
-      html.push('<p>' + renderInlineMarkdown(paragraph.join(' ')) + '</p>');
+      html.push('<p>' + renderInline(paragraph.join(' ')) + '</p>');
       paragraph = [];
     }
     function closeList() {
@@ -119,10 +148,10 @@
         }
         index -= 1;
         html.push('<div class="markdown-table-wrap"><table><thead><tr>' + headings.map(function headingCell(cell) {
-          return '<th>' + renderInlineMarkdown(cell) + '</th>';
+          return '<th>' + renderInline(cell) + '</th>';
         }).join('') + '</tr></thead><tbody>' + bodyRows.map(function bodyRow(row) {
           return '<tr>' + headings.map(function bodyCell(heading, cellIndex) {
-            return '<td>' + renderInlineMarkdown(row[cellIndex] || '') + '</td>';
+            return '<td>' + renderInline(row[cellIndex] || '') + '</td>';
           }).join('') + '</tr>';
         }).join('') + '</tbody></table></div>');
         continue;
@@ -131,13 +160,13 @@
       if (headingMatch) {
         flushBlocks();
         var level = headingMatch[1].length;
-        html.push('<h' + level + '>' + renderInlineMarkdown(headingMatch[2]) + '</h' + level + '>');
+        html.push('<h' + level + '>' + renderInline(headingMatch[2]) + '</h' + level + '>');
         continue;
       }
       var quoteMatch = trimmed.match(/^>\s?(.+)$/);
       if (quoteMatch) {
         flushBlocks();
-        html.push('<blockquote><p>' + renderInlineMarkdown(quoteMatch[1]) + '</p></blockquote>');
+        html.push('<blockquote><p>' + renderInline(quoteMatch[1]) + '</p></blockquote>');
         continue;
       }
       var orderedMatch = trimmed.match(/^\d+\.\s+(.+)$/);
@@ -150,7 +179,7 @@
           listType = nextListType;
           html.push('<' + listType + '>');
         }
-        html.push('<li>' + renderInlineMarkdown((orderedMatch || unorderedMatch)[1]) + '</li>');
+        html.push('<li>' + renderInline((orderedMatch || unorderedMatch)[1]) + '</li>');
         continue;
       }
       closeList();
@@ -189,8 +218,8 @@
     return '#/chat/' + encodeURIComponent(id);
   }
 
-  function templateRoute(id) {
-    return '#/templates' + (id ? '/' + encodeURIComponent(id) : '');
+  function agentApiRoute() {
+    return '#/agent-api';
   }
 
   function syncRoute() {
@@ -204,21 +233,167 @@
     }).join('\n');
   }
 
+  function selectedVersionSnapshot() {
+    if (state.analysisVersion === 'latest') return null;
+    var selectedNumber = Number(state.analysisVersion);
+    return state.versionHistory.find(function findVersion(version) {
+      return version.number === selectedNumber;
+    }) || null;
+  }
+
+  function viewingHistoricalVersion() {
+    return Boolean(selectedVersionSnapshot());
+  }
+
+  function copyData(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
+  }
+
+  function revisionFocus(value) {
+    var compact = String(value || '').replace(/\s+/g, ' ').trim();
+    return compact.length > 42 ? compact.slice(0, 42) + '…' : compact;
+  }
+
+  function createRevisionOutcome(value, versionNumber) {
+    var outcome = copyData(scenario.revisionOutcome);
+    if (!outcome) return outcome;
+    outcome.result.documents = [
+      { id: 'report', name: '铜采购签约决策分析报告_v' + versionNumber + '.pdf', size: '1.9 MB', icon: 'file-text' }
+    ];
+    if (versionNumber <= 2) return outcome;
+    var focus = revisionFocus(value) || '最新补充的分析边界';
+    outcome.plan[0] = {
+      id: 1,
+      title: '重新校准分析焦点',
+      detail: '围绕“' + focus + '”重排第 ' + versionNumber + ' 版判断顺序'
+    };
+    outcome.plan[outcome.plan.length - 1] = {
+      id: 5,
+      title: '形成更新后的条件建议',
+      detail: '把本轮调整同步写入签约、协商、退出与头寸动作'
+    };
+    outcome.capabilities.forEach(function reviseCapability(item, index) {
+      item.runningTitle = '正在按第 ' + versionNumber + ' 版方向' + (index === 0 ? '复核内部边界…' : index === 1 ? '重新检索外部信号…' : '更新计算口径…');
+      item.progress.unshift('正在读取本轮调整：“' + focus + '”');
+    });
+    (outcome.result.sources || []).forEach(function reviseSourceSnapshot(source) {
+      if (source.id === 'position-ledger') source.sourceVersion = '持仓快照 v' + versionNumber;
+      if (source.id === 'spot-quotes') source.sourceVersion = '报价快照 v' + versionNumber;
+      if (source.id === 'market-signal') source.sourceVersion = '检索快照 v' + versionNumber;
+      if (source.id !== 'bid-notice' && source.id !== 'bid-terms') source.retrievedAt = '第 ' + versionNumber + ' 版重新分析时复核';
+    });
+    var transitionCopies = [
+      '本轮初始判断进一步补充了“' + focus + '”。这会改变问题的优先级，因此 Plan、检索问题和计算口径需要从该位置重新生成，而不是沿用上一版结论。',
+      '内部知识检索将本轮调整与授权、交割和客户准入边界重新交叉核对。只有新方向与制度约束同时成立，后续货源与损益判断才可执行。',
+      'Web Search 也按新的分析焦点重组检索条件，优先确认会直接改变签约门槛的价格、仓单、规格和时效信号。',
+      '数值计算据此更新敏感性边界，并把本轮新增条件同步带入最终建议、行动清单和头寸处理原则。'
+    ];
+    outcome.followUpThoughtSegments = outcome.followUpThoughtSegments.map(function reviseThought(text, index) {
+      return transitionCopies[index] + '\n\n' + text;
+    });
+    outcome.result.conclusion = '基于第 ' + versionNumber + ' 版分析方向，建议仍以可执行条件为核心推进协商与锁货，并将“' + focus + '”纳入签约或退出的触发边界。';
+    outcome.result.summary = [
+      '本轮重新分析已将“' + focus + '”同步纳入 Plan、内部知识检索、Web Search 和数值计算；它不是附加备注，而是更新后续判断顺序与证据要求的输入。'
+    ].concat(outcome.result.summary.slice(1));
+    outcome.result.actions = [
+      '先验证“' + focus + '”对应的事实、授权与可执行条件'
+    ].concat(outcome.result.actions.slice(1));
+    return outcome;
+  }
+
+  function activeThoughtRevision() {
+    var snapshot = selectedVersionSnapshot();
+    if (snapshot) return snapshot.thoughtRevision || '';
+    return state.thoughtRevision;
+  }
+
+  function activeThoughtRevisionTarget() {
+    var snapshot = selectedVersionSnapshot();
+    if (snapshot) return snapshot.thoughtRevisionTarget || scenario.interaction.target;
+    return state.thoughtRevisionTarget;
+  }
+
+  function activeThoughtBaseText() {
+    var snapshot = selectedVersionSnapshot();
+    if (snapshot) return snapshot.thoughtBaseText || scenario.interaction.originalText;
+    return state.thoughtBaseText || scenario.interaction.originalText;
+  }
+
   function revisionActive() {
-    return Boolean(state.thoughtRevision) && state.stage >= scenario.interaction.resumeStage;
+    return Boolean(activeThoughtRevision());
+  }
+
+  function thoughtEditingAvailable() {
+    if (viewingHistoricalVersion() || state.stage < scenario.interaction.stage) return false;
+    if (!state.replaying || !state.thoughtRevision) return true;
+    return state.stage === scenario.interaction.stage;
   }
 
   function activePlan() {
-    return revisionActive() && scenario.revisionOutcome ? scenario.revisionOutcome.plan : scenario.plan;
+    var snapshot = selectedVersionSnapshot();
+    if (snapshot) return snapshot.plan;
+    if (!revisionActive()) return scenario.plan;
+    return (state.currentOutcome || scenario.revisionOutcome).plan;
   }
 
   function revisedCapabilities() {
-    return scenario.revisionOutcome ? scenario.revisionOutcome.capabilities : primaryCapabilities;
+    var outcome = state.currentOutcome || scenario.revisionOutcome;
+    return outcome ? outcome.capabilities : primaryCapabilities;
+  }
+
+  function activeCapabilities() {
+    var snapshot = selectedVersionSnapshot();
+    if (snapshot) return snapshot.capabilities;
+    return revisionActive() ? revisedCapabilities() : primaryCapabilities;
+  }
+
+  function activeCapabilityById(capabilityId) {
+    return activeCapabilities().find(function findCapability(capability) {
+      return capability.id === capabilityId;
+    }) || null;
   }
 
   function activeResult() {
-    if (!revisionActive() || !scenario.revisionOutcome) return scenario.result;
-    return Object.assign({}, scenario.result, scenario.revisionOutcome.result || {});
+    var snapshot = selectedVersionSnapshot();
+    if (snapshot) return snapshot.result;
+    if (!revisionActive()) return scenario.result;
+    return Object.assign({}, scenario.result, (state.currentOutcome || scenario.revisionOutcome).result || {});
+  }
+
+  function activeSources() {
+    return activeResult().sources || [];
+  }
+
+  function sourceById(sourceId) {
+    return activeSources().find(function findSource(source) { return source.id === sourceId; }) || null;
+  }
+
+  function sourceNumber(sourceId) {
+    var index = activeSources().findIndex(function findSourceIndex(source) { return source.id === sourceId; });
+    return index < 0 ? 0 : index + 1;
+  }
+
+  function activeAnalysisVersionNumber() {
+    var snapshot = selectedVersionSnapshot();
+    return snapshot ? snapshot.number : state.versionNumber;
+  }
+
+  function captureResponseVersion() {
+    return {
+      number: state.versionNumber,
+      thoughtRevision: state.thoughtRevision,
+      thoughtRevisionTarget: state.thoughtRevisionTarget,
+      thoughtBaseText: state.thoughtBaseText,
+      plan: copyData(activePlan()),
+      capabilities: copyData(activeCapabilities()),
+      thoughtSegments: scenario.analysisRun.thoughtSegments.map(function captureThought(content, index) {
+        return thoughtSource(thoughtKey('primary', index)) || content;
+      }),
+      continuationThoughtSegments: scenario.continuationThoughtSegments.map(function captureContinuationThought(content, index) {
+        return thoughtSource(thoughtKey('continuation', index)) || content;
+      }),
+      result: copyData(activeResult())
+    };
   }
 
   function renderAnswerBody(group, bodyHtml, visible, extraHtml) {
@@ -252,8 +427,15 @@
     var match = String(key || '').match(/^(primary|continuation)-(\d+)$/);
     if (!match) return '';
     var index = Number(match[2]);
-    if (match[1] === 'primary' && revisionActive() && index > 0 && scenario.revisionOutcome) {
-      return scenario.revisionOutcome.followUpThoughtSegments[index - 1] || scenario.analysisRun.thoughtSegments[index] || '';
+    var snapshot = selectedVersionSnapshot();
+    if (snapshot) {
+      var snapshotThoughts = match[1] === 'primary' ? snapshot.thoughtSegments : snapshot.continuationThoughtSegments;
+      var fallbackThoughts = match[1] === 'primary' ? scenario.analysisRun.thoughtSegments : scenario.continuationThoughtSegments;
+      return (snapshotThoughts && snapshotThoughts[index]) || fallbackThoughts[index] || '';
+    }
+    var outcome = revisionActive() ? (state.currentOutcome || scenario.revisionOutcome) : null;
+    if (match[1] === 'primary' && outcome && index > 0) {
+      return outcome.followUpThoughtSegments[index - 1] || scenario.analysisRun.thoughtSegments[index] || '';
     }
     var collection = match[1] === 'primary' ? scenario.analysisRun.thoughtSegments : scenario.continuationThoughtSegments;
     return collection[index] || '';
@@ -313,39 +495,88 @@
     }).join('');
   }
 
-  function renderThoughtSegmentContent(group, content, index) {
-    var key = thoughtKey(group, index);
-    var applied = key === state.thoughtRevisionTarget && Boolean(state.thoughtRevision) && state.stage >= scenario.interaction.resumeStage;
-    var editing = key === state.thoughtEditorTarget && state.thoughtEditorOpen;
-    var canEdit = key === scenario.interaction.target && state.stage >= scenario.interaction.stage;
+  function initialThoughtHeaderCopy(editing, applied) {
     if (editing) {
-      return '<textarea class="thought-inline-input" id="thought-inline-input" aria-label="编辑初始思考" maxlength="1800">' + escapeHtml(state.thoughtDraft) + '</textarea>' +
-        '<div class="thought-inline-actions"><button class="thought-revision-cancel" type="button" data-action="cancel-thought-edit">取消</button><button class="thought-revision-submit" type="button" data-action="apply-thought-edit">' + icon('rotate-ccw', 13) + '应用修改</button></div>';
+      return {
+        title: '正在调整初始思考',
+        hint: ''
+      };
+    }
+    if (state.replaying && state.thoughtRevision) {
+      return {
+        title: '正在重新分析',
+        hint: '正在依次更新 Plan、调用、正文与报告。'
+      };
+    }
+    if (viewingHistoricalVersion()) {
+      return {
+        title: '历史版本',
+        hint: '当前仅查看所选历史版本；继续提问时仍基于最新版本。'
+      };
     }
     if (applied) {
-      return '<div class="thought-inline-revision"><span class="thought-revision-badge">思考已修订</span><div class="thought-inline-diff">' + renderThoughtRevisionDiff(content || '', state.thoughtRevision) + '</div></div>' +
-        (canEdit ? '<button class="thought-inline-edit" type="button" data-action="edit-thought" data-thought-key="' + escapeHtml(key) + '">' + icon('pencil-line', 13) + '<span>重新编辑初始思考</span></button>' : '');
+      return {
+        title: '已调整分析方向',
+        hint: 'Plan、调用、正文与报告均已基于本段内容重新生成。'
+      };
     }
-    return '<div class="thought-copy">' + renderMarkdown(content || '') + '</div>' +
-      (canEdit ? '<button class="thought-inline-edit" type="button" data-action="edit-thought" data-thought-key="' + escapeHtml(key) + '">' + icon('pencil-line', 13) + '<span>编辑初始思考</span></button>' : '');
+    return {
+      title: '初始思考',
+      hint: '后续 Plan、调用与正文都基于这段判断，可直接修改。'
+    };
+  }
+
+  function renderInitialThoughtHeader(key, editing, applied, canEdit) {
+    if (key !== scenario.interaction.target) return '';
+    var copy = initialThoughtHeaderCopy(editing, applied);
+    var editAction = canEdit && !editing
+      ? '<button class="thought-inline-edit" type="button" data-action="adjust-analysis-direction" data-edit-origin="thought" aria-label="编辑初始思考">' + icon('pencil-line', 13) + '<span>编辑</span></button>'
+      : '';
+    var editControls = editing
+      ? '<button class="thought-revision-cancel" type="button" data-action="cancel-thought-edit">取消</button><button class="thought-revision-submit" type="button" data-action="apply-thought-edit">' + icon('rotate-ccw', 13) + '更新并生成</button>'
+      : '';
+    var versionControl = editing ? '' : renderAnalysisVersionControl();
+    var hint = copy.hint ? '<span>' + escapeHtml(copy.hint) + '</span>' : '';
+    return '<header class="initial-thought-header' + (editing ? ' is-editing' : '') + '" data-initial-thought-header><div class="initial-thought-header-copy"><strong>' + escapeHtml(copy.title) + '</strong>' + hint + '</div><div class="initial-thought-actions">' + (editing ? editControls : editAction + versionControl) + '</div></header>';
+  }
+
+  function renderThoughtSegmentContent(group, content, index) {
+    var key = thoughtKey(group, index);
+    var revision = activeThoughtRevision();
+    var applied = key === activeThoughtRevisionTarget() && Boolean(revision);
+    var editing = key === state.thoughtEditorTarget && state.thoughtEditorOpen;
+    var canEdit = key === scenario.interaction.target && thoughtEditingAvailable();
+    var header = renderInitialThoughtHeader(key, editing, applied, canEdit);
+    if (editing) {
+      return header + '<textarea class="thought-inline-input" id="thought-inline-input" aria-label="调整初始分析方向" maxlength="1800">' + escapeHtml(state.thoughtDraft) + '</textarea>';
+    }
+    if (applied) {
+      return header + '<div class="thought-inline-revision"><div class="thought-inline-diff">' + renderThoughtRevisionDiff(activeThoughtBaseText(), revision) + '</div></div>';
+    }
+    return header + '<div class="thought-copy">' + renderMarkdown(content || '') + '</div>';
   }
 
   function renderThoughtSegment(group, content, index, visible) {
     var key = thoughtKey(group, index);
     var editing = key === state.thoughtEditorTarget && state.thoughtEditorOpen;
-    var applied = key === state.thoughtRevisionTarget && Boolean(state.thoughtRevision) && state.stage >= scenario.interaction.resumeStage;
-    return '<div class="thought-segment markdown-body ' + (visible ? 'is-visible ' : '') + (editing ? 'is-editing ' : '') + (applied ? 'is-revised ' : '') + '" data-thought-segment="' + escapeHtml(key) + '" ' + (visible ? '' : 'hidden') + '>' + (visible ? renderThoughtSegmentContent(group, content, index) : '') + '</div>';
+    var applied = key === activeThoughtRevisionTarget() && Boolean(activeThoughtRevision());
+    return '<div class="thought-segment markdown-body ' + (visible ? 'is-visible ' : '') + (editing ? 'is-editing ' : '') + (applied ? 'is-revised ' : '') + '" data-thought-segment="' + escapeHtml(key) + '" ' + (visible ? '' : 'hidden') + '>' + (visible ? renderThoughtSegmentContent(group, thoughtSource(key) || content, index) : '') + '</div>';
   }
 
   function renderExecutionRow(item, group, complete) {
-    return '<div class="execution-row ' + (complete ? 'done' : 'pending') + '" data-execution-group="' + group + '" data-execution-id="' + escapeHtml(item.id) + '" ' + (complete ? '' : 'hidden') + '>' +
+    var opensSearchResults = item.id === 'web';
+    var element = opensSearchResults ? 'button' : 'div';
+    var attributes = opensSearchResults
+      ? ' type="button" data-action="open-search-results" aria-label="查看 Web Search 的全部检索结果" ' + (complete ? '' : 'disabled ')
+      : ' tabindex="-1" ';
+    return '<' + element + ' class="execution-row ' + (opensSearchResults ? 'is-inspectable ' : '') + (complete ? 'done' : 'pending') + '" data-execution-group="' + group + '" data-execution-id="' + escapeHtml(item.id) + '"' + attributes + (complete ? '' : 'hidden') + '>' +
       '<span class="execution-icon">' + icon(item.icon || 'sparkles', 16) + '</span>' +
       '<div class="execution-copy">' +
         '<div class="execution-call-line"><div class="execution-meta"><strong>' + escapeHtml(item.runName) + '</strong><span class="execution-kind">' + escapeHtml(item.runType) + '</span></div>' +
-        '<span class="execution-state"><span class="execution-state-dot"></span><span data-execution-state-copy>' + (complete ? '已完成' : '待执行') + '</span></span></div>' +
+        '<span class="execution-row-end"><span class="execution-state"><span class="execution-state-dot"></span><span data-execution-state-copy>' + (complete ? '已完成' : '待执行') + '</span></span>' + (opensSearchResults ? '<span class="execution-open-indicator" aria-hidden="true">' + icon('chevron-right', 14) + '</span>' : '') + '</span></div>' +
         '<p class="execution-live-detail" data-execution-live ' + (complete ? 'hidden' : '') + '></p>' +
       '</div>' +
-    '</div>';
+    '</' + element + '>';
   }
 
   function renderAnalysisFlow(items, options) {
@@ -368,19 +599,6 @@
     '</section>';
   }
 
-  function renderThoughtRevisionContent() {
-    var applied = Boolean(state.thoughtRevision) && state.stage >= scenario.interaction.resumeStage;
-    return '<p class="thought-revision-hint">' + (applied ? '初始思考已修订；再次修改会重新生成后续内容。' : '思考已完成，可点击开头的初始思考直接修改；正文将继续生成。') + '</p>';
-  }
-
-  function renderThoughtRevision() {
-    var visible = state.stage >= scenario.interaction.stage;
-    var applied = Boolean(state.thoughtRevision) && state.stage >= scenario.interaction.resumeStage;
-    return '<section class="thought-revision ' + (applied ? 'is-applied' : '') + '" data-thought-revision ' + (visible ? '' : 'hidden') + '>' +
-      renderThoughtRevisionContent() +
-    '</section>';
-  }
-
   function resultSummaryMarkdown() {
     var result = activeResult();
     return result.conclusion + '\n\n' + result.summary.join('\n\n');
@@ -388,7 +606,8 @@
 
   function resultMetricsMarkdown() {
     var rows = activeResult().metrics.map(function metricRow(metric) {
-      return '| ' + metric.label + ' | `' + metric.formula + '` | **' + metric.value + '** |';
+      var citations = (metric.sourceIds || []).map(function metricCitation(sourceId) { return '[^' + sourceId + ']'; }).join('');
+      return '| ' + metric.label + ' | `' + metric.formula + '` | **' + metric.value + '**' + citations + ' |';
     }).join('\n');
     return '### 当前损益\n\n| 项目 | 计算 | 结果 |\n| --- | --- | --- |\n' + rows;
   }
@@ -426,6 +645,19 @@
     ].join('\n\n');
   }
 
+  function renderReportReferences() {
+    var sources = activeSources();
+    if (!sources.length) return '';
+    return '<section class="report-reference-list" aria-labelledby="report-reference-title"><h2 id="report-reference-title">八、参考依据</h2><ol>' + sources.map(function reportReference(source, index) {
+      var number = index + 1;
+      var url = safeReferenceUrl(source.url);
+      var title = url
+        ? '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(source.title) + icon('external-link', 13) + '</a>'
+        : '<strong>' + escapeHtml(source.title) + '</strong>';
+      return '<li id="report-reference-' + number + '" tabindex="-1"><span class="report-reference-number">[' + number + ']</span><div class="report-reference-copy">' + title + '</div></li>';
+    }).join('') + '</ol></section>';
+  }
+
   function renderUnavailableRoute() {
     stopReplay();
     state.dialog = null;
@@ -452,7 +684,13 @@
   }
 
   function renderSidebar() {
-    return '<aside class="sidebar" aria-label="用户端导航"><a class="brand-row" href="' + sessionRoute(homeSession.id) + '" data-action="new-chat" aria-label="数据智能分析首页"><span class="brand-mark">' + icon('chart-no-axes-combined', 19) + '</span><span class="brand-name">' + escapeHtml(DATA.productName) + '</span></a><nav class="sidebar-primary-actions" aria-label="主要功能"><button class="new-chat-button" type="button" data-action="new-chat">' + icon('plus', 18) + '<span>新建对话</span></button><a class="sidebar-feature-link ' + (state.view === 'templates' ? 'active' : '') + '" href="' + templateRoute() + '" aria-current="' + (state.view === 'templates' ? 'page' : 'false') + '">' + icon('layout-template', 18) + '<span>报告模板</span>' + icon('chevron-right', 15) + '</a></nav><div class="sidebar-conversations">' + renderSessionGroups() + '</div><div class="user-account-menu" data-user-account-menu><button class="user-menu" type="button" data-action="user-menu" aria-expanded="false" aria-controls="user-account-popover" aria-label="打开账户菜单"><span class="avatar user">' + escapeHtml(DATA.user.name.slice(0, 1)) + '</span><span><strong>' + escapeHtml(DATA.user.name) + '</strong></span>' + icon('chevron-down', 16) + '</button><nav class="user-account-popover" id="user-account-popover" aria-label="账户操作" hidden><a class="user-account-popover__action" href="../ops-console/#/knowledge">' + icon('settings-2', 16) + '<span>运营端</span></a><button class="user-account-popover__action" type="button" data-action="logout">' + icon('log-out', 16) + '<span>退出登录</span></button></nav></div></aside>';
+    var agentApiActive = state.view === 'agent-api';
+    return '<aside class="sidebar" aria-label="用户端导航">' +
+      '<a class="brand-row" href="' + sessionRoute(homeSession.id) + '" data-action="new-chat" aria-label="数据智能分析首页"><span class="brand-mark">' + icon('chart-no-axes-combined', 19) + '</span><span class="brand-name">' + escapeHtml(DATA.productName) + '</span></a>' +
+      '<nav class="sidebar-primary-actions" aria-label="主要功能"><button class="new-chat-button" type="button" data-action="new-chat">' + icon('plus', 18) + '<span>新建对话</span></button></nav>' +
+      '<div class="sidebar-conversations">' + renderSessionGroups() + '</div>' +
+      '<div class="user-account-menu" data-user-account-menu><button class="user-menu" type="button" data-action="user-menu" aria-expanded="false" aria-controls="user-account-popover" aria-label="打开账户菜单"><span class="avatar user">' + escapeHtml(DATA.user.name.slice(0, 1)) + '</span><span><strong>' + escapeHtml(DATA.user.name) + '</strong></span>' + icon('chevron-down', 16) + '</button>' +
+      '<nav class="user-account-popover" id="user-account-popover" aria-label="账户操作" hidden><a class="user-account-popover__action' + (agentApiActive ? ' is-active' : '') + '" href="' + agentApiRoute() + '" aria-current="' + (agentApiActive ? 'page' : 'false') + '">' + icon('key-round', 16) + '<span>API 密钥</span></a><a class="user-account-popover__action" href="../ops-console/#/knowledge">' + icon('settings-2', 16) + '<span>运营端</span></a><span class="user-account-popover__divider" aria-hidden="true"></span><button class="user-account-popover__action" type="button" data-action="logout">' + icon('log-out', 16) + '<span>退出登录</span></button></nav></div></aside>';
   }
 
   function sessionMenuTrigger(id) {
@@ -558,131 +796,228 @@
     var isScenario = session.id === scenario.id;
     var replayButton = '';
     if (isScenario) {
-      var replayCopy = state.waitingFor ? '等待思考修订' : state.replaying ? '演示进行中' : '重新演示';
+      var replayCopy = state.waitingFor ? '等待调整' : state.replaying ? (state.thoughtRevision ? '重新分析中' : '演示进行中') : '重新演示';
       replayButton = '<button class="text-button" type="button" data-action="replay-demo" ' + (state.replaying ? 'disabled' : '') + '>' + icon('refresh-cw', 16) + '<span data-replay-copy>' + replayCopy + '</span></button>';
     }
     return '<header class="topbar"><div class="conversation-heading"><strong>' + escapeHtml(session.title) + '</strong></div>' + (replayButton ? '<div class="topbar-actions">' + replayButton + '</div>' : '') + '</header>';
   }
 
-  function normalizeTemplateSection(section) {
-    if (typeof section === 'string') return { title: section, includeChart: false };
-    return {
-      title: section && section.title ? section.title : '',
-      includeChart: Boolean(section && section.includeChart)
-    };
-  }
-
-  function findOutputProfile(id) {
-    return state.outputProfiles.find(function findProfile(item) { return item.id === id; });
-  }
-
-  function renderTemplateTopbar(title, actions, back) {
-    var heading = '<h1 class="template-page-title">' + escapeHtml(title) + '</h1>';
-    if (back) {
-      heading = '<div class="template-heading-with-back"><a class="icon-button" href="' + templateRoute() + '" aria-label="返回报告模板" title="返回报告模板">' + icon('arrow-left', 18) + '</a>' + heading + '</div>';
-    }
-    return '<header class="topbar template-topbar">' + heading + '<div class="topbar-actions">' + (actions || '') + '</div></header>';
-  }
-
-  function renderTemplateActions(profile) {
-    return '<div class="template-row-actions">' +
-      '<button type="button" data-action="edit-template" data-template-id="' + escapeHtml(profile.id) + '">编辑</button>' +
-      '<button class="is-danger" type="button" data-action="delete-template" data-template-id="' + escapeHtml(profile.id) + '">删除</button></div>';
-  }
-
-  function renderTemplateList() {
-    var rows = state.outputProfiles.map(function renderProfile(profile) {
-      var sections = (profile.sections || []).map(normalizeTemplateSection);
-      var sectionNames = sections.map(function sectionTitle(section) { return section.title; });
-      return '<tr><td><div class="template-name-cell"><strong>' + escapeHtml(profile.name) + '</strong></div></td><td>' + escapeHtml(profile.description) + '</td><td><strong>' + sections.length + ' 节</strong><small>' + escapeHtml(sectionNames.slice(0, 3).join('、')) + (sections.length > 3 ? '…' : '') + '</small></td><td>' + renderTemplateActions(profile) + '</td></tr>';
-    }).join('');
-    var actions = '<button class="button primary" type="button" data-action="create-template">' + icon('plus', 16) + '新建模板</button>';
-    return renderTemplateTopbar('报告模板', actions, false) +
-      '<div class="template-page-scroll"><div class="template-page"><div class="template-list-intro"><p>在生成分析报告时选择模板，系统会按设定的章节结构输出。</p><span>共 ' + state.outputProfiles.length + ' 个模板</span></div><section class="template-table-surface" aria-label="报告模板列表"><div class="template-table-wrap"><table class="template-table"><thead><tr><th>模板</th><th>描述</th><th>章节</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table></div></section></div></div>';
-  }
-
-  function renderTemplateChapterRows(sections) {
-    var values = (sections && sections.length ? sections : [{ title: '摘要', includeChart: false }]).map(normalizeTemplateSection);
-    return values.map(function renderChapter(section, index) {
-      return '<div class="template-chapter-row" data-template-chapter-row draggable="true" role="listitem"><button type="button" class="template-chapter-handle" draggable="true" data-template-chapter-drag aria-label="拖动调整第 ' + (index + 1) + ' 章顺序">' + icon('grip-vertical', 15) + '</button><input class="template-field" maxlength="30" value="' + escapeHtml(section.title) + '" data-template-chapter-name aria-label="章节 ' + (index + 1) + '"><label class="template-chapter-chart" title="此章节需要生成图表"><input type="checkbox" data-template-chapter-chart aria-label="第 ' + (index + 1) + ' 章需要图表"' + (section.includeChart ? ' checked' : '') + '><span>图表</span></label><span class="template-chapter-move"><button type="button" data-action="move-template-chapter-up" aria-label="上移一位">' + icon('chevron-up', 12) + '</button><button type="button" data-action="move-template-chapter-down" aria-label="下移一位">' + icon('chevron-down', 12) + '</button></span><button type="button" class="template-chapter-remove" data-action="remove-template-chapter" aria-label="删除章节">' + icon('trash-2', 14) + '</button></div>';
-    }).join('');
-  }
-
-  function renderTemplatePreviewSections(sections) {
-    return (sections || []).map(function renderSection(section, index) {
-      var current = normalizeTemplateSection(section);
-      var chart = current.includeChart ? '<div class="template-preview-chart"><strong>图表区域</strong><span>该章节将根据分析数据生成图表</span></div>' : '';
-      return '<section><h3>' + (index + 1) + '. ' + escapeHtml(current.title) + '</h3><p>' + (index === 0 ? '本章将汇总研判结论与重要依据。' : '本章内容将由 Agent 根据分析结果生成。') + '</p>' + chart + '</section>';
-    }).join('');
-  }
-
-  function renderTemplateEditor(routeId) {
-    var editing = routeId !== 'new';
-    var profile = editing ? findOutputProfile(routeId) : null;
-    if (editing && !profile) {
-      return renderTemplateTopbar('报告模板不存在', '', true) + '<div class="template-page-scroll"><div class="template-not-found">' + icon('file-question', 28) + '<h1>未找到该模板</h1><p>请返回模板列表重新选择。</p><a class="button primary" href="' + templateRoute() + '">返回报告模板</a></div></div>';
-    }
-    var current = profile || {
-      name: '',
-      description: '',
-      sections: [
-        { title: '摘要', includeChart: false },
-        { title: '关键事实', includeChart: false },
-        { title: '研判结论', includeChart: false },
-        { title: '建议', includeChart: false }
-      ]
-    };
-    var actions = '<button class="button" type="button" data-action="cancel-template-edit">取消</button><button class="button primary" type="button" data-action="save-template" data-template-id="' + escapeHtml(profile ? profile.id : '') + '">' + icon('check', 15) + (editing ? '保存' : '创建') + '</button>';
-    return renderTemplateTopbar(editing ? '编辑报告模板' : '新建报告模板', actions, true) +
-      '<div class="template-page-scroll is-editor"><div class="template-editor" data-template-editor data-template-id="' + escapeHtml(profile ? profile.id : '') + '"><section class="template-editor-form"><div class="template-form-field"><label for="template-name">名称 <span aria-hidden="true">*</span></label><input id="template-name" class="template-field" maxlength="50" value="' + escapeHtml(current.name) + '" placeholder="例如：供应商风险研判报告" required aria-required="true" data-template-field="name"></div><div class="template-form-field"><label for="template-description">描述 <span aria-hidden="true">*</span></label><textarea id="template-description" class="template-field template-description-field" maxlength="160" rows="3" placeholder="简要说明模板的用途与内容，例如：用于评估供应商交付、履约及经营风险…" required aria-required="true" data-template-field="description">' + escapeHtml(current.description) + '</textarea></div><div class="template-form-field"><div class="template-chapter-heading"><label>章节 <span aria-hidden="true">*</span></label><button class="button" type="button" data-action="add-template-chapter">' + icon('plus', 14) + '新增章节</button></div><div class="template-chapter-list" data-template-chapter-list role="list" aria-label="报告章节">' + renderTemplateChapterRows(current.sections) + '</div></div></section><aside class="template-preview"><article><h2 data-template-preview-title>' + escapeHtml(current.name || '报告标题') + '</h2><p data-template-preview-description>' + escapeHtml(current.description || '描述') + '</p><div data-template-preview-sections>' + renderTemplatePreviewSections(current.sections) + '</div></article></aside></div></div>';
-  }
-
-  function syncTemplateEditor() {
-    var editor = document.querySelector('[data-template-editor]');
-    if (!editor) return;
-    var rows = Array.from(editor.querySelectorAll('[data-template-chapter-row]'));
-    rows.forEach(function syncChapter(row, index) {
-      var up = row.querySelector('[data-action="move-template-chapter-up"]');
-      var down = row.querySelector('[data-action="move-template-chapter-down"]');
-      var remove = row.querySelector('[data-action="remove-template-chapter"]');
-      var field = row.querySelector('[data-template-chapter-name]');
-      var chart = row.querySelector('[data-template-chapter-chart]');
-      if (up) up.disabled = index === 0;
-      if (down) down.disabled = index === rows.length - 1;
-      if (remove) remove.disabled = rows.length === 1;
-      if (field) field.setAttribute('aria-label', '章节 ' + (index + 1));
-      if (chart) chart.setAttribute('aria-label', '第 ' + (index + 1) + ' 章需要图表');
-      row.setAttribute('aria-posinset', String(index + 1));
-      row.setAttribute('aria-setsize', String(rows.length));
+  function agentApiClients() {
+    var clients = state.agentApiAccess && state.agentApiAccess.clients;
+    return (Array.isArray(clients) ? clients : []).filter(function agentOnly(item) {
+      return item && item.apiType === 'agent';
     });
-    var name = editor.querySelector('[data-template-field="name"]').value.trim() || '报告标题';
-    var description = editor.querySelector('[data-template-field="description"]').value.trim() || '描述';
-    var sections = rows.map(function chapterValue(row) {
-      return {
-        title: row.querySelector('[data-template-chapter-name]').value.trim(),
-        includeChart: row.querySelector('[data-template-chapter-chart]').checked
-      };
-    }).filter(function namedChapter(section) { return section.title; });
-    editor.querySelector('[data-template-preview-title]').textContent = name;
-    editor.querySelector('[data-template-preview-description]').textContent = description;
-    editor.querySelector('[data-template-preview-sections]').innerHTML = renderTemplatePreviewSections(sections);
   }
 
-  function renderTemplateShell(routeId) {
+  function findAgentApiKey(id) {
+    return agentApiClients().find(function findKey(item) { return item.id === id; });
+  }
+
+  function displayApiTime(value, emptyLabel) {
+    if (!value) return emptyLabel || '—';
+    var date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).format(date).replaceAll('/', '-');
+  }
+
+  function agentApiKeyEnabled(item) {
+    return Boolean(item) && item.enabled !== false && item.status !== 'disabled';
+  }
+
+  function renderAgentApiRows() {
+    return agentApiClients().map(function renderAgentKey(item) {
+      var enabled = agentApiKeyEnabled(item);
+      return '<tr data-agent-api-row data-agent-api-id="' + escapeHtml(item.id) + '"><td><strong class="agent-api-name">' + escapeHtml(item.name) + '</strong></td><td><code class="agent-api-masked">' + escapeHtml(item.keyMasked) + '</code></td><td><span class="agent-api-status ' + (enabled ? 'is-active' : 'is-disabled') + '"><span aria-hidden="true"></span>' + (enabled ? '已启用' : '已禁用') + '</span></td><td>' + escapeHtml(displayApiTime(item.lastUsedAt, '尚未使用')) + '</td><td>' + escapeHtml(displayApiTime(item.createdAt)) + '</td><td><div class="agent-api-row-actions"><button type="button" data-action="view-agent-api-key" data-api-key-id="' + escapeHtml(item.id) + '">查看</button><button type="button" data-action="toggle-agent-api-key" data-api-key-id="' + escapeHtml(item.id) + '">' + (enabled ? '禁用' : '启用') + '</button><button class="is-danger" type="button" data-action="delete-agent-api-key" data-api-key-id="' + escapeHtml(item.id) + '">删除</button></div></td></tr>';
+    }).join('');
+  }
+
+  function renderAgentApiPage() {
+    var rows = renderAgentApiRows();
+    var heading = '<h1 class="settings-page-title">API 密钥</h1>';
+    var actions = '<button class="button primary" type="button" data-action="create-agent-api-key">' + icon('plus', 16) + '创建 API Key</button>';
+    var table = rows
+      ? '<section class="settings-table-surface agent-api-table-surface" aria-label="API 密钥列表"><div class="settings-table-wrap"><table class="settings-table agent-api-table"><thead><tr><th>名称</th><th>API Key</th><th>状态</th><th>最近使用时间</th><th>创建时间</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table></div></section>'
+      : '<section class="agent-api-empty" aria-label="暂无 API 密钥">' + icon('key-round', 24) + '<strong>暂无 API Key</strong><p>创建后，外部应用即可调用研判 Agent。</p></section>';
+    return '<header class="topbar settings-topbar agent-api-topbar">' + heading + '<div class="topbar-actions">' + actions + '</div></header><div class="settings-page-scroll agent-api-page-scroll"><div class="settings-page agent-api-page"><p class="agent-api-intro">为外部应用创建并管理调用研判 Agent 的 API Key。</p>' + table + '</div></div>';
+  }
+
+  function renderAgentApiShell() {
     closeSessionMenu();
-    state.view = 'templates';
-    state.templateRouteId = routeId || null;
+    state.view = 'agent-api';
     state.dialog = null;
     dialogRoot.innerHTML = '';
-    document.title = (routeId ? (routeId === 'new' ? '新建报告模板' : '编辑报告模板') : '报告模板') + ' · ' + DATA.productName;
-    app.innerHTML = '<div class="chat-shell">' + renderSidebar() + '<main class="main-pane template-main-pane">' + (routeId ? renderTemplateEditor(routeId) : renderTemplateList()) + '</main></div>';
+    document.title = 'API 密钥 · ' + DATA.productName;
+    app.innerHTML = '<div class="chat-shell">' + renderSidebar() + '<main class="main-pane settings-main-pane agent-api-main-pane">' + renderAgentApiPage() + '</main></div>';
     hydrateIcons();
-    syncTemplateEditor();
+  }
+
+  function requestCreateAgentApiKey() {
+    state.dialog = {
+      kind: 'api-key-create',
+      title: '创建 API Key',
+      body: '<div class="agent-api-form"><label class="agent-api-form-field" for="agent-api-key-name"><span>名称 <b aria-hidden="true">*</b></span><input class="settings-field" id="agent-api-key-name" maxlength="48" required aria-required="true" autocomplete="off" placeholder="例如：供应商风险工作台"></label></div>'
+    };
+    renderDialog();
+    var name = document.getElementById('agent-api-key-name');
+    if (name) name.focus();
+  }
+
+  function createAgentApiSecret() {
+    var alphabet = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    var bytes = new Uint8Array(24);
+    if (global.crypto && typeof global.crypto.getRandomValues === 'function') global.crypto.getRandomValues(bytes);
+    else bytes.forEach(function fill(value, index) { bytes[index] = Math.floor(Math.random() * 256); });
+    return 'sk_agent_' + Array.from(bytes, function character(value) { return alphabet[value % alphabet.length]; }).join('');
+  }
+
+  function maskedAgentApiSecret(secret) {
+    return 'sk_agent_•••••••' + String(secret || '').slice(-4).toUpperCase();
+  }
+
+  function confirmCreateAgentApiKey() {
+    var nameInput = document.getElementById('agent-api-key-name');
+    var name = nameInput ? nameInput.value.trim() : '';
+    if (!name) {
+      showToast('请输入名称');
+      if (nameInput) nameInput.focus();
+      return;
+    }
+    if (agentApiClients().some(function duplicate(item) { return item.name.toLowerCase() === name.toLowerCase(); })) {
+      showToast('名称已存在，请使用其他名称');
+      if (nameInput) nameInput.select();
+      return;
+    }
+    var secret = createAgentApiSecret();
+    var client = {
+      id: 'AGENT-API-' + Date.now().toString(36).toUpperCase(),
+      name: name,
+      apiType: 'agent',
+      keyMasked: maskedAgentApiSecret(secret),
+      lastUsedAt: null,
+      createdAt: new Date().toISOString(),
+      enabled: true,
+      status: 'active'
+    };
+    state.agentApiAccess.clients.unshift(client);
+    state.dialog = {
+      kind: 'api-key-secret',
+      title: 'API Key 已创建',
+      dismissible: false,
+      secretCopied: false,
+      body: '<div class="agent-api-secret"><p class="agent-api-once-notice">请立即复制并安全保存。关闭后将无法再次查看完整 Key。</p><label class="agent-api-form-field" for="agent-api-secret-value"><span>API Key</span><span class="agent-api-secret-row"><input class="settings-field agent-api-secret-value" id="agent-api-secret-value" readonly value="' + escapeHtml(secret) + '"><button class="button" type="button" data-action="copy-agent-api-secret">' + icon('copy', 15) + '<span data-copy-agent-api-label>复制</span></button></span></label></div>'
+    };
+    renderDialog();
+  }
+
+  function copyAgentApiSecret() {
+    var input = document.getElementById('agent-api-secret-value');
+    if (!input) return;
+    function copied() {
+      if (!state.dialog || state.dialog.kind !== 'api-key-secret') return;
+      state.dialog.secretCopied = true;
+      var button = dialogRoot.querySelector('[data-action="copy-agent-api-secret"]');
+      var label = dialogRoot.querySelector('[data-copy-agent-api-label]');
+      var complete = dialogRoot.querySelector('[data-action="complete-agent-api-secret"]');
+      if (button) button.classList.add('is-copied');
+      if (label) label.textContent = '已复制';
+      if (complete) {
+        complete.disabled = false;
+        complete.removeAttribute('aria-disabled');
+        complete.focus();
+      }
+      showToast('密钥已复制');
+    }
+    if (global.navigator && global.navigator.clipboard && global.navigator.clipboard.writeText) {
+      global.navigator.clipboard.writeText(input.value).then(copied).catch(function fallbackCopy() {
+        input.select();
+        document.execCommand('copy');
+        copied();
+      });
+      return;
+    }
+    input.select();
+    document.execCommand('copy');
+    copied();
+  }
+
+  function completeAgentApiSecret() {
+    if (!state.dialog || state.dialog.kind !== 'api-key-secret' || !state.dialog.secretCopied) {
+      showToast('请先复制并安全保存密钥');
+      return;
+    }
+    state.dialog = null;
+    renderDialog();
+    renderAgentApiShell();
+  }
+
+  function requestAgentApiKeyDetail(item) {
+    if (!item) return;
+    state.dialog = {
+      kind: 'api-key-detail',
+      title: '查看 API Key',
+      body: '<div class="agent-api-form agent-api-detail-form"><label class="agent-api-form-field"><span>名称</span><input class="settings-field" readonly value="' + escapeHtml(item.name) + '"></label><label class="agent-api-form-field"><span>API Key</span><input class="settings-field agent-api-secret-value" readonly value="' + escapeHtml(item.keyMasked) + '"></label></div>'
+    };
+    renderDialog();
+  }
+
+  function requestAgentApiKeyToggle(item) {
+    if (!item) return;
+    var enabling = !agentApiKeyEnabled(item);
+    state.dialog = {
+      kind: 'confirm-api-key-toggle',
+      title: (enabling ? '启用' : '禁用') + ' API Key',
+      apiKeyId: item.id,
+      nextEnabled: enabling,
+      body: '<p class="confirm-dialog-copy">' + (enabling ? '启用后，该 Key 可恢复调用研判 Agent。' : '禁用后，使用该 Key 发起的新调用将被拒绝，之后仍可重新启用。') + '</p>'
+    };
+    renderDialog();
+  }
+
+  function confirmAgentApiKeyToggle() {
+    var dialog = state.dialog;
+    var item = dialog && findAgentApiKey(dialog.apiKeyId);
+    if (!item) return;
+    item.enabled = Boolean(dialog.nextEnabled);
+    item.status = item.enabled ? 'active' : 'disabled';
+    state.dialog = null;
+    renderDialog();
+    renderAgentApiShell();
+    showToast('密钥已' + (item.enabled ? '启用' : '禁用'));
+  }
+
+  function requestAgentApiKeyDelete(item) {
+    if (!item) return;
+    state.dialog = {
+      kind: 'confirm-api-key-delete',
+      title: '删除 API Key',
+      apiKeyId: item.id,
+      body: '<p class="confirm-dialog-copy">删除后，“<strong>' + escapeHtml(item.name) + '</strong>”的 API Key 将立即失效且无法恢复。</p>'
+    };
+    renderDialog();
+  }
+
+  function confirmAgentApiKeyDelete() {
+    var item = state.dialog && findAgentApiKey(state.dialog.apiKeyId);
+    if (!item) return;
+    state.agentApiAccess.clients.splice(state.agentApiAccess.clients.indexOf(item), 1);
+    state.dialog = null;
+    renderDialog();
+    renderAgentApiShell();
+    showToast('密钥已删除');
   }
 
   function renderAttachment(file) {
     var iconName = file.type === 'pdf' ? 'file-text' : file.type === 'xlsx' ? 'sheet' : 'file';
-    return '<span class="attachment-chip" data-type="' + escapeHtml(file.type) + '"><span class="file-icon">' + icon(iconName, 17) + '</span><span><strong title="' + escapeHtml(file.name) + '">' + escapeHtml(file.name) + '</strong><small>' + escapeHtml(file.size) + '</small></span></span>';
+    var assetHook = file.id ? ' data-asset-id="' + escapeHtml(file.id) + '" tabindex="-1"' : '';
+    return '<span class="attachment-chip" data-type="' + escapeHtml(file.type) + '"' + assetHook + '><span class="file-icon">' + icon(iconName, 17) + '</span><span><strong title="' + escapeHtml(file.name) + '">' + escapeHtml(file.name) + '</strong><small>' + escapeHtml(file.size) + '</small></span></span>';
   }
 
   function renderUserQuestion() {
@@ -693,24 +1028,70 @@
     return '<div class="stream-status" data-stream-status="' + kind + '" role="status" aria-live="polite" ' + (text ? '' : 'hidden') + '><span class="stream-status-dot" aria-hidden="true"></span><span data-stream-status-copy>' + escapeHtml(text || '') + '</span></div>';
   }
 
+  function analysisLabelCopy(initialComplete, finalComplete) {
+    if (finalComplete) return '已完成';
+    if (initialComplete) return state.thoughtRevision ? '正在重新生成' : '正文生成中';
+    return state.replaying ? (state.thoughtRevision ? '重新分析中' : '深度分析中') : '分析过程';
+  }
+
+  function renderVersionOption(version, number, relation) {
+    var selected = state.analysisVersion === version;
+    return '<button class="analysis-version-option' + (selected ? ' is-selected' : '') + '" type="button" role="menuitemradio" aria-checked="' + String(selected) + '" data-action="select-analysis-version" data-version="' + escapeHtml(version) + '"><strong>分析版本 ' + escapeHtml(number) + '</strong><small>' + escapeHtml(relation) + '</small></button>';
+  }
+
+  function renderAnalysisVersionControl() {
+    if (state.stage < scenario.result.stage || !state.versionHistory.length || state.replaying) return '';
+    var historyOptions = state.versionHistory.slice().reverse().map(function renderHistoricalVersion(version) {
+      return renderVersionOption(String(version.number), version.number, '仅查看');
+    }).join('');
+    return '<div class="analysis-version-control" data-version-control><button class="analysis-version-trigger" type="button" data-action="toggle-version-menu" aria-label="查看完整分析版本，最新为分析版本 ' + escapeHtml(state.versionNumber) + '" aria-haspopup="menu" aria-controls="analysis-version-menu" aria-expanded="' + String(state.versionMenuOpen) + '" title="查看完整分析版本">' + icon('history', 15) + '</button>' +
+      '<div class="analysis-version-popover" ' + (state.versionMenuOpen ? '' : 'hidden') + '>' +
+        '<p class="analysis-version-note" id="analysis-version-note">历史版本仅供查看。继续提问时将自动回到最新版本，并基于最新内容回答。</p>' +
+        '<div class="analysis-version-options" id="analysis-version-menu" role="menu" aria-label="完整分析版本" aria-describedby="analysis-version-note">' +
+          renderVersionOption('latest', state.versionNumber, '最新版本') + historyOptions +
+        '</div>' +
+      '</div></div>';
+  }
+
+  function renderAnalysisHeading(label) {
+    return '<div class="assistant-response-heading"><div class="assistant-label">数据智能分析 <span data-primary-label-status>' + escapeHtml(label) + '</span></div></div>';
+  }
+
   function renderAnalysisMessage() {
     var initialComplete = state.stage >= scenario.interaction.stage;
     var finalComplete = state.stage >= scenario.result.stage;
-    var label = finalComplete ? '已完成' : initialComplete ? '正文生成中' : state.replaying ? '深度分析中' : '分析过程';
+    var label = analysisLabelCopy(initialComplete, finalComplete);
+    var sourceSlot = '<div data-source-index-slot ' + (finalComplete ? '' : 'hidden') + '>' + renderSourceIndex() + '</div>';
     var reportSlot = '<div data-report-slot ' + (finalComplete ? '' : 'hidden') + '>' + renderDocuments() + '</div>';
-    return '<article class="message assistant-message research-run-message" aria-label="数据智能分析回复"><span class="avatar assistant">' + icon('sparkles', 17) + '</span><div class="assistant-content"><div class="assistant-label">数据智能分析 <span data-primary-label-status>' + label + '</span></div><div class="thinking-surface">' + renderStreamStatus('primary', '') + renderAnalysisFlow(primaryCapabilities, {
+    return '<article class="message assistant-message research-run-message" aria-label="数据智能分析回复"><span class="avatar assistant">' + icon('sparkles', 17) + '</span><div class="assistant-content">' + renderAnalysisHeading(label) + '<div class="thinking-surface">' + renderStreamStatus('primary', '') + renderAnalysisFlow(activeCapabilities(), {
       group: 'primary',
       thoughtSegments: scenario.analysisRun.thoughtSegments,
       showPlan: true,
       visible: initialComplete,
       complete: initialComplete,
       busy: state.replaying
-    }) + renderThoughtRevision() + '</div>' + renderAnswerBody('result', finalComplete ? renderMarkdown(resultMarkdown()) : '', finalComplete, reportSlot) + '</div></article>';
+    }) + '</div>' + renderAnswerBody('result', finalComplete ? renderMarkdown(resultMarkdown()) : '', finalComplete, sourceSlot + reportSlot) + '</div></article>';
+  }
+
+  function sourceKindMeta(source) {
+    if (source.kind === 'rag') return { label: '内部数据', icon: 'database' };
+    if (source.kind === 'web') return { label: '联网搜索', icon: 'globe-2' };
+    return { label: '上传文件', icon: String(source.title || '').endsWith('.xlsx') ? 'sheet' : 'file-text' };
+  }
+
+  function renderSourceIndex() {
+    var sources = activeSources();
+    if (!sources.length) return '';
+    return '<section class="source-index" aria-labelledby="source-index-title"><header class="source-index-heading"><div><strong id="source-index-title">参考依据</strong><span>' + sources.length + ' 项</span></div></header><ol class="source-index-list">' + sources.map(function sourceIndexItem(source, index) {
+      var meta = sourceKindMeta(source);
+      var label = '预览来源 ' + (index + 1) + '：' + source.title;
+      return '<li><button class="source-index-item" type="button" data-action="open-source" data-source-id="' + escapeHtml(source.id) + '" aria-label="' + escapeHtml(label) + '"><span class="source-index-number">[' + (index + 1) + ']</span><strong class="source-index-title">' + escapeHtml(source.title) + '</strong><small class="source-index-kind">' + icon(meta.icon, 12) + escapeHtml(meta.label) + '</small></button></li>';
+    }).join('') + '</ol></section>';
   }
 
   function renderDocuments() {
     return '<div class="document-list" aria-label="生成的报告">' + activeResult().documents.map(function documentButton(item) {
-      return '<button class="document-button" type="button" data-action="open-document" data-document-id="' + escapeHtml(item.id) + '"><span class="file-icon">' + icon(item.icon, 17) + '</span><span><strong>' + escapeHtml(item.name) + '</strong><small>' + escapeHtml(item.meta) + '</small></span>' + icon('arrow-up-right', 15) + '</button>';
+      return '<button class="document-button" type="button" data-action="open-document" data-document-id="' + escapeHtml(item.id) + '"><span class="file-icon">' + icon(item.icon, 17) + '</span><span><strong>' + escapeHtml(item.name) + '</strong><small>' + escapeHtml(item.size) + '</small></span>' + icon('arrow-up-right', 15) + '</button>';
     }).join('') + '</div>';
   }
 
@@ -749,9 +1130,43 @@
     }).join('');
   }
 
+  function analysisDirectionGuideCopy() {
+    if (state.thoughtRevision && state.replaying && !thoughtEditingAvailable()) return '正在重新生成完整分析，Plan、调用、正文和文件将依次更新。';
+    if (state.replaying && state.stage < scenario.result.stage) return '正文正在生成；若初始判断有误，可以直接调整后重新分析。';
+    return '若初始判断或分析方向有误，可以调整后重新生成完整结果。';
+  }
+
+  function renderAnalysisDirectionGuide() {
+    var regenerating = Boolean(state.thoughtRevision) && state.replaying && !thoughtEditingAvailable() && !viewingHistoricalVersion();
+    var visible = state.activeSessionId === scenario.id && !viewingHistoricalVersion() && (regenerating || thoughtEditingAvailable());
+    var canAdjust = visible && !regenerating && !state.thoughtEditorOpen;
+    return '<aside class="analysis-direction-guide ' + (visible ? 'is-visible' : '') + '" data-analysis-direction-guide role="status" aria-live="polite" ' + (visible ? '' : 'hidden') + '>' +
+      '<span class="analysis-direction-guide-icon">' + icon(regenerating ? 'loader-circle' : 'route', 14, regenerating ? 'spin' : '') + '</span><span class="analysis-direction-guide-copy">' + analysisDirectionGuideCopy() + '</span>' +
+      (canAdjust ? '<button class="analysis-direction-guide-action" type="button" data-action="adjust-analysis-direction" data-edit-origin="composer">调整初始思考</button>' : '') + '</aside>';
+  }
+
+  function renderComposerModeToggle(action, enabled, iconName, label) {
+    var actionLabel = (enabled ? '关闭' : '开启') + label;
+    return '<button class="composer-tool-control composer-tool-toggle' + (enabled ? ' is-active' : '') + '" type="button" data-action="' + escapeHtml(action) + '" aria-pressed="' + String(enabled) + '" aria-label="' + actionLabel + '" title="' + actionLabel + '">' + icon(iconName, 16) + '<span>' + label + '</span></button>';
+  }
+
+  function renderWebSearchToggle() {
+    return renderComposerModeToggle('toggle-web-search', Boolean(state.webSearchEnabled), 'globe-2', '联网搜索');
+  }
+
+  function renderDeepThinkingToggle() {
+    return renderComposerModeToggle('toggle-deep-thinking', Boolean(state.deepThinkingEnabled), 'brain-circuit', '思维链');
+  }
+
+  function renderUploadButton() {
+    var count = state.pendingFiles.length;
+    var label = count ? '已添加 ' + count + ' 个文件，继续添加' : '上传文件';
+    return '<button class="composer-tool-control composer-upload-button' + (count ? ' has-value' : '') + '" type="button" data-action="attach-file" aria-label="' + label + '" title="' + label + '">' + icon('paperclip', 17) + (count ? '<span class="composer-upload-count" aria-hidden="true">' + count + '</span>' : '') + '</button>';
+  }
+
   function renderComposer() {
     var waiting = Boolean(state.waitingFor);
-    return '<footer class="composer-region composer-shell ' + (waiting ? 'awaiting-input' : '') + '"><div id="pending-attachments" class="pending-attachments" ' + (state.pendingFiles.length ? '' : 'hidden') + '>' + renderPendingFileItems() + '</div><div class="composer"><input id="file-input" type="file" multiple hidden accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json,.png,.jpg,.jpeg" /><button class="icon-button" type="button" data-action="attach-file" aria-label="上传文件" title="上传文件">' + icon('paperclip', 20) + '</button><textarea id="composer-input" rows="1" maxlength="3000" aria-label="输入问题或补充信息；Enter 发送，Shift 加 Enter 换行" placeholder="输入问题，或继续补充信息">' + escapeHtml(state.composerDraft) + '</textarea><button class="icon-button primary" type="button" data-action="send-message" aria-label="发送">' + icon('arrow-up', 20) + '</button></div></footer>';
+    return '<footer class="composer-region composer-shell ' + (waiting ? 'awaiting-input' : '') + '">' + renderAnalysisDirectionGuide() + '<div id="pending-attachments" class="pending-attachments" ' + (state.pendingFiles.length ? '' : 'hidden') + '>' + renderPendingFileItems() + '</div><div class="composer"><input id="file-input" type="file" multiple hidden accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json,.png,.jpg,.jpeg" /><div class="composer-input-row"><textarea id="composer-input" rows="1" maxlength="3000" aria-label="输入问题或补充信息；Enter 发送，Shift 加 Enter 换行" placeholder="输入问题，或继续补充信息">' + escapeHtml(state.composerDraft) + '</textarea></div><div class="composer-toolbar" role="group" aria-label="输入操作"><div class="composer-toolbar-start">' + renderUploadButton() + renderWebSearchToggle() + renderDeepThinkingToggle() + '</div><button class="icon-button primary" type="button" data-action="send-message" aria-label="发送">' + icon('arrow-up', 20) + '</button></div></div></footer>';
   }
 
   function resizeComposerTextarea(input) {
@@ -766,7 +1181,6 @@
     closeSessionMenu();
     var settings = options || {};
     state.view = 'chat';
-    state.templateRouteId = null;
     var isScenario = state.activeSessionId === scenario.id;
     var emptyChat = isEmptyChat();
     document.title = DATA.productName;
@@ -778,9 +1192,17 @@
       var input = document.getElementById('composer-input');
       resizeComposerTextarea(input);
       if (settings.scrollToBottom) scrollToLatest(true);
+      if (settings.focusAnalysis) {
+        var analysis = document.querySelector('.research-run-message');
+        if (analysis) analysis.scrollIntoView({ block: 'start' });
+      }
       if (settings.focusComposer && input) {
         input.focus();
         input.setSelectionRange(input.value.length, input.value.length);
+      }
+      if (settings.focusVersionControl) {
+        var versionControl = document.querySelector('[data-initial-thought-header] [data-action="toggle-version-menu"]');
+        if (versionControl) versionControl.focus();
       }
     });
   }
@@ -795,6 +1217,7 @@
   }
 
   function scrollToLatest(force) {
+    if (state.thoughtEditorOpen) return;
     var scroller = document.getElementById('thread-scroll');
     if (!scroller || (!force && !isNearBottom(scroller))) return;
     scroller.scrollTop = scroller.scrollHeight;
@@ -914,6 +1337,7 @@
       state.streamResolve = null;
       streamResolve(false);
     }
+    clearThoughtAttention();
   }
 
   function stopReplay() {
@@ -927,7 +1351,7 @@
     if (!button) return;
     var copy = button.querySelector('[data-replay-copy]');
     button.disabled = state.replaying;
-    if (copy) copy.textContent = state.replaying ? '演示进行中' : '重新演示';
+    if (copy) copy.textContent = state.replaying ? (state.thoughtRevision ? '重新分析中' : '演示进行中') : '重新演示';
     var svg = button.querySelector('svg');
     if (svg) svg.classList.toggle('spin', state.replaying);
   }
@@ -935,6 +1359,66 @@
   function updateAssistantLabel(kind, copy) {
     var label = document.querySelector('[data-' + kind + '-label-status]');
     if (label) label.textContent = copy;
+  }
+
+  function paintAnalysisVersionControl() {
+    var control = document.querySelector('[data-version-control]');
+    if (!control) return;
+    var markup = renderAnalysisVersionControl();
+    if (!markup) {
+      control.remove();
+      return;
+    }
+    control.outerHTML = markup;
+    hydrateIcons(document.querySelector('[data-version-control]'));
+  }
+
+  function paintAnalysisDirectionGuide() {
+    var guide = document.querySelector('[data-analysis-direction-guide]');
+    if (!guide) return;
+    guide.outerHTML = renderAnalysisDirectionGuide();
+    hydrateIcons(document.querySelector('[data-analysis-direction-guide]'));
+  }
+
+  function setAnalysisVersion(nextVersion) {
+    if (state.replaying || state.thoughtEditorOpen || !state.versionHistory.length) return;
+    var requestedVersion = nextVersion === 'latest' ? 'latest' : String(Number(nextVersion));
+    if (requestedVersion !== 'latest' && !state.versionHistory.some(function hasVersion(version) { return String(version.number) === requestedVersion; })) return;
+    state.analysisVersion = requestedVersion;
+    state.versionMenuOpen = false;
+    state.thoughtEditorOpen = false;
+    state.thoughtEditorTarget = null;
+    state.thoughtEditorOrigin = null;
+    if (state.dialog && ['report-preview', 'source-preview', 'search-results'].includes(state.dialog.kind)) {
+      state.dialog = null;
+      renderDialog();
+    }
+    renderShell({ focusVersionControl: true });
+  }
+
+  function toggleVersionMenu(forceOpen) {
+    if (state.replaying || state.thoughtEditorOpen || !state.versionHistory.length) return;
+    state.versionMenuOpen = typeof forceOpen === 'boolean' ? forceOpen : !state.versionMenuOpen;
+    paintAnalysisVersionControl();
+    global.requestAnimationFrame(function focusVersionMenu() {
+      var target = state.versionMenuOpen
+        ? document.querySelector('.analysis-version-option[aria-checked="true"]')
+        : document.querySelector('[data-action="toggle-version-menu"]');
+      if (target) target.focus();
+    });
+  }
+
+  function continueFromLatestAnalysisVersion() {
+    var switchedFromHistory = viewingHistoricalVersion();
+    state.analysisVersion = 'latest';
+    state.versionMenuOpen = false;
+    return switchedFromHistory;
+  }
+
+  function focusInitialThoughtEditor(origin) {
+    state.versionMenuOpen = false;
+    if (viewingHistoricalVersion()) return;
+    setThoughtEditorOpen(true, scenario.interaction.target, origin);
   }
 
   function updateStreamStatus(kind, copy, busy) {
@@ -956,16 +1440,6 @@
     global.requestAnimationFrame(function animateAnswerBody() { body.classList.add('is-visible'); });
   }
 
-  function paintThoughtRevision() {
-    var panel = document.querySelector('[data-thought-revision]');
-    if (!panel) return;
-    var applied = Boolean(state.thoughtRevision) && state.stage >= scenario.interaction.resumeStage;
-    panel.hidden = state.stage < scenario.interaction.stage;
-    panel.classList.toggle('is-applied', applied);
-    panel.innerHTML = renderThoughtRevisionContent();
-    hydrateIcons(panel);
-  }
-
   function paintThoughtSegment(key) {
     var segment = document.querySelector('[data-thought-segment="' + key + '"]');
     var match = String(key || '').match(/^(primary|continuation)-(\d+)$/);
@@ -973,7 +1447,7 @@
     var group = match[1];
     var index = Number(match[2]);
     var editing = key === state.thoughtEditorTarget && state.thoughtEditorOpen;
-    var applied = key === state.thoughtRevisionTarget && Boolean(state.thoughtRevision) && state.stage >= scenario.interaction.resumeStage;
+    var applied = key === activeThoughtRevisionTarget() && Boolean(activeThoughtRevision());
     segment.classList.toggle('is-editing', editing);
     segment.classList.toggle('is-revised', applied);
     segment.innerHTML = renderThoughtSegmentContent(group, thoughtSource(key), index);
@@ -982,17 +1456,10 @@
 
   function paintEditableThoughtSegments() {
     document.querySelectorAll('[data-thought-segment^="primary-"]').forEach(function paintEditable(segment) {
-      if (!segment.hidden) paintThoughtSegment(segment.dataset.thoughtSegment);
+      var key = segment.dataset.thoughtSegment;
+      if (segment.hidden || (state.thoughtEditorOpen && key === state.thoughtEditorTarget)) return;
+      paintThoughtSegment(key);
     });
-  }
-
-  function revealThoughtRevision() {
-    var panel = document.querySelector('[data-thought-revision]');
-    if (!panel) return;
-    panel.hidden = false;
-    paintThoughtRevision();
-    paintEditableThoughtSegments();
-    global.requestAnimationFrame(function animateThoughtRevision() { panel.classList.add('is-visible'); });
   }
 
   function resizeThoughtTextarea(input) {
@@ -1001,28 +1468,60 @@
     input.style.height = Math.max(input.scrollHeight, 92) + 'px';
   }
 
-  function setThoughtEditorOpen(open, key) {
-    var previousTarget = state.thoughtEditorTarget;
-    var nextTarget = scenario.interaction.target;
-    state.thoughtEditorOpen = open;
-    state.thoughtEditorTarget = open ? nextTarget : null;
-    if (open) {
-      var appliedAtTarget = nextTarget === state.thoughtRevisionTarget && Boolean(state.thoughtRevision) && state.stage >= scenario.interaction.resumeStage;
-      state.thoughtDraft = appliedAtTarget ? state.thoughtRevision : thoughtSource(nextTarget);
-    }
-    if (previousTarget && previousTarget !== nextTarget) paintThoughtSegment(previousTarget);
-    paintThoughtSegment(nextTarget);
-    paintThoughtRevision();
-    if (open) {
+  function locateInitialThought(key) {
+    global.requestAnimationFrame(function locateRenderedInitialThought() {
+      var segment = document.querySelector('[data-thought-segment="' + key + '"]');
+      if (!segment) return;
+      clearThoughtAttention();
+      segment.classList.add('is-guided');
+      segment.scrollIntoView({ block: 'start', inline: 'nearest' });
       var input = document.getElementById('thought-inline-input');
       if (input) {
         resizeThoughtTextarea(input);
-        input.focus();
+        input.focus({ preventScroll: true });
         input.setSelectionRange(input.value.length, input.value.length);
       }
-      var segment = document.querySelector('[data-thought-segment="' + nextTarget + '"]');
-      if (segment) segment.scrollIntoView({ block: 'center' });
+      state.thoughtAttentionTimer = global.setTimeout(function removeThoughtAttention() {
+        clearThoughtAttention();
+      }, 1600);
+    });
+  }
+
+  function setThoughtEditorOpen(open, key, origin) {
+    var previousTarget = state.thoughtEditorTarget;
+    var nextTarget = scenario.interaction.target;
+    var previousOrigin = state.thoughtEditorOrigin;
+    state.thoughtEditorOpen = open;
+    state.thoughtEditorTarget = open ? nextTarget : null;
+    state.thoughtEditorOrigin = open ? (origin === 'composer' ? 'composer' : 'thought') : null;
+    if (open) {
+      var appliedAtTarget = nextTarget === activeThoughtRevisionTarget() && Boolean(activeThoughtRevision());
+      state.thoughtDraft = appliedAtTarget ? activeThoughtRevision() : thoughtSource(nextTarget);
     }
+    if (previousTarget && previousTarget !== nextTarget) paintThoughtSegment(previousTarget);
+    paintThoughtSegment(nextTarget);
+    paintAnalysisDirectionGuide();
+    if (!open) {
+      global.requestAnimationFrame(function restoreThoughtEditFocus() {
+        var selector = previousOrigin === 'composer'
+          ? '[data-analysis-direction-guide] [data-action="adjust-analysis-direction"]'
+          : '[data-thought-segment="' + nextTarget + '"] [data-action="adjust-analysis-direction"]';
+        var trigger = document.querySelector(selector);
+        if (trigger) trigger.focus();
+      });
+      return;
+    }
+    if (open) {
+      locateInitialThought(nextTarget);
+    }
+  }
+
+  function clearThoughtAttention() {
+    if (state.thoughtAttentionTimer) global.clearTimeout(state.thoughtAttentionTimer);
+    state.thoughtAttentionTimer = null;
+    document.querySelectorAll('.thought-segment.is-guided').forEach(function clearGuidedThought(segment) {
+      segment.classList.remove('is-guided');
+    });
   }
 
   function applyThoughtRevision() {
@@ -1036,24 +1535,27 @@
     cancelPendingWork();
     state.runId += 1;
     var runId = state.runId;
+    var priorThought = activeThoughtRevision() || thoughtSource(state.thoughtEditorTarget || scenario.interaction.target);
+    state.versionHistory.push(captureResponseVersion());
+    state.versionNumber += 1;
+    state.analysisVersion = 'latest';
+    state.versionMenuOpen = false;
     state.thoughtRevision = text;
+    state.thoughtBaseText = priorThought || scenario.interaction.originalText;
+    state.currentOutcome = createRevisionOutcome(text, state.versionNumber);
     state.thoughtDraft = text;
     state.thoughtRevisionTarget = state.thoughtEditorTarget || scenario.interaction.target;
     state.thoughtEditorOpen = false;
     state.thoughtEditorTarget = null;
-    state.stage = scenario.interaction.resumeStage;
+    state.thoughtEditorOrigin = null;
+    state.stage = 0;
     state.replaying = true;
-    paintEditableThoughtSegments();
-    paintThoughtRevision();
-    var answer = document.querySelector('[data-answer-body="result"]');
-    if (answer) {
-      answer.hidden = true;
-      answer.classList.remove('is-visible');
+    if (state.dialog && ['report-preview', 'source-preview', 'search-results'].includes(state.dialog.kind)) {
+      state.dialog = null;
+      renderDialog();
     }
-    var reportSlot = document.querySelector('[data-report-slot]');
-    if (reportSlot) reportSlot.hidden = true;
+    renderShell({ focusAnalysis: true });
     updateReplayButton();
-    scrollToLatest(true);
     runRevisedReplay(runId);
   }
 
@@ -1070,6 +1572,46 @@
         input.setSelectionRange(input.value.length, input.value.length);
       }
     }
+    paintComposerModeToggle('toggle-web-search', Boolean(state.webSearchEnabled), '联网搜索');
+    paintComposerModeToggle('toggle-deep-thinking', Boolean(state.deepThinkingEnabled), '思维链');
+    paintUploadButton();
+  }
+
+  function paintComposerModeToggle(action, enabled, label) {
+    var control = document.querySelector('[data-action="' + action + '"]');
+    if (!control) return;
+    var actionLabel = (enabled ? '关闭' : '开启') + label;
+    control.classList.toggle('is-active', enabled);
+    control.setAttribute('aria-pressed', String(enabled));
+    control.setAttribute('aria-label', actionLabel);
+    control.setAttribute('title', actionLabel);
+  }
+
+  function setWebSearchEnabled(enabled) {
+    state.webSearchEnabled = Boolean(enabled);
+    paintComposerModeToggle('toggle-web-search', state.webSearchEnabled, '联网搜索');
+  }
+
+  function setDeepThinkingEnabled(enabled) {
+    state.deepThinkingEnabled = Boolean(enabled);
+    paintComposerModeToggle('toggle-deep-thinking', state.deepThinkingEnabled, '思维链');
+  }
+
+  function paintUploadButton() {
+    var control = document.querySelector('[data-action="attach-file"]');
+    if (!control) return;
+    var count = state.pendingFiles.length;
+    var label = count ? '已添加 ' + count + ' 个文件，继续添加' : '上传文件';
+    control.classList.toggle('has-value', count > 0);
+    control.setAttribute('aria-label', label);
+    control.setAttribute('title', label);
+    var countNode = control.querySelector('.composer-upload-count');
+    if (count && !countNode) {
+      control.insertAdjacentHTML('beforeend', '<span class="composer-upload-count" aria-hidden="true">' + count + '</span>');
+    } else if (countNode) {
+      if (count) countNode.textContent = String(count);
+      else countNode.remove();
+    }
   }
 
   function updatePendingFiles() {
@@ -1078,6 +1620,7 @@
     container.innerHTML = renderPendingFileItems();
     container.hidden = state.pendingFiles.length === 0;
     hydrateIcons(container);
+    paintUploadButton();
   }
 
   function processPanel(group) {
@@ -1113,6 +1656,19 @@
     return completed;
   }
 
+  async function revealRevisedInitialThought(runId) {
+    var key = scenario.interaction.target;
+    var segment = document.querySelector('[data-thought-segment="' + key + '"]');
+    if (!segment || runId !== state.runId) return false;
+    segment.hidden = false;
+    segment.classList.add('is-visible', 'is-revised');
+    segment.innerHTML = renderThoughtSegmentContent('primary', scenario.analysisRun.thoughtSegments[0], 0);
+    segment.setAttribute('aria-busy', 'false');
+    hydrateIcons(segment);
+    scrollToLatest(false);
+    return pauseReplay(420, runId);
+  }
+
   function resetExecutionGroup(group) {
     var panel = processPanel(group);
     if (!panel) return;
@@ -1130,6 +1686,7 @@
       row.hidden = true;
       row.classList.remove('running', 'done', 'is-revealed');
       row.classList.add('pending');
+      if (row.matches('[data-action="open-search-results"]')) row.disabled = true;
       var live = row.querySelector('[data-execution-live]');
       var stateCopy = row.querySelector('[data-execution-state-copy]');
       if (live) {
@@ -1145,28 +1702,6 @@
     resetExecutionGroup('primary');
     resetExecutionGroup('continuation');
     updatePlanProgress(1, 'pending');
-  }
-
-  function resetPrimaryForRevision(items) {
-    var panel = processPanel('primary');
-    if (!panel) return;
-    panel.hidden = false;
-    panel.classList.add('is-visible');
-    var plan = panel.querySelector('[data-plan-panel]');
-    if (plan) plan.outerHTML = renderPlanTrack(false, true);
-    items.forEach(function replaceExecutionRow(item) {
-      var row = executionRow('primary', item.id);
-      if (row) row.outerHTML = renderExecutionRow(item, 'primary', false);
-    });
-    panel.querySelectorAll('[data-thought-segment]').forEach(function resetDownstreamThought(segment) {
-      if (segment.dataset.thoughtSegment === scenario.interaction.target) return;
-      segment.hidden = true;
-      segment.innerHTML = '';
-      segment.classList.remove('is-visible', 'is-editing', 'is-revised');
-      segment.setAttribute('aria-busy', 'false');
-    });
-    paintThoughtSegment(scenario.interaction.target);
-    hydrateIcons(panel);
   }
 
   function updatePlanProgress(activeStep, mode) {
@@ -1212,6 +1747,7 @@
     var stateCopy = row.querySelector('[data-execution-state-copy]');
     if (live) live.hidden = nextState !== 'running';
     if (stateCopy) stateCopy.textContent = nextState === 'done' ? '已完成' : nextState === 'running' ? '执行中' : '待执行';
+    if (row.matches('[data-action="open-search-results"]')) row.disabled = nextState !== 'done';
   }
 
   function updateExecutionDetail(group, item, text) {
@@ -1265,7 +1801,9 @@
     state.stage = scenario.interaction.stage;
     state.thoughtEditorOpen = false;
     state.thoughtEditorTarget = null;
-    revealThoughtRevision();
+    state.thoughtEditorOrigin = null;
+    paintEditableThoughtSegments();
+    paintAnalysisDirectionGuide();
     updateAssistantLabel('primary', '正文生成中');
     updateStreamStatus('primary', '', false);
     updateReplayButton();
@@ -1275,11 +1813,18 @@
 
   async function runRevisedReplay(runId) {
     var items = revisedCapabilities();
-    resetPrimaryForRevision(items);
-    updateAssistantLabel('primary', '根据修订重新分析中');
+    resetExecutionPanels();
+    updateAssistantLabel('primary', '重新分析中');
     updateStreamStatus('primary', '正在根据初始思考重新规划分析路径…', true);
-    updatePlanProgress(1, 'running');
+    showProcessPanel('primary');
     if (!await pauseReplay(260, runId)) return;
+    state.stage = 1;
+    if (!await revealRevisedInitialThought(runId)) return;
+    state.stage = 2;
+    showPlanPanel();
+    updatePlanProgress(1, 'running');
+    updateStreamStatus('primary', '', false);
+    if (!await pauseReplay(220, runId)) return;
     if (!await revealThoughtSegment('primary', 1, runId)) return;
     for (var index = 0; index < items.length; index += 1) {
       var item = items[index];
@@ -1289,8 +1834,11 @@
       if (!await revealThoughtSegment('primary', index + 2, runId)) return;
     }
     updatePlanProgress(activePlan().length, 'complete');
+    state.stage = scenario.interaction.stage;
     updateStreamStatus('primary', '', false);
-    paintThoughtRevision();
+    paintEditableThoughtSegments();
+    paintAnalysisDirectionGuide();
+    updateAssistantLabel('primary', '正文生成中');
     scrollToLatest(true);
     await runContinuationReplay(runId);
   }
@@ -1310,9 +1858,22 @@
     resultTarget.setAttribute('aria-busy', 'false');
     state.stage = scenario.result.stage;
     state.replaying = false;
+    state.versionMenuOpen = false;
+    paintAnalysisDirectionGuide();
+    paintEditableThoughtSegments();
     updatePlanProgress(activePlan().length, 'complete');
+    var sourceSlot = document.querySelector('[data-source-index-slot]');
+    if (sourceSlot) {
+      sourceSlot.innerHTML = renderSourceIndex();
+      sourceSlot.hidden = false;
+      hydrateIcons(sourceSlot);
+    }
     var reportSlot = document.querySelector('[data-report-slot]');
-    if (reportSlot) reportSlot.hidden = false;
+    if (reportSlot) {
+      reportSlot.innerHTML = renderDocuments();
+      reportSlot.hidden = false;
+      hydrateIcons(reportSlot);
+    }
     updateAssistantLabel('primary', '已完成');
     updateReplayButton();
     scrollToLatest(true);
@@ -1321,17 +1882,28 @@
 
   function startReplay() {
     stopReplay();
+    state.dialog = null;
+    renderDialog();
     state.view = 'chat';
     state.activeSessionId = scenario.id;
     state.stage = 0;
     state.replaying = true;
     state.waitingFor = null;
     state.composerDraft = '';
+    state.webSearchEnabled = false;
+    state.deepThinkingEnabled = false;
     state.thoughtRevision = '';
     state.thoughtDraft = scenario.interaction.originalText;
     state.thoughtRevisionTarget = scenario.interaction.target;
+    state.thoughtBaseText = scenario.interaction.originalText;
     state.thoughtEditorOpen = false;
     state.thoughtEditorTarget = null;
+    state.thoughtEditorOrigin = null;
+    state.analysisVersion = 'latest';
+    state.versionNumber = 1;
+    state.versionHistory = [];
+    state.currentOutcome = null;
+    state.versionMenuOpen = false;
     renderShell();
     runInitialReplay(state.runId);
   }
@@ -1348,11 +1920,20 @@
     state.stage = scenario.result.stage;
     state.waitingFor = null;
     state.composerDraft = '';
+    state.webSearchEnabled = false;
+    state.deepThinkingEnabled = false;
     state.thoughtRevision = '';
     state.thoughtDraft = scenario.interaction.originalText;
     state.thoughtRevisionTarget = scenario.interaction.target;
+    state.thoughtBaseText = scenario.interaction.originalText;
     state.thoughtEditorOpen = false;
     state.thoughtEditorTarget = null;
+    state.thoughtEditorOrigin = null;
+    state.analysisVersion = 'latest';
+    state.versionNumber = 1;
+    state.versionHistory = [];
+    state.currentOutcome = null;
+    state.versionMenuOpen = false;
     renderShell({ focusComposer: Boolean(focusComposer) });
   }
 
@@ -1403,6 +1984,9 @@
       return;
     }
     var files = state.pendingFiles.map(function copyFile(file) { return Object.assign({}, file); });
+    var webSearchRequested = Boolean(state.webSearchEnabled);
+    var deepThinkingRequested = Boolean(state.deepThinkingEnabled);
+    var switchedFromHistory = continueFromLatestAnalysisVersion();
     var wasEmptyChat = isEmptyChat();
     if (wasEmptyChat) {
       var newId = 'session-' + Date.now() + '-' + (++sessionSequence);
@@ -1411,12 +1995,14 @@
       state.customMessages = [];
       state.sessionMessages[newId] = state.customMessages;
     }
-    var userMessage = { role: 'user', text: text || '请分析这些文件。', files: files };
+    var userMessage = { role: 'user', text: text || '请分析这些文件。', files: files, webSearch: webSearchRequested, deepThinking: deepThinkingRequested };
     state.customMessages.push(userMessage);
     state.pendingFiles = [];
     state.composerDraft = '';
+    state.webSearchEnabled = false;
+    state.deepThinkingEnabled = false;
     var session = activeSession();
-    if (wasEmptyChat) {
+    if (wasEmptyChat || switchedFromHistory) {
       renderShell({ scrollToBottom: true, focusComposer: true });
     } else {
       appendMessageHtml(renderCustomMessage(userMessage));
@@ -1426,7 +2012,13 @@
     }
     global.setTimeout(function simulatedReply() {
       if (!findSession(session.id)) return;
-      var reply = '已收到补充内容。在真实接入中，我会把它并入当前会话上下文，重新判断是否需要调整分析思路或更新后续计划。';
+      var reply = webSearchRequested && deepThinkingRequested
+        ? '已收到补充内容。在真实接入中，我会先深度梳理问题与证据缺口，并通过联网搜索核验最新公开信息后完成分析。'
+        : webSearchRequested
+        ? '已收到补充内容。在真实接入中，我会先通过联网搜索核验最新公开信息，再结合当前会话资料完成分析。'
+        : deepThinkingRequested
+        ? '已收到补充内容。在真实接入中，我会开启思维链，完整梳理判断链与不确定性，再形成分析结果。'
+        : '已收到补充内容。在真实接入中，我会把它并入当前会话上下文，重新判断是否需要调整分析思路或更新后续计划。';
       var replies = state.sessionMessages[session.id];
       if (!replies) return;
       replies.push({ role: 'assistant', text: reply });
@@ -1437,90 +2029,87 @@
     }, 500);
   }
 
-  function navigateToTemplate(id) {
-    global.location.hash = templateRoute(id);
-  }
-
-  function collectTemplatePayload(editor) {
-    return {
-      name: editor.querySelector('[data-template-field="name"]').value.trim(),
-      description: editor.querySelector('[data-template-field="description"]').value.trim(),
-      sections: Array.from(editor.querySelectorAll('[data-template-chapter-row]')).map(function mapChapter(row) {
-        return {
-          title: row.querySelector('[data-template-chapter-name]').value.trim(),
-          includeChart: row.querySelector('[data-template-chapter-chart]').checked
-        };
-      }).filter(function namedChapter(section) { return section.title; })
-    };
-  }
-
-  function saveTemplate() {
-    var editor = document.querySelector('[data-template-editor]');
-    if (!editor) return;
-    var profileId = editor.dataset.templateId;
-    var current = profileId ? findOutputProfile(profileId) : null;
-    var payload = collectTemplatePayload(editor);
-    if (!payload.name || !payload.description || !payload.sections.length) {
-      showToast('请完善名称、描述和至少一个章节');
-      return;
-    }
-    var duplicate = state.outputProfiles.some(function sameName(item) {
-      return item.id !== profileId && item.name.toLowerCase() === payload.name.toLowerCase();
-    });
-    if (duplicate) {
-      showToast('名称需保持唯一');
-      editor.querySelector('[data-template-field="name"]').focus();
-      return;
-    }
-    if (current) {
-      current.name = payload.name;
-      current.description = payload.description;
-      current.sections = payload.sections;
-    } else {
-      var numericIds = state.outputProfiles.map(function profileNumber(item) {
-        var match = String(item.id).match(/(\d+)$/);
-        return match ? Number(match[1]) : 0;
-      });
-      var nextNumber = Math.max.apply(Math, numericIds.concat([0])) + 1;
-      state.outputProfiles.push({
-        id: 'OUT-' + String(nextNumber).padStart(2, '0'),
-        name: payload.name,
-        description: payload.description,
-        sections: payload.sections
-      });
-    }
-    navigateToTemplate();
-    showToast(current ? '模板已更新' : '模板已创建');
-  }
-
-  function requestDeleteTemplate(profile) {
-    if (!profile) return;
-    state.dialog = {
-      kind: 'confirm-template-delete',
-      templateId: profile.id,
-      title: '删除报告模板',
-      body: '<p class="confirm-dialog-copy">确定删除“<strong>' + escapeHtml(profile.name) + '</strong>”？删除后无法恢复。</p>'
-    };
-    renderDialog();
-  }
-
-  function confirmDeleteTemplate() {
-    var profile = state.dialog && findOutputProfile(state.dialog.templateId);
-    if (!profile) return;
-    state.outputProfiles.splice(state.outputProfiles.indexOf(profile), 1);
-    state.dialog = null;
-    renderDialog();
-    renderTemplateShell();
-    showToast('模板已删除');
-  }
-
   function reportBody() {
-    return '<div class="markdown-body report-markdown">' + renderMarkdown(reportMarkdown()) + '</div>';
+    return '<div class="markdown-body report-markdown">' + renderMarkdown(reportMarkdown(), { citationMode: 'document' }) + renderReportReferences() + '</div>';
   }
 
   function openDocument(documentId) {
     var documentItem = activeResult().documents.find(function item(value) { return value.id === documentId; });
     state.dialog = { kind: 'report-preview', title: documentItem ? documentItem.name : '铜采购签约决策分析报告', body: reportBody() };
+    renderDialog();
+  }
+
+  function renderSourceFilePreview(source, showHeading) {
+    var excerpt = escapeHtml(source.excerpt || '');
+    var url = safeReferenceUrl(source.url);
+    var preview = '';
+
+    if (source.id === 'bid-notice') {
+      preview = '<div class="source-document-page"><p class="source-document-eyebrow">中标结果</p><h5>首批供货与中标价</h5><p><mark>' + excerpt + '</mark></p><p>具体供货与签约条件以合同定稿为准。</p></div>';
+    } else if (source.id === 'bid-terms') {
+      preview = '<div class="source-document-page"><p class="source-document-eyebrow">2.1 签约与违约</p><h5>签约期限与违约责任</h5><p><mark>' + excerpt + '</mark></p><p>履约安排以双方最终签署的合同条款为准。</p></div>';
+    } else if (source.id === 'position-ledger') {
+      preview = '<div class="source-sheet-wrap"><table class="source-sheet" aria-label="CU2401 持仓明细"><thead><tr><th>合约</th><th>方向</th><th>手数</th><th>均价</th><th>当前价</th><th>对应吨数</th><th>浮盈</th></tr></thead><tbody><tr class="is-source-row"><td>CU2401</td><td>多头</td><td>400</td><td>68,440</td><td>68,500</td><td>2,000</td><td>12 万元</td></tr></tbody></table></div>';
+    } else if (source.id === 'spot-quotes') {
+      preview = '<div class="source-sheet-wrap"><table class="source-sheet" aria-label="华东现货报价汇总"><thead><tr><th>区域</th><th>有效报盘</th><th>指定规格</th><th>可交付库存</th></tr></thead><tbody><tr class="is-source-row"><td>华东</td><td>&gt; 69,500</td><td>部分断档</td><td>需逐笔确认</td></tr></tbody></table></div>';
+    } else if (source.id === 'internal-rules') {
+      preview = '<div class="source-document-page"><p class="source-document-eyebrow">4.2 套保头寸调整</p><p><mark>' + excerpt + '</mark></p><p class="source-document-eyebrow">7.1 交割审批</p><p>申请交割前，应完成交割品资格、仓库和资金审批。</p></div>';
+    } else if (source.id === 'market-signal') {
+      preview = '<div class="source-web-document">' + (url ? '<a class="source-preview-link" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(url) + icon('external-link', 13) + '</a>' : '') + '<h5>华东现货与仓单观察</h5><p><mark>' + excerpt + '</mark></p><p>品牌、仓库与交割时点仍需以可成交询价核验。</p></div>';
+    } else {
+      preview = '<div class="source-document-page"><p><mark>' + excerpt + '</mark></p></div>';
+    }
+
+    var heading = showHeading ? '<h4 id="source-original-title">原文预览</h4>' : '';
+    var accessibleLabel = showHeading ? ' aria-labelledby="source-original-title"' : ' aria-label="原文预览"';
+    return '<section class="source-original"' + accessibleLabel + '>' + heading + '<article class="source-original-preview source-original-preview--' + escapeHtml(source.kind) + '" data-source-preview>' + preview + '</article></section>';
+  }
+
+  function renderSourceDetail(source) {
+    var hasChunk = source.kind === 'rag' || source.kind === 'web';
+    var chunk = hasChunk
+      ? '<section class="source-chunk" data-source-chunk aria-labelledby="source-chunk-title"><h4 id="source-chunk-title">召回片段</h4><blockquote>' + escapeHtml(source.excerpt) + '</blockquote></section>'
+      : '';
+    return '<div class="source-detail">' + chunk + renderSourceFilePreview(source, hasChunk) + '</div>';
+  }
+
+  function openSource(sourceId) {
+    var source = sourceById(sourceId);
+    if (!source) return;
+    var meta = sourceKindMeta(source);
+    state.dialog = {
+      kind: 'source-preview',
+      sourceId: source.id,
+      title: source.title,
+      sourceKind: meta.label,
+      sourceIcon: meta.icon,
+      body: renderSourceDetail(source)
+    };
+    renderDialog();
+  }
+
+  function renderSearchResults(capability) {
+    var results = capability.searchResults || [];
+    var resultRows = results.map(function renderSearchResult(result) {
+      var url = safeReferenceUrl(result.url);
+      var title = escapeHtml(result.title || result.url || '搜索结果');
+      var rawSnippet = String(result.snippet || '暂无摘要').trim();
+      var snippet = rawSnippet.length > 26 ? rawSnippet.slice(0, 26).trim() + '…' : rawSnippet;
+      var copy = '<span class="search-result-title-line"><span class="search-result-icon" aria-hidden="true">' + icon('globe-2', 17) + '</span><strong>' + title + '</strong></span><span class="search-result-snippet">' + escapeHtml(snippet) + '</span>';
+      return '<li data-search-result>' + (url ? '<a class="search-result-row" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' + copy + '</a>' : '<div class="search-result-row">' + copy + '</div>') + '</li>';
+    }).join('');
+    return '<div class="search-results-summary"><span class="search-results-dot" aria-hidden="true"></span><strong>已识别到 ' + results.length + ' 个相关结果</strong></div><ol class="search-results-list">' + resultRows + '</ol>';
+  }
+
+  function openSearchResults(capabilityId) {
+    var capability = activeCapabilityById(capabilityId);
+    if (!capability || capability.id !== 'web') return;
+    state.dialog = {
+      kind: 'search-results',
+      title: '检索 ' + (capability.searchQuery || '外部市场信息'),
+      eyebrow: '检索结果',
+      body: renderSearchResults(capability)
+    };
     renderDialog();
   }
 
@@ -1535,6 +2124,11 @@
   }
 
   function renderDialog() {
+    var reportPreview = Boolean(state.dialog && state.dialog.kind === 'report-preview');
+    var sourcePreview = Boolean(state.dialog && state.dialog.kind === 'source-preview');
+    var searchResults = Boolean(state.dialog && state.dialog.kind === 'search-results');
+    document.body.classList.toggle('has-report-preview', reportPreview);
+    document.body.classList.toggle('has-source-preview', sourcePreview || searchResults);
     if (!state.dialog) {
       dialogRoot.innerHTML = '';
       if (dialogReturnFocus && dialogReturnFocus.isConnected) dialogReturnFocus.focus();
@@ -1542,28 +2136,55 @@
       return;
     }
     if (!dialogRoot.querySelector('[role="dialog"]')) dialogReturnFocus = document.activeElement;
-    var confirmDelete = state.dialog.kind === 'confirm-template-delete';
     var confirmLogout = state.dialog.kind === 'confirm-logout';
     var confirmSessionDelete = state.dialog.kind === 'confirm-session-delete';
     var renameSession = state.dialog.kind === 'rename-session';
-    var reportPreview = state.dialog.kind === 'report-preview';
-    var footer = renameSession
+    var apiKeyCreate = state.dialog.kind === 'api-key-create';
+    var apiKeySecret = state.dialog.kind === 'api-key-secret';
+    var apiKeyDetail = state.dialog.kind === 'api-key-detail';
+    var confirmApiKeyToggle = state.dialog.kind === 'confirm-api-key-toggle';
+    var confirmApiKeyDelete = state.dialog.kind === 'confirm-api-key-delete';
+    var apiKeyDialog = apiKeyCreate || apiKeySecret || apiKeyDetail || confirmApiKeyToggle || confirmApiKeyDelete;
+    var footer = apiKeyCreate
+      ? '<button class="button" type="button" data-action="close-dialog">取消</button><button class="button primary" type="button" data-action="confirm-create-agent-api-key">创建</button>'
+      : apiKeySecret
+      ? '<button class="button primary" type="button" data-action="complete-agent-api-secret" disabled aria-disabled="true">完成</button>'
+      : apiKeyDetail
+      ? '<button class="button primary" type="button" data-action="close-dialog">完成</button>'
+      : confirmApiKeyToggle
+      ? '<button class="button" type="button" data-action="close-dialog">取消</button><button class="button ' + (state.dialog.nextEnabled ? 'primary' : 'danger') + '" type="button" data-action="confirm-toggle-agent-api-key">确认' + (state.dialog.nextEnabled ? '启用' : '禁用') + '</button>'
+      : confirmApiKeyDelete
+      ? '<button class="button" type="button" data-action="close-dialog">取消</button><button class="button danger" type="button" data-action="confirm-delete-agent-api-key">删除</button>'
+      : renameSession
       ? '<button class="button" type="button" data-action="close-dialog">取消</button><button class="button primary" type="button" data-action="confirm-rename-session">保存</button>'
       : confirmSessionDelete
       ? '<button class="button" type="button" data-action="close-dialog">取消</button><button class="button danger" type="button" data-action="confirm-delete-session">删除</button>'
-      : confirmDelete
-      ? '<button class="button" type="button" data-action="close-dialog">取消</button><button class="button danger" type="button" data-action="confirm-delete-template">删除</button>'
       : confirmLogout
       ? '<button class="button" type="button" data-action="close-dialog">取消</button><button class="button primary" type="button" data-action="confirm-logout">确认退出</button>'
       : '';
-    var closeAction = '<button class="icon-button" type="button" data-action="close-dialog" aria-label="关闭">' + icon('x', 19) + '</button>';
+    var closeAction = state.dialog.dismissible === false ? '' : '<button class="icon-button" type="button" data-action="close-dialog" aria-label="关闭">' + icon('x', 19) + '</button>';
     var headerActions = reportPreview
       ? '<div class="report-drawer__actions"><button class="button" type="button" data-action="export-report">' + icon('download', 15) + '下载报告</button>' + closeAction + '</div>'
       : closeAction;
-    dialogRoot.innerHTML = '<div class="dialog-backdrop' + (reportPreview ? ' report-drawer-backdrop' : '') + '" data-action="close-dialog" role="presentation"><section class="dialog ' + (reportPreview ? 'report-drawer' : 'dialog--confirm') + '" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><header class="dialog-header"><h2 id="dialog-title">' + escapeHtml(state.dialog.title) + '</h2>' + headerActions + '</header><div class="dialog-body"' + (reportPreview ? ' tabindex="0" aria-label="报告内容"' : '') + '>' + state.dialog.body + '</div>' + (reportPreview ? '' : '<footer class="dialog-footer">' + footer + '</footer>') + '</section></div>';
+    if (reportPreview || sourcePreview || searchResults) {
+      var drawerClass = sourcePreview ? ' source-drawer' : searchResults ? ' search-results-drawer' : '';
+      var bodyLabel = sourcePreview ? '来源文件内容' : searchResults ? '检索结果列表' : '报告内容';
+      var titleMarkup = sourcePreview
+        ? '<div class="drawer-file-heading"><h2 id="dialog-title">' + escapeHtml(state.dialog.title) + '</h2><span class="source-kind">' + icon(state.dialog.sourceIcon || 'file-text', 13) + escapeHtml(state.dialog.sourceKind || '来源') + '</span></div>'
+        : searchResults
+        ? '<div class="drawer-search-heading"><span>' + escapeHtml(state.dialog.eyebrow || '检索结果') + '</span><h2 id="dialog-title">' + escapeHtml(state.dialog.title) + '</h2></div>'
+        : '<h2 id="dialog-title">' + escapeHtml(state.dialog.title) + '</h2>';
+      dialogRoot.innerHTML = '<aside class="dialog report-drawer' + drawerClass + '" role="dialog" aria-modal="false" aria-labelledby="dialog-title"><header class="dialog-header">' + titleMarkup + headerActions + '</header><div class="dialog-body" tabindex="0" aria-label="' + bodyLabel + '">' + state.dialog.body + '</div></aside>';
+    } else {
+      dialogRoot.innerHTML = '<div class="dialog-backdrop" data-action="close-dialog" role="presentation"><section class="dialog dialog--confirm' + (apiKeyDialog ? ' dialog--api-key' : '') + '" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><header class="dialog-header"><h2 id="dialog-title">' + escapeHtml(state.dialog.title) + '</h2>' + headerActions + '</header><div class="dialog-body">' + state.dialog.body + '</div><footer class="dialog-footer">' + footer + '</footer></section></div>';
+    }
     hydrateIcons(dialogRoot);
     var closeButton = dialogRoot.querySelector('.dialog-header .icon-button');
     if (closeButton) closeButton.focus();
+    else {
+      var firstField = dialogRoot.querySelector('input:not([disabled]), button:not([disabled])');
+      if (firstField) firstField.focus();
+    }
   }
 
   function showToast(message) {
@@ -1578,6 +2199,21 @@
     showToast('报告下载已开始（演示）');
   }
 
+  function locateReportReference(link) {
+    var href = link.getAttribute('href') || '';
+    if (!href.startsWith('#report-reference-')) return;
+    var target = dialogRoot.querySelector(href);
+    if (!target) return;
+    if (reportReferenceHighlightTimer) global.clearTimeout(reportReferenceHighlightTimer);
+    target.scrollIntoView({ block: 'center' });
+    target.focus({ preventScroll: true });
+    target.classList.add('is-located');
+    reportReferenceHighlightTimer = global.setTimeout(function clearReportReferenceHighlight() {
+      target.classList.remove('is-located');
+      reportReferenceHighlightTimer = null;
+    }, 1800);
+  }
+
   function setUserMenuOpen(open, restoreFocus) {
     var menu = document.querySelector('[data-user-account-menu]');
     if (!menu) return;
@@ -1590,6 +2226,16 @@
   document.addEventListener('click', function handleClick(event) {
     if (!event.target.closest('[data-user-account-menu]')) setUserMenuOpen(false);
     if (!event.target.closest('#session-menu-root, [data-action="session-menu"]')) closeSessionMenu();
+    if (state.versionMenuOpen && !event.target.closest('[data-version-control]')) {
+      state.versionMenuOpen = false;
+      paintAnalysisVersionControl();
+    }
+    var reportCitation = event.target.closest('.report-citation');
+    if (reportCitation) {
+      event.preventDefault();
+      locateReportReference(reportCitation);
+      return;
+    }
     var control = event.target.closest('[data-action]');
     if (!control) return;
     var action = control.dataset.action;
@@ -1619,46 +2265,40 @@
       showToast('演示模式未接入登录，当前会话保持不变');
       return;
     }
-    if (action === 'create-template') {
-      navigateToTemplate('new');
+    if (action === 'create-agent-api-key') {
+      requestCreateAgentApiKey();
       return;
     }
-    if (action === 'edit-template') {
-      navigateToTemplate(control.dataset.templateId);
+    if (action === 'confirm-create-agent-api-key') {
+      confirmCreateAgentApiKey();
       return;
     }
-    if (action === 'delete-template') {
-      requestDeleteTemplate(findOutputProfile(control.dataset.templateId));
+    if (action === 'copy-agent-api-secret') {
+      copyAgentApiSecret();
       return;
     }
-    if (action === 'confirm-delete-template') {
-      confirmDeleteTemplate();
+    if (action === 'complete-agent-api-secret') {
+      completeAgentApiSecret();
       return;
     }
-    if (action === 'cancel-template-edit') {
-      navigateToTemplate();
+    if (action === 'view-agent-api-key') {
+      requestAgentApiKeyDetail(findAgentApiKey(control.dataset.apiKeyId));
       return;
     }
-    if (action === 'save-template') {
-      saveTemplate();
+    if (action === 'toggle-agent-api-key') {
+      requestAgentApiKeyToggle(findAgentApiKey(control.dataset.apiKeyId));
       return;
     }
-    if (action === 'add-template-chapter') {
-      var chapterList = document.querySelector('[data-template-chapter-list]');
-      if (!chapterList) return;
-      chapterList.insertAdjacentHTML('beforeend', renderTemplateChapterRows([{ title: '新章节', includeChart: false }]));
-      hydrateIcons(chapterList.lastElementChild);
-      syncTemplateEditor();
-      chapterList.lastElementChild.querySelector('[data-template-chapter-name]').select();
+    if (action === 'confirm-toggle-agent-api-key') {
+      confirmAgentApiKeyToggle();
       return;
     }
-    if (action === 'move-template-chapter-up' || action === 'move-template-chapter-down' || action === 'remove-template-chapter') {
-      var chapterRow = control.closest('[data-template-chapter-row]');
-      if (!chapterRow) return;
-      if (action === 'move-template-chapter-up' && chapterRow.previousElementSibling) chapterRow.parentNode.insertBefore(chapterRow, chapterRow.previousElementSibling);
-      if (action === 'move-template-chapter-down' && chapterRow.nextElementSibling) chapterRow.parentNode.insertBefore(chapterRow.nextElementSibling, chapterRow);
-      if (action === 'remove-template-chapter' && chapterRow.parentNode.children.length > 1) chapterRow.remove();
-      syncTemplateEditor();
+    if (action === 'delete-agent-api-key') {
+      requestAgentApiKeyDelete(findAgentApiKey(control.dataset.apiKeyId));
+      return;
+    }
+    if (action === 'confirm-delete-agent-api-key') {
+      confirmAgentApiKeyDelete();
       return;
     }
     if (action === 'new-chat') {
@@ -1674,8 +2314,16 @@
       startReplay();
       return;
     }
-    if (action === 'edit-thought') {
-      setThoughtEditorOpen(true, control.dataset.thoughtKey || scenario.interaction.target);
+    if (action === 'adjust-analysis-direction') {
+      focusInitialThoughtEditor(control.dataset.editOrigin);
+      return;
+    }
+    if (action === 'toggle-version-menu') {
+      toggleVersionMenu();
+      return;
+    }
+    if (action === 'select-analysis-version') {
+      setAnalysisVersion(control.dataset.version);
       return;
     }
     if (action === 'cancel-thought-edit') {
@@ -1691,6 +2339,14 @@
       if (fileInput) fileInput.click();
       return;
     }
+    if (action === 'toggle-web-search') {
+      setWebSearchEnabled(!state.webSearchEnabled);
+      return;
+    }
+    if (action === 'toggle-deep-thinking') {
+      setDeepThinkingEnabled(!state.deepThinkingEnabled);
+      return;
+    }
     if (action === 'remove-pending-file') {
       state.pendingFiles.splice(Number(control.dataset.fileIndex), 1);
       updatePendingFiles();
@@ -1704,8 +2360,21 @@
       openDocument(control.dataset.documentId);
       return;
     }
+    if (action === 'open-source') {
+      openSource(control.dataset.sourceId);
+      return;
+    }
+    if (action === 'open-search-results') {
+      openSearchResults(control.dataset.executionId);
+      return;
+    }
     if (action === 'close-dialog') {
-      if (event.target === control || control.closest('.dialog-header') || control.closest('.dialog-footer')) {
+      var requestedClose = event.target === control || control.closest('.dialog-header') || control.closest('.dialog-footer');
+      if (requestedClose && state.dialog && state.dialog.dismissible === false) {
+        showToast('请先复制并安全保存密钥');
+        return;
+      }
+      if (requestedClose) {
         state.dialog = null;
         renderDialog();
       }
@@ -1720,13 +2389,13 @@
   document.addEventListener('focusin', function handleAccountFocus(event) {
     if (!event.target.closest('[data-user-account-menu]')) setUserMenuOpen(false);
     if (!event.target.closest('#session-menu-root, [data-action="session-menu"]')) closeSessionMenu();
+    if (state.versionMenuOpen && !event.target.closest('[data-version-control]')) {
+      state.versionMenuOpen = false;
+      paintAnalysisVersionControl();
+    }
   });
 
   document.addEventListener('change', function handleChange(event) {
-    if (event.target.closest('[data-template-editor]')) {
-      syncTemplateEditor();
-      return;
-    }
     if (event.target.id !== 'file-input') return;
     var files = Array.from(event.target.files || []);
     state.pendingFiles.push.apply(state.pendingFiles, files.map(function normalizeFile(file) {
@@ -1737,10 +2406,6 @@
   });
 
   document.addEventListener('input', function handleInput(event) {
-    if (event.target.closest('[data-template-editor]')) {
-      syncTemplateEditor();
-      return;
-    }
     if (event.target.id === 'thought-inline-input') {
       state.thoughtDraft = event.target.value;
       resizeThoughtTextarea(event.target);
@@ -1765,17 +2430,44 @@
       }
     }
     if (event.target.id === 'session-name' && event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); confirmRenameSession(); return; }
+    if (state.versionMenuOpen) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        toggleVersionMenu(false);
+        return;
+      }
+      var versionButtons = Array.from(document.querySelectorAll('.analysis-version-popover [role="menuitemradio"]'));
+      if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+        event.preventDefault();
+        var versionIndex = versionButtons.indexOf(document.activeElement);
+        var nextVersionIndex = event.key === 'Home' ? 0 : event.key === 'End' ? versionButtons.length - 1 : (versionIndex + (event.key === 'ArrowDown' ? 1 : -1) + versionButtons.length) % versionButtons.length;
+        if (versionButtons[nextVersionIndex]) versionButtons[nextVersionIndex].focus();
+        return;
+      }
+      if (event.key === 'Tab') {
+        global.setTimeout(function closeVersionMenuAfterTab() {
+          if (!document.activeElement || !document.activeElement.closest('[data-version-control]')) {
+            state.versionMenuOpen = false;
+            paintAnalysisVersionControl();
+          }
+        }, 0);
+      }
+    }
     if (event.key === 'Escape' && document.querySelector('[data-action="user-menu"][aria-expanded="true"]')) {
       setUserMenuOpen(false, true);
       return;
     }
     if (event.key === 'Escape' && state.dialog) {
       event.preventDefault();
+      if (state.dialog.dismissible === false) {
+        showToast('请先复制并安全保存密钥');
+        return;
+      }
       state.dialog = null;
       renderDialog();
       return;
     }
-    if (event.key === 'Tab' && state.dialog) {
+    if (event.key === 'Tab' && state.dialog && !['report-preview', 'source-preview', 'search-results'].includes(state.dialog.kind)) {
       var dialog = dialogRoot.querySelector('[role="dialog"]');
       var focusable = dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), a[href], [tabindex="0"]');
       var first = focusable[0];
@@ -1792,59 +2484,10 @@
       event.preventDefault();
       sendMessage();
     }
-    if (event.target.id === 'thought-inline-input' && event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    if (event.target.id === 'agent-api-key-name' && event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) {
       event.preventDefault();
-      applyThoughtRevision();
+      confirmCreateAgentApiKey();
     }
-  });
-
-  function clearTemplateChapterDrag() {
-    document.querySelectorAll('.is-template-dragging, .is-template-drop-before, .is-template-drop-after').forEach(function clearDragClass(row) {
-      row.classList.remove('is-template-dragging', 'is-template-drop-before', 'is-template-drop-after');
-    });
-    state.draggedChapter = null;
-  }
-
-  document.addEventListener('dragstart', function handleTemplateDragStart(event) {
-    var handle = event.target.closest('[data-template-chapter-drag]');
-    if (!handle) return;
-    state.draggedChapter = handle.closest('[data-template-chapter-row]');
-    if (!state.draggedChapter) return;
-    state.draggedChapter.classList.add('is-template-dragging');
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', state.draggedChapter.querySelector('[data-template-chapter-name]').value || '章节');
-    }
-  });
-
-  document.addEventListener('dragover', function handleTemplateDragOver(event) {
-    if (!state.draggedChapter) return;
-    var targetRow = event.target.closest('[data-template-chapter-row]');
-    if (!targetRow || targetRow === state.draggedChapter) return;
-    event.preventDefault();
-    document.querySelectorAll('.is-template-drop-before, .is-template-drop-after').forEach(function clearDrop(row) {
-      row.classList.remove('is-template-drop-before', 'is-template-drop-after');
-    });
-    var rect = targetRow.getBoundingClientRect();
-    targetRow.classList.add(event.clientY > rect.top + rect.height / 2 ? 'is-template-drop-after' : 'is-template-drop-before');
-  });
-
-  document.addEventListener('drop', function handleTemplateDrop(event) {
-    if (!state.draggedChapter) return;
-    var targetRow = event.target.closest('[data-template-chapter-row]');
-    if (targetRow && targetRow !== state.draggedChapter) {
-      event.preventDefault();
-      if (targetRow.classList.contains('is-template-drop-after')) targetRow.parentNode.insertBefore(state.draggedChapter, targetRow.nextElementSibling);
-      else targetRow.parentNode.insertBefore(state.draggedChapter, targetRow);
-    }
-    clearTemplateChapterDrag();
-    syncTemplateEditor();
-  });
-
-  document.addEventListener('dragend', function handleTemplateDragEnd() {
-    if (!state.draggedChapter) return;
-    clearTemplateChapterDrag();
-    syncTemplateEditor();
   });
 
   function handleRoute() {
@@ -1855,11 +2498,9 @@
       selectSession(homeSession.id);
       return;
     }
-    var templateMatch = global.location.hash.match(/^#\/templates(?:\/([^/]+))?$/);
-    if (templateMatch) {
+    if (global.location.hash === agentApiRoute()) {
       stopReplay();
-      try { renderTemplateShell(templateMatch[1] ? decodeURIComponent(templateMatch[1]) : null); }
-      catch (error) { if (!(error instanceof URIError)) throw error; renderUnavailableRoute(); }
+      renderAgentApiShell();
       return;
     }
     var match = global.location.hash.match(/^#\/chat\/(.+)$/);

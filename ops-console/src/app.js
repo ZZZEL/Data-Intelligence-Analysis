@@ -5,6 +5,7 @@
   var router = OpsDemo.core.router;
   var store = OpsDemo.core.store;
   var appRoot = document.getElementById("app");
+  var mountedPage = null;
   var navigation = [
     {
       id: "knowledge",
@@ -19,7 +20,7 @@
       label: "数据接入",
       children: [
         { label: "企业数据", icon: "plug-zap", route: "enterprise-connections" },
-        { label: "检索服务", icon: "search-check", route: "external-information" }
+        { label: "外部信源", icon: "search-check", route: "external-information" }
       ]
     },
     {
@@ -28,14 +29,6 @@
       children: [
         { label: "检索配置", icon: "sliders-horizontal", route: "retrieval-config" },
         { label: "检索测试", icon: "search-check", route: "retrieval-test" }
-      ]
-    },
-    {
-      id: "capabilities",
-      label: "能力管理",
-      children: [
-        { label: "Skill 目录", icon: "sparkles", route: "skills" },
-        { label: "可视化能力", icon: "chart-no-axes-combined", route: "visualizations" }
       ]
     },
     {
@@ -76,7 +69,7 @@
   }
 
   function shell(route, state, pageHtml) {
-    var user = state.meta && state.meta.currentUser ? state.meta.currentUser : { displayName: "运营管理员 A", accessLevel: "L3" };
+    var user = state.meta && state.meta.currentUser ? state.meta.currentUser : { displayName: "运营管理员 A" };
     var avatarLabel = String(user.displayName || "运营管理员").replace(/\s+/g, "").slice(0, 1) || "运";
     return '<div class="app-shell">' +
       '<aside class="sidebar" aria-label="主导航">' +
@@ -86,9 +79,9 @@
         '<nav class="sidebar__nav">' + renderNavigation(route) + "</nav>" +
         '<nav class="sidebar__utilities" aria-label="密钥与消耗">' + renderAccountNavigation(route) + "</nav>" +
         '<div class="sidebar__footer"><div class="sidebar-account-menu" data-account-menu>' +
-          '<button type="button" class="sidebar-account" data-account-trigger aria-expanded="false" title="上游访问等级 ' + dom.escape(user.accessLevel) + '" aria-label="' + dom.escape(user.displayName) + '，打开账户菜单；上游访问等级 ' + dom.escape(user.accessLevel) + '">' +
+          '<button type="button" class="sidebar-account" data-account-trigger aria-expanded="false" aria-label="' + dom.escape(user.displayName) + '，打开账户菜单">' +
             '<span class="sidebar-account__avatar" aria-hidden="true">' + dom.escape(avatarLabel) + '</span><span class="sidebar-account__name">' + dom.escape(user.displayName) + "</span></button>" +
-          '<div class="sidebar-account-popover" role="menu" aria-label="账户操作"><div class="sidebar-account-popover__meta"><span>访问等级</span><strong>' + dom.escape(user.accessLevel) + '</strong></div>' +
+          '<div class="sidebar-account-popover" role="menu" aria-label="账户操作">' +
             '<a class="sidebar-account-popover__action" role="menuitem" href="../user-client/#/chat/copper-decision">' + dom.icon("message-square", 16) + '<span>用户端入口</span></a>' +
             '<button type="button" class="sidebar-account-popover__action" role="menuitem" data-action="logout">' + dom.icon("log-out", 16) + "<span>退出登录</span></button></div>" +
         "</div></div>" +
@@ -102,6 +95,7 @@
   }
 
   function render() {
+    if (mountedPage && typeof mountedPage.unmount === "function") mountedPage.unmount();
     var route = router.parse();
     var state = store.getState();
     var page = OpsDemo.pages[route.page];
@@ -111,6 +105,7 @@
     appRoot.innerHTML = shell(route, state, pageHtml);
     dom.hydrateIcons(appRoot);
     var pageRoot = document.getElementById("page-root");
+    mountedPage = page;
     if (page && typeof page.mount === "function") page.mount(pageRoot, route, state);
     document.title = route.title + " · 数据智能分析工具";
   }
