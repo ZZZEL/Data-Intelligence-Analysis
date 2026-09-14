@@ -1,16 +1,16 @@
 # 预置模型信息
 
-核对日期：2026-09-09。模型名称、参数规模、向量维度和输入长度依据下列官方模型卡与作者说明整理。
+核对日期：2026-09-09。模型名称、向量维度和输入长度依据下列官方模型卡与作者说明整理。
 
 ## LLM 模型
 
-| 展示名称 | 官方模型标识 | 总参数 / 激活参数 | 输入上限 | 能力说明 |
-| --- | --- | --- | --- | --- |
-| DeepSeek-V4-Pro | [deepseek-ai/DeepSeek-V4-Pro](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro) | 1.6T / 49B | 1M tokens | MIT 许可的 MoE 模型；面向推理、代码、Agent 和长上下文任务。 |
-| Qwen3.8-2.4T-A95B | [Qwen/Qwen3.8-2.4T-A95B](https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B) | 2.4T / 95B | 262144 tokens | Qwen3.8 旗舰 MoE 模型；可扩展至 1010000 tokens，面向复杂分析、代码与长时程 Agent 任务。 |
-| Qwen3.5-397B-A17B | [Qwen/Qwen3.5-397B-A17B](https://huggingface.co/Qwen/Qwen3.5-397B-A17B) | 397B / 17B | 262144 tokens | 大规模 MoE 模型；支持多模态理解、推理与工具调用。 |
+| 展示名称 | 官方模型标识 | 输入上限 | 能力说明 |
+| --- | --- | --- | --- |
+| DeepSeek-V4-Pro | [deepseek-ai/DeepSeek-V4-Pro](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro) | 1M tokens | MIT 许可的 MoE 模型；面向推理、代码、Agent 和长上下文任务。 |
+| Qwen3.8-2.4T-A95B | [Qwen/Qwen3.8-2.4T-A95B](https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B) | 262144 tokens | Qwen3.8 旗舰 MoE 模型；可扩展至 1010000 tokens，面向复杂分析、代码与长时程 Agent 任务。 |
+| Qwen3.5-397B-A17B | [Qwen/Qwen3.5-397B-A17B](https://huggingface.co/Qwen/Qwen3.5-397B-A17B) | 262144 tokens | MoE 模型；支持多模态理解、推理与工具调用。 |
 
-页面以总参数判定规模，新增 LLM 时不允许低于 25B。默认回答生成引用 DeepSeek-V4-Pro。
+默认回答生成引用 DeepSeek-V4-Pro。
 
 ## 向量模型
 
@@ -38,6 +38,6 @@
 
 ## Demo 接入信息
 
-模型管理中预置 3 个 LLM、3 个向量模型和 4 个 Rerank 模型。列表显示模型名称、参数规模（仅 LLM）、向量维度（仅向量模型）、连接状态和操作。页面中的 API 地址采用 `model-gateway.internal/models/<型号>/v1/chat/completions`、`/v1/embeddings` 或 `/v1/rerank`，均为本地模拟配置，并非官方 API 地址。连接状态、测试时间、测试结果和脱敏密钥同样为演示数据，不会发起真实模型调用。
+模型管理中预置 3 个 LLM、3 个向量模型和 4 个 Rerank 模型。LLM 与 Rerank 列表显示模型名称、连接状态和操作；向量模型额外显示向量维度。页面中的 API 地址采用 `model-gateway.internal/models/<型号>/v1/chat/completions`、`/v1/embeddings` 或 `/v1/rerank`，均为本地模拟配置，并非官方 API 地址。连接状态、测试时间、测试结果和脱敏密钥同样为演示数据，不会发起真实模型调用。
 
-名称、绑定关系、连接测试、参数规模和向量维度在演示流程中保持联动。
+名称、绑定关系、连接测试和向量维度在演示流程中保持联动。

@@ -2050,22 +2050,6 @@
     return null;
   }
 
-  function readLlmParameterCount(input, current) {
-    if (input && Object.prototype.hasOwnProperty.call(input, "parameterCountB") && input.parameterCountB != null) {
-      var explicit = Number(input.parameterCountB);
-      return Number.isFinite(explicit) && explicit >= 25 ? Math.round(explicit) : null;
-    }
-    var stored = Number(current && current.parameterCountB);
-    if (Number.isFinite(stored) && stored >= 25) return Math.round(stored);
-    return null;
-  }
-
-  function llmParameterLabel(parameterCountB) {
-    return parameterCountB >= 1000
-      ? (parameterCountB / 1000).toFixed(parameterCountB % 1000 === 0 ? 0 : 1) + "T"
-      : parameterCountB + "B";
-  }
-
   function modelConnectionResult(apiConfig, options) {
     var input = options || {};
     var shouldFail = Boolean(input.simulateFailure) || /(?:invalid|offline|fail)/i.test(apiConfig.endpoint);
@@ -2131,8 +2115,6 @@
     var apiConfig = normalizeModelApiConfig(input.apiConfig || input, existingModel && existingModel.apiConfig);
     if (!apiConfig) return null;
     var dimension = kind === "embedding" ? readEmbeddingDimension(input, apiConfig, existingModel) : null;
-    var parameterCountB = kind === "llm" ? readLlmParameterCount(input, existingModel) : null;
-    if (kind === "llm" && parameterCountB == null) return null;
     var connection = modelConnectionResult(apiConfig, input);
     if (!connection.passed) return null;
 
@@ -2158,18 +2140,14 @@
       }
       if (kind === "embedding") {
         model.dimension = Math.round(dimension);
-        delete model.parameterCountB;
         delete model.parameters;
       } else if (kind === "llm") {
-        var parameterChanged = Number(model.parameterCountB) !== parameterCountB;
-        model.parameterCountB = parameterCountB;
-        if (!model.parameters || parameterChanged) model.parameters = llmParameterLabel(parameterCountB);
         delete model.dimension;
         delete model.capability;
+        delete model.parameters;
       } else {
         delete model.dimension;
         delete model.capability;
-        delete model.parameterCountB;
       }
       applyModelConnectionState(model, connection);
 

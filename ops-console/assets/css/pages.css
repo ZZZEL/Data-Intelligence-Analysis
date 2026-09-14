@@ -3515,6 +3515,11 @@
   width: 22%;
 }
 
+.models-table--llm .models-table__col--name,
+.models-table--reranker .models-table__col--name {
+  width: 48%;
+}
+
 .models-groups {
   display: grid;
   gap: 24px;
@@ -3708,8 +3713,7 @@
   grid-template-columns: minmax(0, 1fr) 158px;
 }
 
-.model-editor__dimension,
-.model-editor__parameters {
+.model-editor__dimension {
   min-width: 0;
 }
 
@@ -3761,6 +3765,10 @@
   color: var(--danger);
 }
 
+.model-draft-result--testing {
+  color: var(--text);
+}
+
 .field-with-suffix {
   position: relative;
 }
@@ -3793,36 +3801,39 @@
   table-layout: fixed;
 }
 
-.api-key-table th:first-child {
-  width: 160px;
+.api-key-table th:first-child,
+.api-key-table td:first-child {
+  width: 16%;
 }
 
-.api-key-table th:nth-child(2) {
-  width: 190px;
+.api-key-table th:nth-child(2),
+.api-key-table td:nth-child(2) {
+  width: 22%;
 }
 
-.api-key-table th:nth-child(3) {
-  width: 190px;
+.api-key-table th:nth-child(3),
+.api-key-table td:nth-child(3),
+.api-key-table th:nth-child(4),
+.api-key-table td:nth-child(4) {
+  width: 11%;
 }
 
-.api-key-table th:nth-child(4) {
-  width: 180px;
+.api-key-table th:nth-child(5),
+.api-key-table td:nth-child(5) {
+  width: 9%;
 }
 
-.api-key-table th:nth-child(5) {
-  width: 76px;
+.api-key-table th:nth-child(6),
+.api-key-table td:nth-child(6),
+.api-key-table th:nth-child(7),
+.api-key-table td:nth-child(7) {
+  width: 11%;
 }
 
-.api-key-table th:nth-child(6) {
-  width: 132px;
-}
-
-.api-key-table th:nth-child(7) {
-  width: 128px;
-}
-
-.api-key-table th:last-child {
-  width: 132px;
+.api-key-table th:last-child,
+.api-key-table td:last-child {
+  width: 9%;
+  min-width: 112px;
 }
 
 .api-key-table th:nth-child(6),
@@ -3853,6 +3864,25 @@
 .api-key-table tbody td {
   padding-right: 10px;
   padding-left: 10px;
+}
+
+.api-key-table thead th {
+  font-size: 11px;
+  letter-spacing: 0.2px;
+}
+
+.api-key-table tbody td {
+  white-space: nowrap;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.api-key-table .table-primary,
+.api-key-table .api-key-masked,
+.api-key-table .api-key-secret-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .api-key-masked,

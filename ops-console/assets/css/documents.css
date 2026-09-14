@@ -37,6 +37,32 @@
 .directory-tree {
   display: grid;
   gap: 2px;
+  --directory-tree-row-pad-x: 5px;
+  --directory-tree-row-pad-y: 2px;
+  --directory-tree-toggle-width: 24px;
+  --directory-tree-toggle-height: 28px;
+  --directory-tree-indent-step: 24px;
+  --directory-tree-label-icon-width: 19px;
+  --directory-tree-label-gap: 7px;
+  --directory-tree-label-padding-inline: 1px;
+  --directory-tree-label-padding-horizontal: 6px;
+  --directory-tree-indent-column-width: var(--directory-tree-indent-step);
+  --directory-tree-branch-line-shift: 0px;
+  --directory-tree-branch-line-top: 0px;
+  --directory-tree-branch-line-bottom: 10px;
+  --directory-tree-line-color: #dce2ea;
+  --directory-tree-line-width: 1px;
+  --directory-tree-row-height: 38px;
+  --directory-tree-row-min-height-item: 32px;
+  --directory-tree-label-height: 34px;
+  --directory-tree-label-height-item: 30px;
+  --directory-tree-folder-icon-width: 19px;
+  --directory-tree-count-width: 22px;
+  --directory-tree-name-font-size: 12px;
+  --directory-tree-count-font-size: 11px;
+  --directory-tree-folder-control-size: 19px;
+  --directory-tree-folder-control-height: 30px;
+  --directory-tree-label-padding-end: 6px;
 }
 .directory-tree__node,
 .directory-tree__group {
@@ -46,25 +72,50 @@
   display: grid;
   gap: 2px;
   position: relative;
+  isolation: isolate;
 }
 .directory-tree__group::before {
   position: absolute;
-  top: 0;
-  bottom: 10px;
-  left: calc(21px + var(--directory-parent-depth, 0) * 13px);
-  width: 1px;
-  background: #dce2ea;
+  z-index: 2;
+  pointer-events: none;
+  top: var(--directory-tree-branch-line-top);
+  bottom: var(--directory-tree-branch-line-bottom);
+  left: calc(
+    var(--directory-tree-toggle-width)
+    + (var(--directory-parent-depth, 0) * var(--directory-tree-indent-step))
+    + (var(--directory-tree-indent-step) * 0.5)
+    + var(--directory-tree-branch-line-shift)
+  );
+  width: var(--directory-tree-line-width);
+  background: var(--directory-tree-line-color);
   content: "";
 }
 .directory-tree__row {
+  position: relative;
   display: grid;
   min-width: 0;
-  min-height: 38px;
-  grid-template-columns: 24px minmax(0, 1fr);
+  min-height: var(--directory-tree-row-height);
   align-items: center;
-  padding: 2px 5px 2px calc(4px + var(--directory-depth, 0) * 13px);
+  padding-left: 0;
+  padding-right: var(--directory-tree-row-pad-x);
+  padding-top: var(--directory-tree-row-pad-y);
+  padding-bottom: var(--directory-tree-row-pad-y);
+  grid-template-columns: var(--directory-tree-toggle-width) auto minmax(0, 1fr);
   border-radius: 6px;
   color: var(--text-2);
+}
+.directory-tree__indent-track {
+  display: inline-flex;
+  align-items: stretch;
+  min-width: 0;
+}
+.directory-tree__indent-slot {
+  display: inline-flex;
+  width: var(--directory-tree-indent-column-width);
+  min-width: var(--directory-tree-indent-column-width);
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 .directory-tree__row:hover {
   color: var(--text);
@@ -73,6 +124,7 @@
 .directory-tree__node.is-active > .directory-tree__row {
   color: var(--text);
   background: #fff;
+  z-index: 0;
   box-shadow: 0 1px 4px rgba(16, 24, 40, 0.08);
 }
 .directory-tree__node.is-unavailable:not(.is-active) > .directory-tree__row {
@@ -91,8 +143,8 @@
 }
 .directory-tree__toggle {
   display: inline-flex;
-  width: 24px;
-  height: 28px;
+  width: var(--directory-tree-toggle-width);
+  height: var(--directory-tree-toggle-height);
   align-items: center;
   justify-content: center;
   padding: 0;
@@ -115,11 +167,11 @@
 .directory-tree__label {
   display: grid;
   min-width: 0;
-  height: 34px;
-  grid-template-columns: 19px minmax(0, 1fr) auto;
+  height: var(--directory-tree-label-height);
+  grid-template-columns: var(--directory-tree-label-icon-width) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 7px;
-  padding: 0 6px 0 1px;
+  gap: var(--directory-tree-label-gap);
+  padding: 0 var(--directory-tree-label-padding-horizontal) 0 var(--directory-tree-label-padding-inline);
   text-align: left;
 }
 .directory-tree__label:focus-visible {
@@ -143,13 +195,13 @@
   font: inherit;
 }
 .directory-tree__folder-select {
-  width: 19px;
-  height: 30px;
+  width: var(--directory-tree-folder-control-size);
+  height: var(--directory-tree-folder-control-height);
   cursor: pointer;
 }
 .directory-tree__name--editable {
   width: 100%;
-  height: 30px;
+  height: var(--directory-tree-folder-control-height);
   text-align: left;
   cursor: pointer;
 }
@@ -194,16 +246,16 @@
   box-shadow: 0 1px 4px rgba(16, 24, 40, 0.08);
 }
 .directory-tree__row--item {
-  min-height: 32px;
+  min-height: var(--directory-tree-row-min-height-item);
   color: var(--text-2);
 }
 .directory-tree__row--item:hover {
   background: transparent;
 }
 .directory-tree__label--item {
-  height: 30px;
+  height: var(--directory-tree-label-height-item);
   grid-template-columns: minmax(0, 1fr);
-  padding-right: 6px;
+  padding-right: var(--directory-tree-label-padding-end);
   cursor: default;
 }
 .directory-tree__label--item .directory-tree__name {
@@ -211,6 +263,7 @@
 }
 .directory-tree__folder-icon {
   display: inline-flex;
+  width: var(--directory-tree-folder-icon-width);
   align-items: center;
   justify-content: center;
   color: #667085;
@@ -223,13 +276,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--directory-tree-name-font-size);
   font-weight: 600;
 }
 .directory-tree__count {
-  min-width: 22px;
+  min-width: var(--directory-tree-count-width);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--directory-tree-count-font-size);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -439,6 +492,25 @@
   display: grid;
   gap: 12px;
 }
+
+.upload-folder-picker-inline {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.upload-folder-picker-inline .form-field {
+  margin: 0;
+}
+
+.upload-folder-picker-inline .form-label {
+  margin: 0;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+}
+
 .upload-folder-picker {
   display: block;
   min-width: 0;
@@ -446,6 +518,28 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface, #fff);
+  --directory-tree-row-height: 34px;
+}
+
+.upload-folder-picker--standalone {
+  position: relative;
+  overflow: visible;
+}
+
+.upload-folder-picker--standalone .upload-folder-picker__summary {
+  grid-template-columns: minmax(0, 1fr) 22px;
+}
+
+.upload-folder-picker--standalone .upload-folder-picker__label {
+  display: none;
+}
+
+.upload-folder-picker--standalone .upload-folder-picker__tree {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 2;
 }
 .upload-folder-picker__summary {
   display: grid;
@@ -508,9 +602,6 @@
   padding: 7px;
   border-top: 1px solid var(--border);
   background: #f7f9fc;
-}
-.upload-folder-picker .directory-tree__row {
-  min-height: 34px;
 }
 .import-directory-browser {
   height: 100%;

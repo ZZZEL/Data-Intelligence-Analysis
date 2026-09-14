@@ -118,7 +118,7 @@ assert.match(localDocumentsHtml, /01_供应链管理基础理论手册\.docx[\s\
 assert.match(localDocumentsHtml, /data-local-document-preview="SCM-DOC-01"[^>]*>详情<\/button>[\s\S]*data-local-document-move="SCM-DOC-01"[^>]*>移动<\/button>[\s\S]*data-local-document-delete="SCM-DOC-01"[^>]*>删除<\/button>/, "文档管理行操作应按详情、移动、删除排列");
 assert.doesNotMatch(localDocumentsHtml, /data-local-document-download|>下载<\/button>/, "文档列表不应提供原文件下载快捷操作");
 const localUploadHtml = pages.localDocuments.render({ name: "local-documents", id: "upload", query: { step: "upload" } }, state);
-assert.match(localUploadHtml, /local-upload-stack[\s\S]*<details class="upload-folder-picker" data-upload-folder-picker>[\s\S]*upload-folder-picker__summary[\s\S]*目标位置[\s\S]*data-directory-tree="local-upload-target"[\s\S]*<\/details><label class="file-drop"/, "上传文档页应在上传区域上方使用可折叠的目标位置目录树");
+assert.match(localUploadHtml, /local-upload-stack[\s\S]*<details class="[^"]*\bupload-folder-picker\b[^"]*" data-upload-folder-picker>[\s\S]*upload-folder-picker__summary[\s\S]*目标位置[\s\S]*data-directory-tree="local-upload-target"[\s\S]*<\/details>[\s\S]*<label class="file-drop"/, "上传文档页应在上传区域上方使用可折叠的目标位置目录树");
 assert.doesNotMatch(localUploadHtml, /<details[^>]*data-upload-folder-picker[^>]*\sopen(?:\s|=|>)/, "目标位置目录树应默认收起");
 assert.match(localUploadHtml, /data-directory-node="FOLDER-UNCATEGORIZED"[^>]*class="[^"]*is-active|class="[^"]*is-active[^"]*"[^>]*data-directory-node="FOLDER-UNCATEGORIZED"/, "从根目录上传时应默认选择未分类");
 assert.doesNotMatch(localUploadHtml, /data-directory-item=/, "上传目标目录树应只展示文件夹层级");
@@ -256,14 +256,16 @@ assert.match(modelsHtml, /page-header__top[\s\S]*page-header__actions[\s\S]*data
 assert.doesNotMatch(modelsHtml, /page-header__toolbar|page-header--has-toolbar/, "模型管理不应生成第二层 Header 工具栏");
 assert.doesNotMatch(modelsHtml, /模型 ID|版本 \/ 规格|服务来源|引用配置|查看引用/, "模型列表不应暴露版本、ID、来源或引用关系");
 assert.doesNotMatch(modelsHtml, /model-summary|class="model-identity"[^>]*>[\s\S]*?class="table-primary"[^>]*>[^<]*<\/div>\s*<(?:span|small)/, "模型名称下方不应显示预览说明小字");
-assert.equal((modelsHtml.match(/<colgroup><col class="models-table__col models-table__col--name"><col class="models-table__col models-table__col--dimension"><col class="models-table__col models-table__col--connection"><col class="models-table__col models-table__col--actions"><\/colgroup>/g) || []).length, 3, "LLM、向量与 Rerank 三个表格应复用同一列宽组件契约");
+assert.equal((modelsHtml.match(/<colgroup><col class="models-table__col models-table__col--name"><col class="models-table__col models-table__col--dimension"><col class="models-table__col models-table__col--connection"><col class="models-table__col models-table__col--actions"><\/colgroup>/g) || []).length, 1, "仅向量模型表应使用四列契约");
+assert.equal((modelsHtml.match(/<colgroup><col class="models-table__col models-table__col--name"><col class="models-table__col models-table__col--connection"><col class="models-table__col models-table__col--actions"><\/colgroup>/g) || []).length, 2, "LLM 与 Rerank 表应使用三列契约");
 const llmModelsHtml = modelsHtml.slice(modelsHtml.indexOf('data-model-group="llm"'), modelsHtml.indexOf('data-model-group="embedding"'));
 const embeddingModelsHtml = modelsHtml.slice(modelsHtml.indexOf('data-model-group="embedding"'), modelsHtml.indexOf('data-model-group="reranker"'));
 const rerankerModelsHtml = modelsHtml.slice(modelsHtml.indexOf('data-model-group="reranker"'));
-assert.match(llmModelsHtml, /<th aria-label="参数规模">参数规模<\/th>[\s\S]*DeepSeek-V4-Pro[\s\S]*1\.6T · 激活 49B[\s\S]*Qwen3\.8-2\.4T-A95B[\s\S]*Qwen3\.5-397B-A17B/, "LLM 表应显示三个大参数开源预置及其参数规模");
-assert.match(embeddingModelsHtml, /<th aria-label="向量维度">向量维度<\/th>[\s\S]*<td class="models-table__dimension"><div class="table-primary">[^<]+ 维<\/div><\/td>/, "向量表应在统一第二列展示维度");
-assert.match(rerankerModelsHtml, /<th aria-label="不适用"><\/th>[\s\S]*<td class="models-table__dimension" aria-label="不适用"><\/td>[\s\S]*<td><div class="model-connection">/, "Rerank 表应保留空维度列，使连接状态与其他模型表对齐");
-assert.doesNotMatch(rerankerModelsHtml, />向量维度<\//, "Rerank 表不应显示向量维度标题或数值");
+assert.match(llmModelsHtml, /<th>模型名称<\/th><th>连接状态<\/th><th>操作<\/th>[\s\S]*DeepSeek-V4-Pro[\s\S]*Qwen3\.8-2\.4T-A95B[\s\S]*Qwen3\.5-397B-A17B/, "LLM 表应显示三个预置模型及三列基础信息");
+assert.doesNotMatch(llmModelsHtml, /参数规模|models-table__dimension/, "LLM 表不应展示或预留参数规模列");
+assert.match(embeddingModelsHtml, /<th>向量维度<\/th>[\s\S]*<td class="models-table__dimension"><div class="table-primary">[^<]+ 维<\/div><\/td>/, "向量表应展示向量维度");
+assert.match(rerankerModelsHtml, /<th>模型名称<\/th><th>连接状态<\/th><th>操作<\/th>[\s\S]*<td><div class="model-connection">/, "Rerank 表应使用三列基础信息契约");
+assert.doesNotMatch(rerankerModelsHtml, /向量维度|models-table__dimension/, "Rerank 表不应显示或预留向量维度列");
 assert.equal("promptStrategy" in pages, false, "运营端不应注册 Prompt 与策略页面");
 const consumptionHtml = pages.consumption.render({ name: "consumption", id: null, query: {} }, state);
 const tokenConsumptionSummaryHtml = consumptionHtml.slice(consumptionHtml.indexOf('class="summary-strip consumption-summary '), consumptionHtml.indexOf('<section class="panel consumption-chart-panel"'));
@@ -482,17 +484,17 @@ const expectedEmbeddingPresets = [
   { id: "MODEL-EMBEDDING-LONGTEXT", alias: "bge-m3", dimension: 1024 },
 ];
 const expectedLlmPresets = [
-  { id: "MODEL-LLM-DEEPSEEK-V4-PRO", alias: "DeepSeek-V4-Pro", parameterCountB: 1600 },
-  { id: "MODEL-LLM-QWEN3-8-MAX", alias: "Qwen3.8-2.4T-A95B", parameterCountB: 2400 },
-  { id: "MODEL-LLM-QWEN3-5-LARGE", alias: "Qwen3.5-397B-A17B", parameterCountB: 397 },
+  { id: "MODEL-LLM-DEEPSEEK-V4-PRO", alias: "DeepSeek-V4-Pro" },
+  { id: "MODEL-LLM-QWEN3-8-MAX", alias: "Qwen3.8-2.4T-A95B" },
+  { id: "MODEL-LLM-QWEN3-5-LARGE", alias: "Qwen3.5-397B-A17B" },
 ];
-assert.deepEqual(state.rag.modelCatalog.llmModels.map(({ id, alias, parameterCountB }) => ({ id, alias, parameterCountB })), expectedLlmPresets, "种子 LLM 应提供 DeepSeek V4 和两个大参数 Qwen 开源预置");
+assert.deepEqual(state.rag.modelCatalog.llmModels.map(({ id, alias }) => ({ id, alias })), expectedLlmPresets, "种子 LLM 应提供 DeepSeek V4 和两个 Qwen 预置");
 assert.deepEqual(state.rag.modelCatalog.embeddingModels.map(({ id, alias, dimension }) => ({ id, alias, dimension })), expectedEmbeddingPresets, "种子向量模型应使用确认后的官方名称及默认维度");
 assert.deepEqual(state.rag.modelCatalog.rerankerModels.map((item) => item.alias), ["Qwen3-Reranker-0.6B", "Qwen3-Reranker-4B", "bge-reranker-v2-m3", "jina-reranker-v3.5"], "种子 Rerank 模型应使用指定版本，并保留 Qwen 官方型号的大写 B");
 const allSeedModels = state.rag.modelCatalog.llmModels.concat(state.rag.modelCatalog.embeddingModels, state.rag.modelCatalog.rerankerModels);
 assert.ok(allSeedModels.every((item) => !Object.prototype.hasOwnProperty.call(item, "version")), "官方型号中的版本名应完整保留，数据契约不应另设版本字段");
 assert.ok(allSeedModels.every((item) => item.connectionStatus === "available"), "十个预置模型默认均应可用于演示配置");
-assert.ok(state.rag.modelCatalog.llmModels.every((item) => Number.isFinite(item.parameterCountB) && item.parameterCountB >= 25), "每个 LLM 预置的总参数量都应不低于 25B");
+assert.ok(state.rag.modelCatalog.llmModels.every((item) => !Object.prototype.hasOwnProperty.call(item, "parameterCountB") && !Object.prototype.hasOwnProperty.call(item, "activeParameterCountB") && !Object.prototype.hasOwnProperty.call(item, "parameters")), "LLM 种子数据不应保留参数规模字段");
 assert.ok(state.rag.modelCatalog.embeddingModels.every((item) => Number.isFinite(item.dimension) && item.dimension > 0), "每个向量模型都应明确向量维度");
 assert.ok(state.rag.modelCatalog.rerankerModels.every((item) => !Object.prototype.hasOwnProperty.call(item, "dimension") && !Object.prototype.hasOwnProperty.call(item, "capability")), "Rerank 模型不应保留向量维度、规格或用途字段");
 assert.ok(allSeedModels.every((item) => {
@@ -510,19 +512,13 @@ expectedEmbeddingPresets.forEach((expected) => {
   assert.equal(savedPreset.dimension, expected.dimension, `${preset.alias} 编辑保存后不得回退到其他维度`);
 });
 
-assert.equal(actions.saveRagModel({
-  kind: "llm",
-  name: "过小生成模型",
-  parameterCountB: 14,
-  apiConfig: { endpoint: "model-gateway.internal/v1/small-chat", apiKey: "small-key" },
-}), null, "动作层应拒绝保存总参数量低于 25B 的 LLM");
 const disposableLlm = actions.saveRagModel({
   kind: "llm",
   name: "临时分析生成模型",
-  parameterCountB: 32,
   apiConfig: { endpoint: "model-gateway.internal/v1/disposable-chat", apiKey: "llm-key-C6N8" },
 });
-assert.ok(disposableLlm && disposableLlm.parameterCountB === 32, "25B 以上的 LLM 应能通过统一测试与保存流程");
+assert.ok(disposableLlm, "LLM 应在不提供参数规模时通过统一测试与保存流程");
+assert.equal(Object.prototype.hasOwnProperty.call(disposableLlm, "parameters"), false, "新增 LLM 不应写入参数规模字段");
 assert.equal(actions.deleteRagModel("llm", disposableLlm.id), disposableLlm, "未被回答生成使用的 LLM 应允许删除");
 assert.equal(actions.deleteRagModel("llm", "MODEL-LLM-DEEPSEEK-V4-PRO"), null, "默认回答生成使用的 LLM 不得删除");
 assert.ok(actions.getRagModelUsage("llm", "MODEL-LLM-DEEPSEEK-V4-PRO").some((item) => item.type === "answer_generation"), "LLM 引用保护应返回默认回答生成配置");
@@ -826,7 +822,7 @@ const knowledgeDetailHtml = pages.knowledge.render({ name: "knowledge", id: crea
 assert.match(knowledgeDetailHtml, new RegExp(`data-test-kb="${createdKnowledgeBase.id}"`), "知识库详情页头应提供并带入当前对象的检索测试快捷入口");
 
 const uploadHtml = pages.knowledge.render({ name: "knowledge", id: createdKnowledgeBase.id, query: { onboarding: "1", step: "upload" } }, state);
-assert.match(uploadHtml, /local-upload-stack[\s\S]*<details class="upload-folder-picker" data-upload-folder-picker>[\s\S]*目标位置[\s\S]*data-directory-tree="local-upload-target"[\s\S]*<label class="file-drop"/, "知识库上传应复用文档管理的可折叠目标目录选择器");
+assert.match(uploadHtml, /local-upload-stack[\s\S]*<details class="[^"]*\bupload-folder-picker\b[^"]*" data-upload-folder-picker>[\s\S]*目标位置[\s\S]*data-directory-tree="local-upload-target"[\s\S]*<label class="file-drop"/, "知识库上传应复用文档管理的可折叠目标目录选择器");
 assert.doesNotMatch(uploadHtml, /upload-folder-target|data-upload-folder-target-name/, "知识库上传不应保留单独设计的存放目录栏");
 assert.match(uploadHtml, /data-upload-drop[\s\S]*type="file" multiple[\s\S]*data-upload-file-list/, "导入步骤应提供多选/拖放区和逐文件列表容器");
 assert.match(uploadHtml, /creation-panel__body[\s\S]*creation-source-workspace[\s\S]*creation-actions/, "导入步骤应将可滚动的资料区与底部操作区分离");
@@ -1663,7 +1659,7 @@ assert.ok(state.apiAccess.clients.every((item) => legacyApiFields.every((field) 
 assert.equal(Object.prototype.hasOwnProperty.call(state.apiAccess, "products"), false, "单一检索 API 不应再维护产品选项");
 assert.ok(state.apiAccess.clients.every((item) => item.name && item.apiType === "retrieval" && item.keyMasked.startsWith("sk_retrieval_") && item.createdAt && Object.prototype.hasOwnProperty.call(item, "lastUsedAt") && Array.isArray(item.knowledgeBaseIds) && item.knowledgeBaseIds.length && ["global", "custom"].includes(item.retrievalPolicy?.mode) && !Object.prototype.hasOwnProperty.call(item, "permissionLevel")), "API 密钥列表数据应包含知识库范围和检索策略，但不包含权限等级");
 const apiAccessHtml = pages.apiAccess.render({ name: "api-access", id: null, query: {} }, state);
-assert.match(apiAccessHtml, /<th>名称<\/th>[\s\S]*<th>API Key<\/th>[\s\S]*<th>可访问知识库<\/th>[\s\S]*<th>检索策略<\/th>[\s\S]*<th>状态<\/th>[\s\S]*<th>最近使用时间<\/th>[\s\S]*<th>创建时间<\/th>[\s\S]*<th>操作<\/th>/, "API 密钥列表应回显知识库范围与检索策略");
+assert.match(apiAccessHtml, /<th>名称<\/th>[\s\S]*<th>API Key<\/th>[\s\S]*<th>知识库访问<\/th>[\s\S]*<th>检索策略<\/th>[\s\S]*<th>状态<\/th>[\s\S]*<th>最近使用时间<\/th>[\s\S]*<th>创建时间<\/th>[\s\S]*<th>操作<\/th>/, "API 密钥列表应回显知识库范围与检索策略");
 assert.doesNotMatch(apiAccessHtml, /权限|permissionLevel|api-key-permission/, "API 密钥页面不应展示或配置权限等级");
 assert.doesNotMatch(apiAccessHtml, /data-api-type-filter|data-api-type|<th>API 能力<\/th>|研判 Agent API/, "API 密钥页不应保留类型筛选、能力列或 Agent 选项");
 assert.match(apiAccessHtml, /已启用[\s\S]*已禁用/, "API 密钥状态应统一显示为已启用或已禁用");

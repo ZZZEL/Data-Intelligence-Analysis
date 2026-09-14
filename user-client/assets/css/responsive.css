@@ -160,11 +160,6 @@
     display: block;
   }
 
-  .initial-thought-header-copy span {
-    display: block;
-    margin-top: 2px;
-  }
-
   .main-pane.is-empty-chat {
     padding: 28px 20px;
   }

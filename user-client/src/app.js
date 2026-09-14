@@ -406,7 +406,6 @@
 
   function renderPlanTrack(complete, visible) {
     var planItems = activePlan();
-    var completeCopy = state.stage >= scenario.result.stage ? '分析步骤已完成，正文与报告已生成。' : '分析步骤已完成，正在生成正文。';
     return '<div class="process-section process-plan-section" data-plan-panel ' + (visible ? '' : 'hidden') + '>' +
       '<div class="process-subheading"><strong>分析路径</strong><span data-plan-summary>' + (complete ? planItems.length + ' / ' + planItems.length + ' 已完成' : '等待开始') + '</span></div>' +
       '<ol class="analysis-plan-track" aria-label="分析路径">' + planItems.map(function planItem(item) {
@@ -415,7 +414,6 @@
           '<span class="plan-track-title">' + escapeHtml(item.title) + '</span>' +
         '</li>';
       }).join('') + '</ol>' +
-      '<p class="plan-current-detail"><strong data-plan-current-title>' + (complete ? '分析路径已完成' : '等待开始') + '</strong><span data-plan-current-copy>' + (complete ? completeCopy : '开始后将按顺序展示每一步使用的能力和当前动作。') + '</span></p>' +
     '</div>';
   }
 
@@ -498,31 +496,26 @@
   function initialThoughtHeaderCopy(editing, applied) {
     if (editing) {
       return {
-        title: '正在调整初始思考',
-        hint: ''
+        title: '正在调整初始思考'
       };
     }
     if (state.replaying && state.thoughtRevision) {
       return {
-        title: '正在重新分析',
-        hint: '正在依次更新 Plan、调用、正文与报告。'
+        title: '正在重新分析'
       };
     }
     if (viewingHistoricalVersion()) {
       return {
-        title: '历史版本',
-        hint: '当前仅查看所选历史版本；继续提问时仍基于最新版本。'
+        title: '历史版本'
       };
     }
     if (applied) {
       return {
-        title: '已调整分析方向',
-        hint: 'Plan、调用、正文与报告均已基于本段内容重新生成。'
+        title: '已调整分析方向'
       };
     }
     return {
-      title: '初始思考',
-      hint: '后续 Plan、调用与正文都基于这段判断，可直接修改。'
+      title: '初始思考'
     };
   }
 
@@ -536,8 +529,7 @@
       ? '<button class="thought-revision-cancel" type="button" data-action="cancel-thought-edit">取消</button><button class="thought-revision-submit" type="button" data-action="apply-thought-edit">' + icon('rotate-ccw', 13) + '更新并生成</button>'
       : '';
     var versionControl = editing ? '' : renderAnalysisVersionControl();
-    var hint = copy.hint ? '<span>' + escapeHtml(copy.hint) + '</span>' : '';
-    return '<header class="initial-thought-header' + (editing ? ' is-editing' : '') + '" data-initial-thought-header><div class="initial-thought-header-copy"><strong>' + escapeHtml(copy.title) + '</strong>' + hint + '</div><div class="initial-thought-actions">' + (editing ? editControls : editAction + versionControl) + '</div></header>';
+    return '<header class="initial-thought-header' + (editing ? ' is-editing' : '') + '" data-initial-thought-header><div class="initial-thought-header-copy"><strong>' + escapeHtml(copy.title) + '</strong></div><div class="initial-thought-actions">' + (editing ? editControls : editAction + versionControl) + '</div></header>';
   }
 
   function renderThoughtSegmentContent(group, content, index) {
@@ -574,7 +566,6 @@
       '<div class="execution-copy">' +
         '<div class="execution-call-line"><div class="execution-meta"><strong>' + escapeHtml(item.runName) + '</strong><span class="execution-kind">' + escapeHtml(item.runType) + '</span></div>' +
         '<span class="execution-row-end"><span class="execution-state"><span class="execution-state-dot"></span><span data-execution-state-copy>' + (complete ? '已完成' : '待执行') + '</span></span>' + (opensSearchResults ? '<span class="execution-open-indicator" aria-hidden="true">' + icon('chevron-right', 14) + '</span>' : '') + '</span></div>' +
-        '<p class="execution-live-detail" data-execution-live ' + (complete ? 'hidden' : '') + '></p>' +
       '</div>' +
     '</' + element + '>';
   }
@@ -1425,8 +1416,8 @@
     var status = document.querySelector('[data-stream-status="' + kind + '"]');
     var panel = processPanel(kind);
     if (status) {
-      status.hidden = !copy;
-      status.classList.toggle('is-busy', Boolean(busy));
+      status.hidden = true;
+      status.classList.remove('is-busy');
       var statusCopy = status.querySelector('[data-stream-status-copy]');
       if (statusCopy) statusCopy.textContent = copy || '';
     }
@@ -1722,18 +1713,11 @@
       if (nextState === 'done') doneCount += 1;
     });
     var summary = panel.querySelector('[data-plan-summary]');
-    var title = panel.querySelector('[data-plan-current-title]');
-    var copy = panel.querySelector('[data-plan-current-copy]');
-    var planItem = planItems.find(function findPlanItem(item) { return item.id === activeStep; });
     if (planMode === 'complete') {
       if (summary) summary.textContent = planItems.length + ' / ' + planItems.length + ' 已完成';
-      if (title) title.textContent = '分析路径已完成';
-      if (copy) copy.textContent = state.stage >= scenario.result.stage ? '分析步骤已完成，正文与报告已生成。' : '分析步骤已完成，正在生成正文。';
       return;
     }
     if (summary) summary.textContent = planMode === 'pending' ? '等待开始' : doneCount + ' / ' + planItems.length + ' 已完成';
-      if (title) title.textContent = planMode === 'pending' ? '等待开始' : planMode === 'waiting' ? '等待思考修订：' + planItem.title : '正在执行：' + planItem.title;
-    if (copy) copy.textContent = planMode === 'pending' ? '开始后将按顺序展示每一步使用的能力和当前动作。' : planItem.detail;
   }
 
   function setExecutionRowState(group, item, nextState) {

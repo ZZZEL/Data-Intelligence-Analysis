@@ -344,6 +344,10 @@
   background: transparent;
 }
 
+.status--loading::before {
+  content: none;
+}
+
 .status-dot {
   display: inline-block;
   width: 7px;

@@ -34,10 +34,10 @@ state.apiAccess.clients.forEach((item) => {
 });
 
 const html = page.render({ name: "api-access", id: null, query: {} }, state);
-assert.match(html, /<th>名称<\/th>[\s\S]*<th>API Key<\/th>[\s\S]*<th>可访问知识库<\/th>[\s\S]*<th>检索策略<\/th>[\s\S]*<th>状态<\/th>[\s\S]*<th>最近使用时间<\/th>[\s\S]*<th>创建时间<\/th>[\s\S]*<th>操作<\/th>/, "单表应回显知识库范围和检索策略");
+assert.match(html, /<th>名称<\/th>[\s\S]*<th>API Key<\/th>[\s\S]*<th>知识库访问<\/th>[\s\S]*<th>检索策略<\/th>[\s\S]*<th>状态<\/th>[\s\S]*<th>最近使用时间<\/th>[\s\S]*<th>创建时间<\/th>[\s\S]*<th>操作<\/th>/, "单表应回显知识库范围和检索策略");
 assert.doesNotMatch(html, /权限|permissionLevel|api-key-permission/, "检索 API 密钥页面不应展示或配置权限等级");
 assert.doesNotMatch(html, /data-api-type-filter|data-api-type|API 能力|研判 Agent API/, "单一检索 API 页不应出现能力筛选、能力列或 Agent 选项");
-assert.match(html, /<td><div class="table-primary">全局<\/div><\/td>[\s\S]*<td><div class="table-primary">独立<\/div><\/td>/, "列表应只区分全局与独立检索策略");
+assert.match(html, /<td><div class="table-primary">跟随全局<\/div><\/td>[\s\S]*<td><div class="table-primary">独立配置<\/div><\/td>/, "列表应只区分全局与独立检索策略");
 assert.doesNotMatch(html, /个知识库|api-key-scope-names|api-key-policy-summary|Rerank 开启 · Top K/, "列表不应展开知识库名称或检索参数详情");
 
 const customPolicy = {

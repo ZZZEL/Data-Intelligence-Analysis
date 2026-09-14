@@ -460,7 +460,20 @@
   function renderUploadFolderPicker(state, selectedId, collapsedIds) {
     var folders = (state.documentFolders || []).slice();
     var targetId = uploadFolderId(state, selectedId);
-    return directoryTree.folderPicker({ folders: folders, items: state.fileAssets || [], selectedId: targetId, collapsedIds: collapsedIds || [], scope: "local-upload-target", rootId: "all", rootLabel: "全部文档", rootIcon: "files", ariaLabel: "选择上传文件的存放目录", pathAttrs: "data-upload-folder-path", treeAttrs: "data-upload-folder-tree" });
+    return directoryTree.folderPicker({
+      folders: folders,
+      items: state.fileAssets || [],
+      selectedId: targetId,
+      collapsedIds: collapsedIds || [],
+      scope: "local-upload-target",
+      rootId: "all",
+      rootLabel: "全部文档",
+      rootIcon: "files",
+      label: "",
+      ariaLabel: "选择上传文件的存放目录",
+      pathAttrs: "data-upload-folder-path",
+      treeAttrs: "data-upload-folder-tree"
+    });
   }
 
   function renderKnowledgeUpload(state, kb, isOnboarding, isExistingImport, route) {
@@ -476,7 +489,7 @@
     var existing = kb.isLocalDocumentFlow ? "" : '<section class="import-source-pane import-resource-pane" data-import-resource-pane><div class="document-directory-browser import-directory-browser" data-import-source-browser><aside class="document-directory-sidebar" aria-label="文档管理文件目录" data-import-local-directory><div data-import-local-directory-list></div></aside><aside class="document-directory-sidebar" aria-label="企业数据文件目录" data-import-enterprise-directory hidden><div data-import-enterprise-directory-list></div></aside><div class="document-directory-content import-resource-list"><div class="document-directory-context" data-import-directory-path></div><div class="table-wrap"><table class="data-table import-resource-table"><colgroup><col class="import-resource-table__col-check"><col class="import-resource-table__col-name"><col class="import-resource-table__col-size"><col class="import-resource-table__col-status"><col class="import-resource-table__col-updated"><col class="import-resource-table__col-action"></colgroup><thead><tr><th class="import-resource-table__check"><span class="sr-only">选择</span></th><th>名称</th><th>大小</th><th>状态</th><th>更新时间</th><th class="import-resource-table__action-heading"><span class="sr-only">预览</span></th></tr></thead><tbody data-import-resource-rows></tbody></table></div></div></div></section>';
     var fileDrop = '<label class="file-drop" for="kb-upload-files" data-upload-drop>' + dom.icon("file-up", 30) + '<strong>点击选择文件，或将文件拖入此处</strong><span>支持 PDF、图片、Word、PPT、Excel 和 TXT，可多选</span><span class="btn btn--secondary file-drop__choose">选择文件</span><input id="kb-upload-files" class="sr-only" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt" data-upload-files /></label>';
     var initialFolderId = uploadFolderId(state, route && route.query && route.query.folder || "FOLDER-UNCATEGORIZED");
-    var uploadBody = '<div class="local-upload-stack"><details class="upload-folder-picker" data-upload-folder-picker>' + renderUploadFolderPicker(state, initialFolderId, []) + "</details>" + fileDrop + "</div>";
+    var uploadBody = '<div class="local-upload-stack"><div class="upload-folder-picker-inline"><div class="form-field"><label class="form-label">目标位置</label></div><details class="upload-folder-picker upload-folder-picker--standalone" data-upload-folder-picker>' + renderUploadFolderPicker(state, initialFolderId, []) + "</details></div>" + fileDrop + "</div>";
     var upload = '<section class="import-source-pane" data-import-source-pane="upload"' + (kb.isLocalDocumentFlow ? "" : " hidden") + ">" + uploadBody + '<div class="upload-file-list" data-upload-file-list hidden></div></section>';
     var steps = kb.isLocalDocumentFlow ? renderCreationSteps(1, true) : renderCreationSteps(2, false);
     return dom.pageHeader(headerOptions) + '<div class="page-content creation-page"><div class="creation-page__top">' + steps + '</div><section class="panel creation-panel"><div class="panel__body creation-panel__body">' + tabs + '<div class="creation-source-workspace">' + existing + upload + '</div>' +

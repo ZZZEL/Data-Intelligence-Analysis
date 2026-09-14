@@ -239,30 +239,22 @@
       return true;
     }
 
-    function addTertiaryAction(label, attrs, onClick) {
-      var scope = document.getElementById("overlay-root");
-      var footer = scope && scope.querySelector(".dialog__footer");
-      if (!footer) return;
-      var action = document.createElement("button");
-      action.type = "button";
-      action.className = "btn btn--text retrieval-unsaved-dialog__discard";
-      action.textContent = label;
-      Object.keys(attrs || {}).forEach(function each(name) { action.setAttribute(name, attrs[name]); });
-      action.addEventListener("click", onClick);
-      footer.insertBefore(action, footer.firstChild);
-    }
-
-    function confirmUnsavedNavigation(transition) {
+    function confirmUnsavedNavigation(transition, options) {
+      var opts = options || {};
+      var onConfirm = typeof opts.onConfirm === "function" ? opts.onConfirm : (function defaultConfirm() {
+        if (!saveSettings()) return false;
+        if (transition && typeof transition.retry === "function") {
+          transition.retry();
+          return true;
+        }
+        return false;
+      });
       overlay.open({
         title: "有未更新的配置",
         body: '<div class="retrieval-unsaved-dialog"><p>当前修改尚未更新。离开后，未保存的内容将丢失。</p></div>',
         cancelLabel: "继续编辑",
-        confirmLabel: "更新配置并离开",
-        onConfirm: function confirmUpdateAndLeave() {
-          if (!saveSettings()) return false;
-          transition.retry();
-          return true;
-        }
+        confirmLabel: opts.confirmLabel || "更新配置并离开",
+        onConfirm: onConfirm,
       });
       return false;
     }
@@ -311,27 +303,12 @@
         return;
       }
       if (!validateRetrievalSettings(root)) return;
-      overlay.open({
-        title: "测试当前修改",
-        body: '<div class="retrieval-unsaved-dialog"><p>这次修改还没有更新到全局配置。你可以只用于本次测试，或先更新配置再测试。</p></div>',
-        cancelLabel: "继续编辑",
-        confirmLabel: "更新配置并测试",
-        onConfirm: function updateAndTest() {
-          if (!saveSettings()) return false;
-          router.navigate("retrieval-test");
-          return true;
-        }
-      });
-      addTertiaryAction("仅测试本次修改", { "data-preview-retrieval-settings": "" }, function previewDraft() {
-        var draft = actions.previewRetrievalSettings(retrievalSettingsPayload(root));
-        if (!draft) {
-          overlay.toast("无法开始测试", "请先检查当前配置。", "warning");
-          return;
-        }
-        dirty = false;
-        releaseDirtyGuard();
-        router.navigate("retrieval-test?settings=preview");
-      });
+      var draft = actions.previewRetrievalSettings(retrievalSettingsPayload(root));
+      if (!draft) {
+        overlay.toast("无法进入检索测试", "请检查 Top K、相关度阈值和 Rerank 模型连接状态。", "warning");
+        return;
+      }
+      router.navigate("retrieval-test?settings=preview");
     });
     syncRetrievalSettingsControls(root);
     syncDirtyState();

@@ -180,6 +180,9 @@ for (const property of ['overflow:\\s*hidden', 'text-overflow:\\s*ellipsis', 'wh
 }
 
 assert.doesNotMatch(files.app, /composer-tool-check/, 'selected composer modes must not render a redundant check icon');
+assert.doesNotMatch(files.app, /plan-current-detail|data-plan-current-copy|execution-live-detail|data-execution-live(?:=|\s)/, 'the analysis flow must not render redundant realtime explanatory copy');
+assert.doesNotMatch(files.app, /copy\.hint|initial-thought-header-copy[^<]*<span/, 'the initial-thought header must not render a secondary explanatory hint');
+assert.doesNotMatch(files.css, /\.plan-current-detail|\.execution-live-detail|\.initial-thought-header-copy span/, 'removed realtime copy must not retain dedicated visual styles');
 assert.match(files.app, /function reportMarkdown\(\)[\s\S]*?return \[/, 'generated report Markdown must retain semantic citation markers for static rendering');
 assert.match(files.app, /renderMarkdown\(reportMarkdown\(\), \{ citationMode: 'document' \}\) \+ renderReportReferences\(\)/, 'report preview must render static linked citations and its References list together');
 assert.match(files.app, /data-action="open-source"[^>]*data-source-id=/, 'inline citations and source-index rows must identify the source they open');

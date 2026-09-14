@@ -94,8 +94,27 @@
 
   function connectionCell(model) {
     return '<div class="model-connection">' +
-      dom.status(connectionLabel(model), connectionTone(model), true) +
-      '<span class="table-secondary">' + dom.escape(displayTime(lastTestAt(model), "尚未测试")) + "</span></div>";
+      '<span data-model-connection-status>' + dom.status(connectionLabel(model), connectionTone(model), true) + '</span>' +
+      '<span class="table-secondary" data-model-connection-time>' + dom.escape(displayTime(lastTestAt(model), "尚未测试")) + "</span></div>";
+  }
+
+  function setModelConnectionState(row, model, options) {
+    if (!row) return;
+    var status = row.querySelector("[data-model-connection-status]");
+    var time = row.querySelector("[data-model-connection-time]");
+    if (!status || !time) return;
+    options = options || {};
+    var statusText = options.hasOwnProperty("label") ? options.label : connectionLabel(model);
+    var tone = options.hasOwnProperty("tone") ? options.tone : connectionTone(model);
+    if (options.loading) {
+      status.innerHTML = '<span class="status status--' + dom.escape(tone) + ' status--plain status--loading">' + dom.icon("loader-circle", 13, "is-spinning") + '<span>' + dom.escape(statusText) + "</span></span>";
+    } else {
+      status.innerHTML = dom.status(statusText, tone, true);
+    }
+    dom.hydrateIcons(status);
+    time.textContent = options.hasOwnProperty("secondary")
+      ? options.secondary
+      : time.textContent;
   }
 
   function rowActions(kind, model) {
@@ -107,23 +126,14 @@
     "</div>";
   }
 
-  function parameterScale(model) {
-    if (model && model.parameters) return String(model.parameters);
-    var count = Number(model && model.parameterCountB);
-    if (!Number.isFinite(count) || count < 1) return "—";
-    return count >= 1000 ? (count / 1000).toFixed(count % 1000 === 0 ? 0 : 1) + "T" : dom.formatNumber(count) + "B";
-  }
-
   function modelRows(group) {
     return group.models.map(function row(model) {
-      var metricCell = group.kind === "embedding"
+      var dimensionCell = group.kind === "embedding"
         ? '<td class="models-table__dimension"><div class="table-primary">' + dom.escape(model.dimension ? dom.formatNumber(model.dimension) + " 维" : "—") + "</div></td>"
-        : group.kind === "llm"
-          ? '<td class="models-table__dimension"><div class="table-primary">' + dom.escape(parameterScale(model)) + "</div></td>"
-          : '<td class="models-table__dimension" aria-label="不适用"></td>';
+        : "";
       return '<tr data-model-row data-model-kind="' + group.kind + '" data-model-id="' + dom.escape(model.id) + '">' +
         '<td><div class="model-name-cell"><span class="model-icon">' + dom.icon(group.icon, 16) + '</span><div class="model-identity"><div class="table-primary">' + dom.escape(text(model.alias || model.name, "未命名模型")) + '</div></div></div></td>' +
-        metricCell +
+        dimensionCell +
         '<td>' + connectionCell(model) + "</td>" +
         '<td>' + rowActions(group.kind, model) + "</td>" +
       "</tr>";
@@ -131,12 +141,11 @@
   }
 
   function groupTable(group) {
-    var metricHeader = group.kind === "embedding" ? "向量维度" : group.kind === "llm" ? "参数规模" : "";
-    var secondaryAriaLabel = metricHeader || "不适用";
-    var columns = '<colgroup><col class="models-table__col models-table__col--name"><col class="models-table__col models-table__col--dimension"><col class="models-table__col models-table__col--connection"><col class="models-table__col models-table__col--actions"></colgroup>';
+    var hasDimension = group.kind === "embedding";
+    var columns = '<colgroup><col class="models-table__col models-table__col--name">' + (hasDimension ? '<col class="models-table__col models-table__col--dimension">' : "") + '<col class="models-table__col models-table__col--connection"><col class="models-table__col models-table__col--actions"></colgroup>';
     return '<section class="models-group" data-model-group="' + group.kind + '">' +
       '<div class="models-group__header"><div class="models-group__identity"><span class="models-group__icon">' + dom.icon(group.icon, 17) + '</span><h2>' + group.title + '</h2><span class="models-group__count" data-model-group-count>' + group.models.length + "</span></div></div>" +
-      '<div class="models-group__surface"><div class="table-wrap"><table class="data-table models-table models-table--' + group.kind + '">' + columns + '<thead><tr><th>模型名称</th><th aria-label="' + dom.escape(secondaryAriaLabel) + '">' + metricHeader + "</th><th>连接状态</th><th>操作</th></tr></thead><tbody>" + modelRows(group) + "</tbody></table></div>" +
+      '<div class="models-group__surface"><div class="table-wrap"><table class="data-table models-table models-table--' + group.kind + '">' + columns + '<thead><tr><th>模型名称</th>' + (hasDimension ? '<th>向量维度</th>' : "") + '<th>连接状态</th><th>操作</th></tr></thead><tbody>' + modelRows(group) + "</tbody></table></div>" +
       '<div class="models-group__empty" data-model-group-empty hidden>没有匹配的' + group.title + "</div></div>" +
     "</section>";
   }
@@ -151,7 +160,6 @@
       kind: kind,
       name: scope.querySelector('[data-model-field="name"]').value.trim(),
       dimension: null,
-      parameterCountB: kind === "llm" ? Number(scope.querySelector('[data-model-field="parameterCountB"]').value) : null,
       endpoint: scope.querySelector('[data-model-field="endpoint"]').value.trim(),
       apiKey: apiKeyUnchanged ? "" : apiKeyValue,
       apiKeyUnchanged: apiKeyUnchanged,
@@ -162,7 +170,6 @@
 
   function validatePayload(payload, current) {
     if (!payload.name || !payload.endpoint) return "请填写模型名称和 API 地址。";
-    if (payload.kind === "llm" && (!Number.isFinite(payload.parameterCountB) || payload.parameterCountB < 25)) return "LLM 总参数量需为 25B 或以上。";
     if (!payload.apiKey && !payload.apiKeyUnchanged) return "请填写 API Key。";
     return "";
   }
@@ -171,7 +178,9 @@
     var result = scope.querySelector("[data-model-draft-result]");
     if (!result) return;
     result.className = "model-draft-result model-draft-result--" + status;
-    result.innerHTML = status === "success"
+    result.innerHTML = status === "testing"
+      ? dom.icon("loader-circle", 15, "is-spinning") + '<span>' + dom.escape(message || "测试中") + "</span>"
+      : status === "success"
       ? dom.icon("circle-check", 15) + '<span>' + dom.escape(message || "连接正常") + "</span>"
       : status === "failed"
         ? dom.icon("circle-x", 15) + '<span>' + dom.escape(message || "连接失败，请检查 API 地址和 API Key。") + "</span>"
@@ -183,20 +192,14 @@
   function toggleTypeFields(scope) {
     var selected = scope.querySelector('[name="model-kind"]:checked');
     var dimension = scope.querySelector("[data-model-dimension-field]");
-    var parameter = scope.querySelector("[data-model-parameter-field]");
     var primaryRow = scope.querySelector(".model-editor__primary-row");
     var endpoint = scope.querySelector('[data-model-field="endpoint"]');
     var isEmbedding = Boolean(selected && selected.value === "embedding");
-    var isLlm = Boolean(selected && selected.value === "llm");
     if (dimension) {
       dimension.hidden = !isEmbedding;
       dimension.setAttribute("aria-hidden", isEmbedding ? "false" : "true");
     }
-    if (parameter) {
-      parameter.hidden = !isLlm;
-      parameter.setAttribute("aria-hidden", isLlm ? "false" : "true");
-    }
-    if (primaryRow) primaryRow.classList.toggle("has-metric", isEmbedding || isLlm);
+    if (primaryRow) primaryRow.classList.toggle("has-metric", isEmbedding);
     if (endpoint && selected) endpoint.placeholder = selected.value === "embedding"
       ? "model-gateway.internal/v1/embeddings"
       : selected.value === "llm"
@@ -209,6 +212,7 @@
   }
 
   function runDraftTest(scope, current, button) {
+    if (button.dataset.testing === "true") return;
     var payload = modelPayload(scope, current);
     var validation = validatePayload(payload, current);
     if (validation) {
@@ -220,17 +224,14 @@
       return { control: control, disabled: control.disabled };
     });
     lockedControls.forEach(function lock(item) { item.control.disabled = true; });
-    button.disabled = true;
-    button.innerHTML = dom.icon("loader-circle", 15, "is-spinning") + "测试中";
-    dom.hydrateIcons(button);
+    button.dataset.testing = "true";
+    setDraftTestState(scope, "testing", "连接测试中");
     window.setTimeout(function finish() {
       if (!button.isConnected) return;
       if (JSON.stringify(modelPayload(scope, current)) !== signature) {
         lockedControls.forEach(function unlock(item) { item.control.disabled = item.disabled; });
-        button.disabled = false;
-        button.innerHTML = dom.icon("plug-zap", 15) + "测试连接";
+        button.removeAttribute("data-testing");
         setDraftTestState(scope, "idle");
-        dom.hydrateIcons(button);
         return;
       }
       var result = invoke("testRagModelDraft", [payload]);
@@ -243,9 +244,7 @@
         ? (payload.kind === "embedding" && result.dimension ? "连接正常，已读取 " + dom.formatNumber(result.dimension) + " 维" : "连接正常")
         : "连接失败，请检查 API 地址和 API Key。");
       lockedControls.forEach(function unlock(item) { item.control.disabled = item.disabled; });
-      button.disabled = false;
-      button.innerHTML = dom.icon("plug-zap", 15) + "测试连接";
-      dom.hydrateIcons(button);
+      button.removeAttribute("data-testing");
     }, 420);
   }
 
@@ -259,9 +258,8 @@
       '<label class="model-type-card' + (kind === "embedding" ? " is-selected" : "") + '" data-model-kind-card><input type="radio" name="model-kind" value="embedding" required aria-required="true"' + (kind === "embedding" ? " checked" : "") + locked + '><span class="model-type-card__icon">' + dom.icon("binary", 18) + '</span><span><strong>向量模型</strong><small>将文本转换为语义向量</small></span></label>' +
       '<label class="model-type-card' + (kind === "reranker" ? " is-selected" : "") + '" data-model-kind-card><input type="radio" name="model-kind" value="reranker" required aria-required="true"' + (kind === "reranker" ? " checked" : "") + locked + '><span class="model-type-card__icon">' + dom.icon("list-filter", 18) + '</span><span><strong>Rerank 模型</strong><small>对召回结果重新排序</small></span></label>' +
       "</div></fieldset>" +
-      '<div class="model-editor__fields"><div class="model-editor__primary-row' + (kind === "embedding" || kind === "llm" ? " has-metric" : "") + '"><div class="form-field">' + dom.requiredLabel("模型名称", { forId: "model-name" }) + '<input id="model-name" class="field" maxlength="48" value="' + dom.escape(text(model.alias || model.name, "")) + '" placeholder="输入模型名称" required aria-required="true" data-model-field="name"></div>' +
-      '<div class="form-field model-editor__dimension" data-model-dimension-field aria-hidden="' + (kind === "embedding" ? "false" : "true") + '"' + (kind === "embedding" ? "" : " hidden") + '><label class="form-label" for="model-dimension">向量维度</label><input id="model-dimension" class="field field--readonly" type="text" inputmode="numeric" value="' + dom.escape(model.dimension ? String(model.dimension) : "") + '" readonly data-model-field="dimension"></div>' +
-      '<div class="form-field model-editor__parameters" data-model-parameter-field aria-hidden="' + (kind === "llm" ? "false" : "true") + '"' + (kind === "llm" ? "" : " hidden") + '>' + dom.requiredLabel("总参数量", { forId: "model-parameters" }) + '<div class="field-with-suffix"><input id="model-parameters" class="field" type="number" inputmode="numeric" min="25" step="1" value="' + dom.escape(model.parameterCountB ? String(model.parameterCountB) : "") + '" placeholder="至少 25" required aria-required="true" data-model-field="parameterCountB"><span>B</span></div></div></div>' +
+      '<div class="model-editor__fields"><div class="model-editor__primary-row' + (kind === "embedding" ? " has-metric" : "") + '"><div class="form-field">' + dom.requiredLabel("模型名称", { forId: "model-name" }) + '<input id="model-name" class="field" maxlength="48" value="' + dom.escape(text(model.alias || model.name, "")) + '" placeholder="输入模型名称" required aria-required="true" data-model-field="name"></div>' +
+      '<div class="form-field model-editor__dimension" data-model-dimension-field aria-hidden="' + (kind === "embedding" ? "false" : "true") + '"' + (kind === "embedding" ? "" : " hidden") + '><label class="form-label" for="model-dimension">向量维度</label><input id="model-dimension" class="field field--readonly" type="text" inputmode="numeric" value="' + dom.escape(model.dimension ? String(model.dimension) : "") + '" readonly data-model-field="dimension"></div></div>' +
       '<div class="form-field form-field--full">' + dom.requiredLabel("API 地址", { forId: "model-endpoint" }) + '<input id="model-endpoint" class="field" value="' + dom.escape(apiEndpoint(model) === "未配置" ? "" : apiEndpoint(model)) + '" placeholder="model-gateway.internal/v1/embeddings" required aria-required="true" data-model-field="endpoint"></div>' +
       '<div class="form-field form-field--full">' + dom.requiredLabel("API Key", { forId: "model-key" }) + '<input id="model-key" class="field" type="text" autocomplete="off" value="' + dom.escape(keyValue) + '" placeholder="输入 API Key" required aria-required="true" data-model-field="apiKey"></div></div>' +
     "</div>";
@@ -273,6 +271,7 @@
     overlay.open({
       kind: "dialog",
       title: current ? "编辑模型" : "新增模型",
+      wide: true,
       confirmLabel: current ? "保存修改" : "保存模型",
       body: editorBody(current),
       onConfirm: function onConfirm(scope) {
@@ -317,9 +316,7 @@
     scope.querySelectorAll('[name="model-kind"]').forEach(function each(field) {
       field.addEventListener("change", function changeKind() {
         var dimensionField = scope.querySelector('[data-model-field="dimension"]');
-        var parameterField = scope.querySelector('[data-model-field="parameterCountB"]');
         if (dimensionField) dimensionField.value = "";
-        if (parameterField) parameterField.value = "";
         toggleTypeFields(scope);
         setDraftTestState(scope, "idle");
       });
@@ -338,22 +335,44 @@
   }
 
   function testExistingModel(trigger) {
+    if (trigger.dataset.testing === "true") return;
+    trigger.dataset.testing = "true";
+    trigger.disabled = true;
     var kind = trigger.getAttribute("data-model-kind");
     var id = trigger.getAttribute("data-model-id");
-    trigger.disabled = true;
-    trigger.innerHTML = dom.icon("loader-circle", 13, "is-spinning") + "测试中";
-    dom.hydrateIcons(trigger);
+    var row = trigger.closest("[data-model-row]");
+    if (row) {
+      setModelConnectionState(row, null, {
+        label: "连通性测试中...",
+        tone: "info",
+        loading: true,
+        secondary: "\u00A0",
+      });
+    }
     window.setTimeout(function finish() {
       var result = invoke("testRagModelConnection", [kind, id]);
-      var passed = Boolean(result && statusKey(result) === "passed");
+      var state = runtime.core.store.getState();
+      var model = result && result.id ? result : findModel(state, kind, id);
+      if (row) {
+        if (!model) {
+          setModelConnectionState(row, null, {
+            label: "连接测试失败",
+            tone: "danger",
+            secondary: "请重试",
+          });
+        } else {
+          setModelConnectionState(row, model);
+        }
+      }
+      var passed = Boolean(model && statusKey(model) === "passed");
+      trigger.disabled = false;
+      trigger.removeAttribute("data-testing");
       if (!passed) {
-        trigger.disabled = false;
-        trigger.textContent = "测试";
         overlay.toast("连接测试失败", "请编辑模型并检查 API 地址和 API Key。", "danger");
         return;
       }
       overlay.toast("连接正常", "模型服务已通过连接测试。", "success");
-    }, 420);
+    }, 900);
   }
 
   function confirmDelete(state, kind, id) {

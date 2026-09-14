@@ -68,7 +68,7 @@ npm test
 
 ## 模型管理 Demo 契约
 
-模型管理分为 LLM、向量模型和 Rerank 模型三个板块。LLM 预置 DeepSeek-V4-Pro、Qwen3.8-2.4T-A95B 和 Qwen3.5-397B-A17B；新增 LLM 的总参数不得低于 25B。所有连接测试均为本地模拟，默认回答生成引用 DeepSeek-V4-Pro。
+模型管理分为 LLM、向量模型和 Rerank 模型三个板块。LLM 预置 DeepSeek-V4-Pro、Qwen3.8-2.4T-A95B 和 Qwen3.5-397B-A17B；LLM 配置只维护模型名称与连接信息，不采集或校验参数规模。所有连接测试均为本地模拟，默认回答生成引用 DeepSeek-V4-Pro。
 
 ## 演示边界
 

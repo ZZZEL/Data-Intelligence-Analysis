@@ -119,12 +119,12 @@
 
   function knowledgeBaseSummary(item, state) {
     var scoped = keyKnowledgeBases(item, state);
-    return '<div class="table-primary">' + scoped.length + '</div>';
+    return '<div class="table-primary">' + scoped.length + '个</div>';
   }
 
   function retrievalPolicySummary(item) {
     var policy = retrievalPolicy(item);
-    return '<div class="table-primary">' + (policy.mode === "custom" ? "独立" : "全局") + '</div>';
+    return '<div class="table-primary">' + (policy.mode === "custom" ? "独立配置" : "跟随全局") + '</div>';
   }
 
   function keyRows(keys, state) {
@@ -143,7 +143,7 @@
   function renderApiAccess(route, state) {
     var keys = retrievalKeys(state);
     var table = keys.length
-      ? '<div class="table-wrap" data-api-table-wrap><table class="data-table api-key-table"><thead><tr><th>名称</th><th>API Key</th><th>可访问知识库</th><th>检索策略</th><th>状态</th><th>最近使用时间</th><th>创建时间</th><th>操作</th></tr></thead><tbody>' + keyRows(keys, state) + '</tbody></table></div>'
+      ? '<div class="table-wrap" data-api-table-wrap><table class="data-table api-key-table"><thead><tr><th>名称</th><th>API Key</th><th>知识库访问</th><th>检索策略</th><th>状态</th><th>最近使用时间</th><th>创建时间</th><th>操作</th></tr></thead><tbody>' + keyRows(keys, state) + '</tbody></table></div>'
       : dom.empty("暂无检索 API 密钥", "创建后即可用于调用检索 API。", "key-round");
     return dom.pageHeader({
       title: "API 密钥",
@@ -427,8 +427,10 @@
 
   function retrievalPolicyDetail(item, state) {
     var operator = retrievalOperator(item, state);
+    var mode = retrievalPolicy(item);
+    var policyLabel = mode.mode === "custom" ? "独立配置" : "跟随全局";
     var reranker = operator.rerankEnabled ? rerankerName(state, operator.rerankerModelId) : "未启用";
-    return '<dl class="api-key-detail-grid"><div><dt>Rerank 模型</dt><dd>' + dom.escape(reranker) + '</dd></div><div><dt>最终 Top K</dt><dd>' + dom.escape(text(operator.finalTopK, "10")) + '</dd></div><div><dt>相关度阈值</dt><dd>' + retrievalThreshold(operator).toFixed(2) + '</dd></div></dl>';
+    return '<dl class="api-key-detail-grid"><div><dt>策略</dt><dd>' + dom.escape(policyLabel) + '</dd></div><div><dt>Rerank 模型</dt><dd>' + dom.escape(reranker) + '</dd></div><div><dt>最终 Top K</dt><dd>' + dom.escape(text(operator.finalTopK, "10")) + '</dd></div><div><dt>相关度阈值</dt><dd>' + retrievalThreshold(operator).toFixed(2) + '</dd></div></dl>';
   }
 
   function showDetail(item, state) {

@@ -121,9 +121,17 @@
       itemsByParent[key].sort(function compare(left, right) { return String(itemLabel(left) || "").localeCompare(String(itemLabel(right) || ""), "zh-CN"); });
     });
 
+    function indentTrack(depth) {
+      var slots = "";
+      for (var i = 0; i < depth; i++) {
+        slots += '<span class="directory-tree__indent-slot" aria-hidden="true"></span>';
+      }
+      return '<span class="directory-tree__indent-track">' + slots + "</span>";
+    }
+
     function itemRow(item, depth) {
       var label = itemLabel(item) || "未命名文件";
-      return '<div class="directory-tree__item' + (item.available === false ? " is-unavailable" : "") + '" role="treeitem" aria-level="' + (depth + 1) + '" data-directory-item="' + esc(itemId(item)) + '"><div class="directory-tree__row directory-tree__row--item" style="--directory-depth:' + depth + '"><span class="directory-tree__toggle directory-tree__toggle--placeholder" aria-hidden="true"></span><span class="directory-tree__label directory-tree__label--item" title="' + esc(label) + '"><span class="directory-tree__name">' + esc(label) + "</span></span></div></div>";
+      return '<div class="directory-tree__item' + (item.available === false ? " is-unavailable" : "") + '" role="treeitem" aria-level="' + (depth + 1) + '" data-directory-item="' + esc(itemId(item)) + '"><div class="directory-tree__row directory-tree__row--item" style="--directory-depth:' + depth + '"><span class="directory-tree__toggle directory-tree__toggle--placeholder" aria-hidden="true"></span>' + indentTrack(depth) + '<span class="directory-tree__label directory-tree__label--item" title="' + esc(label) + '"><span class="directory-tree__name">' + esc(label) + "</span></span></div></div>";
     }
 
     function folderInput(mode, folder, parentId, beforeId, value) {
@@ -132,7 +140,7 @@
     }
 
     function draftRow(depth) {
-      return '<div class="directory-tree__node directory-tree__node--draft" role="treeitem" aria-level="' + (depth + 1) + '" data-directory-draft><div class="directory-tree__row" style="--directory-depth:' + depth + '"><span class="directory-tree__toggle directory-tree__toggle--placeholder" aria-hidden="true"></span><div class="directory-tree__label directory-tree__label--editing"><span class="directory-tree__folder-icon">' + dom.icon("folder", 17) + '</span>' + folderInput("create", null, draftParentId, draftBeforeId, draftFolder.value || "") + '<span class="directory-tree__count" aria-hidden="true"></span></div></div></div>';
+      return '<div class="directory-tree__node directory-tree__node--draft" role="treeitem" aria-level="' + (depth + 1) + '" data-directory-draft><div class="directory-tree__row" style="--directory-depth:' + depth + '"><span class="directory-tree__toggle directory-tree__toggle--placeholder" aria-hidden="true"></span>' + indentTrack(depth) + '<div class="directory-tree__label directory-tree__label--editing"><span class="directory-tree__folder-icon">' + dom.icon("folder", 17) + '</span>' + folderInput("create", null, draftParentId, draftBeforeId, draftFolder.value || "") + '<span class="directory-tree__count" aria-hidden="true"></span></div></div></div>';
     }
 
     function canEdit(folder, isRoot) {
@@ -172,7 +180,7 @@
       var childRows = nodeChildren.map(function child(item) { return (draftHasAnchor && item.id === draftBeforeId ? draftRow(depth + 1) : "") + row(item, depth + 1, false); }).join("");
       var branch = canExpand && expanded ? '<div class="directory-tree__group" role="group" style="--directory-parent-depth:' + depth + '">' + (ownsDraft && !draftHasAnchor ? draftRow(depth + 1) : "") + childRows + nodeItems.map(function childItem(item) { return itemRow(item, depth + 1); }).join("") + "</div>" : "";
       var toggle = canExpand && !isRoot ? '<button type="button" class="directory-tree__toggle" data-directory-toggle="' + esc(folder.id) + '" data-directory-scope="' + esc(scope) + '" aria-label="' + esc((expanded ? "收起" : "展开") + folder.name) + '" aria-expanded="' + (expanded ? "true" : "false") + '">' + dom.icon("chevron-right", 15) + "</button>" : '<span class="directory-tree__toggle directory-tree__toggle--placeholder" aria-hidden="true"></span>';
-      return '<div class="directory-tree__node' + (isRoot ? " directory-tree__node--root" : "") + (active ? " is-active" : "") + (editingFolderId === folder.id ? " is-editing" : "") + (unavailable ? " is-unavailable" : "") + '" role="treeitem" aria-level="' + level + '" aria-selected="' + (active ? "true" : "false") + '"' + (canExpand && !isRoot ? ' aria-expanded="' + (expanded ? "true" : "false") + '"' : "") + ' data-directory-node="' + esc(folder.id) + '"><div class="directory-tree__row" style="--directory-depth:' + depth + '">' + toggle + folderLabel(folder, icon, count, isRoot) + "</div>" + branch + "</div>";
+      return '<div class="directory-tree__node' + (isRoot ? " directory-tree__node--root" : "") + (active ? " is-active" : "") + (editingFolderId === folder.id ? " is-editing" : "") + (unavailable ? " is-unavailable" : "") + '" role="treeitem" aria-level="' + level + '" aria-selected="' + (active ? "true" : "false") + '"' + (canExpand && !isRoot ? ' aria-expanded="' + (expanded ? "true" : "false") + '"' : "") + ' data-directory-node="' + esc(folder.id) + '"><div class="directory-tree__row" style="--directory-depth:' + depth + '">' + toggle + indentTrack(depth) + folderLabel(folder, icon, count, isRoot) + "</div>" + branch + "</div>";
     }
 
     var root = {
