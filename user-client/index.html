@@ -2,26 +2,17 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="light" />
-    <meta name="description" content="数据智能分析轻量用户端演示。" />
-    <title>数据智能分析</title>
-    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="assets/css/tokens.css?v=20260907-report-split-preview" />
-    <link rel="stylesheet" href="assets/css/app.css?v=20260909-api-menu-anchor-v4" />
-    <link rel="stylesheet" href="assets/css/responsive.css?v=20260909-api-menu-anchor-v4" />
+    <meta name="robots" content="noindex" />
+    <title>正在进入数据智能分析工具</title>
   </head>
   <body>
-    <div id="app">
-      <div class="boot-screen" role="status"><span class="boot-mark" aria-hidden="true"></span><span>正在载入对话…</span></div>
-    </div>
-    <div id="session-menu-root"></div>
-    <div id="dialog-root"></div>
-    <div id="toast-root" class="toast-region" aria-live="polite" aria-atomic="true"></div>
-    <noscript>请启用 JavaScript 以运行此演示。</noscript>
-
-    <script src="assets/vendor/lucide.min.js"></script>
-    <script src="src/fixture.js?v=20260909-api-menu-anchor-v4"></script>
-    <script src="src/app.js?v=20260909-api-menu-anchor-v4"></script>
+    <p>正在进入统一 Demo…</p>
+    <script>
+      (function redirectToUnifiedEntry() {
+        var target = new URL("../", window.location.href);
+        target.hash = window.location.hash || "#/chat/new";
+        window.location.replace(target.href);
+      })();
+    </script>
   </body>
 </html>

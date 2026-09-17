@@ -2,6 +2,8 @@
 node_modules/
 test-results/
 playwright-report/
+.playwright-cli/
+output/
 *.log
 .env
 .env.*
