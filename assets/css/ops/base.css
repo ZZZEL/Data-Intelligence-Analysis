@@ -91,25 +91,6 @@ svg {
   border: 0 !important;
 }
 
-.boot-screen {
-  display: flex;
-  min-height: 100vh;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--muted);
-  background: var(--surface);
-}
-
-.boot-mark {
-  width: 18px;
-  height: 18px;
-  border: 2px solid #cdd9ec;
-  border-top-color: var(--primary);
-  border-radius: 50%;
-  animation: spin 700ms linear infinite;
-}
-
 @keyframes spin {
   to {
     transform: rotate(360deg);

@@ -13,72 +13,6 @@ body {
   margin: 0;
 }
 
-.route-unavailable {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 48px;
-  text-align: center;
-  color: var(--text);
-  background: var(--bg);
-}
-
-.route-unavailable-icon {
-  width: 52px;
-  height: 52px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 20px;
-  color: var(--blue);
-  background: var(--blue-soft);
-  border-radius: 16px;
-}
-
-.route-unavailable-code {
-  margin: 0 0 6px;
-  color: var(--muted-2);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-}
-
-.route-unavailable h1 {
-  margin: 0;
-  font-size: 24px;
-  line-height: 1.35;
-}
-
-.route-unavailable > p:last-of-type {
-  max-width: 420px;
-  margin: 12px 0 24px;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.7;
-}
-
-.route-home-button {
-  min-height: 40px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 16px;
-  color: #fff;
-  background: var(--blue);
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 650;
-  text-decoration: none;
-  transition: background-color 160ms var(--ease-out), transform 160ms var(--ease-out);
-}
-
-.route-home-button:hover {
-  background: var(--blue-hover);
-  transform: translateY(-1px);
-}
-
 body {
   overflow: hidden;
   background: var(--bg);
@@ -133,16 +67,6 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
-.boot-screen {
-  align-items: center;
-  display: flex;
-  gap: 12px;
-  height: 100vh;
-  justify-content: center;
-  color: var(--muted);
-}
-
-.boot-mark,
 .typing-dot {
   animation: pulse 1.2s ease-in-out infinite;
   background: var(--blue);

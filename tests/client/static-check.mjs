@@ -1,20 +1,21 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "../..");
 const read = (path) => readFile(resolve(root, path), "utf8");
-const [index, launcher, app, fixture, css, wrapper] = await Promise.all([
+const [index, launcher, app, fixture, css] = await Promise.all([
   read("index.html"),
   read("src/launcher.js"),
   read("src/client/app.js"),
   read("src/client/fixture.js"),
-  Promise.all([read("assets/css/tokens.css"), read("assets/css/client/app.css"), read("assets/css/client/responsive.css")]).then((parts) => parts.join("\n")),
-  read("user-client/index.html")
+  Promise.all([read("assets/css/tokens.css"), read("assets/css/client/app.css"), read("assets/css/client/responsive.css")]).then((parts) => parts.join("\n"))
 ]);
 
 assert.match(index, /assets\/css\/tokens\.css/);
 assert.match(index, /src\/launcher\.js/);
+assert.doesNotMatch(index, /boot-screen|正在载入/, "统一入口不应显示加载过渡界面");
 for (const mount of ["app", "session-menu-root", "dialog-root", "overlay-root", "toast-root"]) {
   assert.match(index, new RegExp(`id=["']${mount}["']`), `统一入口缺少挂载点：${mount}`);
 }
@@ -23,7 +24,10 @@ assert.match(launcher, /ops:\s*\{/);
 assert.match(launcher, /src\/client\/fixture\.js/);
 assert.match(launcher, /src\/ops\/namespace\.js/);
 assert.match(launcher, /reload\(\)/);
+assert.equal(existsSync(resolve(root, "user-client")), false, "用户端不应保留重复入口目录");
+assert.equal(existsSync(resolve(root, "ops-console")), false, "运营端不应保留重复入口目录");
 assert.doesNotMatch(launcher + app, /\.\.\/(?:ops-console|user-client)\//, "运行时不应再依赖跨子应用相对路径");
+assert.doesNotMatch(app, /route-unavailable|进入轻量用户端|renderUnavailableRoute/, "用户端不应渲染独立的 404 过渡页");
 assert.doesNotMatch(app, /#\/templates(?:[/'"]|$)|outputProfiles|data-template-/, "已移除的模板能力不能回流");
 assert.doesNotMatch(app + fixture, /MCP/);
 assert.doesNotMatch(app, /\bfetch\s*\(/, "静态 Demo 不应发起网络请求");
@@ -34,7 +38,5 @@ assert.match(css, /\.composer\s*\{/);
 assert.match(css, /\.analysis-flow/);
 assert.match(css, /\.source-drawer/);
 assert.match(css, /prefers-reduced-motion/);
-assert.match(wrapper, /new URL\("\.\.\//);
-assert.match(wrapper, /#\/chat\/new/);
 
 console.log("client static-check: passed");

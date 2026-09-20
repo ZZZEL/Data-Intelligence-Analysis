@@ -42,6 +42,10 @@ assert.match(manifest, /client:\s*\{/);
 assert.match(manifest, /ops:\s*\{/);
 assert.match(userApp, /href="#\/knowledge"/);
 assert.match(opsApp, /href="#\/chat\/copper-decision"/);
+const appLinks = userApp + opsApp;
+assert.doesNotMatch(appLinks, /user-client|ops-console|file:\/\//, '端间链接必须直接指向统一入口，不能经过旧目录或本地文件地址');
+assert.doesNotMatch(appLinks, /href=["'][^#][^"']*index\.html/, '应用内部链接不能经过中间 HTML 页面');
+assert.doesNotMatch(appLinks, /href=["']\.\.\//, '应用内部链接不能跳转到上级目录');
 
 console.log('✓ 统一入口与双向模式切换检查');
 console.log('统一 Demo 项目检查全部通过。');

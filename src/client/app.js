@@ -649,16 +649,6 @@
     }).join('') + '</ol></section>';
   }
 
-  function renderUnavailableRoute() {
-    stopReplay();
-    state.dialog = null;
-    document.title = '页面不存在 · ' + DATA.productName;
-    dialogRoot.innerHTML = '';
-    toastRoot.innerHTML = '';
-    app.innerHTML = '<main class="route-unavailable" aria-labelledby="route-unavailable-title"><span class="route-unavailable-icon">' + icon('file-question', 26) + '</span><p class="route-unavailable-code">404</p><h1 id="route-unavailable-title">页面不存在</h1><p>该地址没有可用页面。请进入轻量用户端继续使用。</p><a class="route-home-button" href="' + sessionRoute(homeSession.id) + '">' + icon('message-square', 17) + '<span>进入轻量用户端</span></a></main>';
-    hydrateIcons();
-  }
-
   function renderSessionGroup(sessions, title, pinned) {
     return '<section class="session-group" aria-label="' + title + '"><div class="sidebar-label">' + title + '</div><ol class="session-list' + (pinned ? ' session-list--pinned' : '') + '">' + sessions.map(function sessionRow(session) {
       var active = state.view === 'chat' && session.id === state.activeSessionId;
@@ -2523,6 +2513,7 @@
     closeSessionMenu();
     state.dialog = null;
     renderDialog();
+    if (/^#\/?(?:knowledge|local-documents|enterprise-connections|external-information|models|retrieval-config|retrieval-test|api-access|consumption)(?:[/?]|$)/.test(global.location.hash || '')) return;
     if (!global.location.hash || global.location.hash === '#' || global.location.hash === '#/' || global.location.hash === sessionRoute(homeSession.id)) {
       selectSession(homeSession.id);
       return;
@@ -2533,11 +2524,11 @@
       return;
     }
     var match = global.location.hash.match(/^#\/chat\/(.+)$/);
-    if (!match) { renderUnavailableRoute(); return; }
+    if (!match) { selectSession(homeSession.id); return; }
     var id;
     try { id = decodeURIComponent(match[1]); }
-    catch (error) { renderUnavailableRoute(); return; }
-    if (!findSession(id)) { renderUnavailableRoute(); return; }
+    catch (error) { selectSession(homeSession.id); return; }
+    if (!findSession(id)) { selectSession(homeSession.id); return; }
     selectSession(id);
   }
 
