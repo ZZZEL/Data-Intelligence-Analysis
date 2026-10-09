@@ -4,7 +4,7 @@
   var root = document.documentElement;
   var appRoot = document.getElementById("app");
   var mode = getMode(window.location.hash);
-  var assetVersion = "20261008-model-use-1";
+  var assetVersion = "20261009-knowledge-refresh-1";
 
   function withVersion(path) {
     return String(path || "").indexOf("?") >= 0 ? path : path + "?v=" + assetVersion;
