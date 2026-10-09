@@ -4,6 +4,11 @@
   var root = document.documentElement;
   var appRoot = document.getElementById("app");
   var mode = getMode(window.location.hash);
+  var assetVersion = "20261008-model-use-1";
+
+  function withVersion(path) {
+    return String(path || "").indexOf("?") >= 0 ? path : path + "?v=" + assetVersion;
+  }
 
   var manifests = {
     client: {
@@ -59,7 +64,7 @@
     return new Promise(function appendStyle(resolve, reject) {
       var link = document.createElement("link");
       link.rel = "stylesheet";
-      link.href = path;
+      link.href = withVersion(path);
       link.dataset.demoStyle = mode;
       link.onload = resolve;
       link.onerror = function onError() { reject(new Error("无法加载样式：" + path)); };
@@ -70,7 +75,7 @@
   function loadScript(path) {
     return new Promise(function appendScript(resolve, reject) {
       var script = document.createElement("script");
-      script.src = path;
+      script.src = withVersion(path);
       script.dataset.demoScript = mode;
       script.onload = resolve;
       script.onerror = function onError() { reject(new Error("无法加载脚本：" + path)); };

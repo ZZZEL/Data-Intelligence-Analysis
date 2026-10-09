@@ -50,7 +50,7 @@ assert.ok(actions.getImportPreview(local.id, { fileVersionId: fileVersion.id }),
 assert.equal(state.parseResults.some((result) => result.fileVersionId === fileVersion.id && result.status === "ready"), false, "仅上传不能冒充解析成功");
 const localParsePage = OpsDemo.pages.localDocuments.render({ name: "local-documents", id: "upload", query: { step: "parse", batch: local.id } }, state);
 assert.match(localParsePage, /上传文档进度[\s\S]*<strong>上传<\/strong>[\s\S]*<strong>解析<\/strong>/, "公共池解析应复用通用步骤组件并只展示上传、解析两步");
-assert.match(localParsePage, /parse-recognition[\s\S]*parse-table[\s\S]*parse-formula[\s\S]*parse-visual-understanding[\s\S]*data-parse-next/, "公共池第二步应直接复用原第 3 步文档解析内容");
+assert.match(localParsePage, /parse-method-summary[\s\S]*parse-table[\s\S]*parse-formula[\s\S]*parse-visual-understanding[\s\S]*data-parse-next/, "公共池第二步应直接复用原第 3 步文档解析内容");
 assert.match(localParsePage, /开始解析/, "公共池解析步骤应以开始解析结束两步流程");
 assert.doesNotMatch(localParsePage, /data-processing-finish|切片策略|data-import-preview|data-local-upload-progress|文档已解析|正在解析文档/, "公共池解析不得混入第 4 步或旧的专用进度完成页");
 const renamedUpload = actions.startKnowledgeImport("local-documents", { files: [preparedRenamed], deferred: true });
@@ -501,6 +501,7 @@ assert.ok(enterpriseVersion.sourceMetadata || enterpriseAsset.sourceMetadata, "�
 assert.equal(enterpriseVersion.sourceMetadata.directoryPath, sources[0].directoryPath, "企业快照入库后应保留来源文件目录");
 assert.equal(enterpriseVersion.sourceMetadata.fileName, sources[0].fileName, "企业快照入库后应保留目录中的文件名");
 await processBatch(enterpriseBatch);
+assert.equal(referenceFor(enterpriseBatch).sourceChannel, "enterprise", "企业数据导入应记录企业数据来源");
 const enterpriseVersionCount = state.fileVersions.filter((version) => version.fileId === enterpriseAsset.id).length;
 const enterpriseConnection = state.enterpriseConnections.find((connection) => connection.id === sources[0].connectionId);
 enterpriseConnection.updatedAt = new Date(Date.now() + 60000).toISOString();

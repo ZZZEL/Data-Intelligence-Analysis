@@ -47,7 +47,8 @@ const seedImportBatch = state.importBatches.find((item) => item.id === "IMP-0825
 const knowledgeListHtml = pages.knowledge.render({ name: "knowledge", id: null, query: {} }, state);
 assert.doesNotMatch(knowledgeListHtml, /data-golden-case-trace|美国关税三情景研判|与调用侧 Demo 的任务配置快照一致/, "知识库首页不应展示跨 Demo 黄金案例追溯卡");
 assert.doesNotMatch(knowledgeListHtml, /<th>描述<\/th>|class="knowledge-description"/, "知识库管理总览表格不应展示描述列");
-assert.match(knowledgeListHtml, /<th>知识库名称 \/ ID<\/th><th>检索状态<\/th><th>文件数量<\/th>[\s\S]*<th>更新时间<\/th><th>创建时间<\/th><th>操作<\/th>/, "知识库列表应将检索状态放在文件数量之前");
+assert.match(knowledgeListHtml, /<th>知识库名称<\/th><th>检索状态<\/th><th>文件数量<\/th>[\s\S]*<th>更新时间<\/th><th>创建时间<\/th><th>操作<\/th>/, "知识库列表应将检索状态放在文件数量之前");
+assert.doesNotMatch(knowledgeListHtml, /<div class="table-secondary">KB-[A-Z0-9-]+<\/div>/, "知识库列表不应在名称下方展示知识库 ID");
 assert.match(knowledgeListHtml, /page-header__top[\s\S]*data-kb-search[\s\S]*新建知识库/, "知识库标题、搜索与新建动作应在单行 PageHeader");
 assert.doesNotMatch(knowledgeListHtml, /page-header__toolbar|data-kb-status|检索状态<\/span>/, "知识库首页不应保留第二行或状态筛选");
 assert.equal(state.knowledgeBases[0].id, "KB-SCM-2024-V1", "供应链演示知识库应排在知识库列表第一位");
@@ -89,6 +90,7 @@ assert.doesNotMatch(localDocumentsHtml, /所属知识库|data-local-document-kb|
 assert.match(localDocumentsHtml, /data-local-document-search[^>]*placeholder="搜索文档"|placeholder="搜索文档"[^>]*data-local-document-search/, "本地文档搜索口径不应继续包含知识库");
 assert.match(localDocumentsHtml, /01_供应链管理基础理论手册\.docx[\s\S]*data-local-document-preview="SCM-DOC-01"[\s\S]*data-local-document-move="SCM-DOC-01"[\s\S]*data-local-document-delete="SCM-DOC-01"/, "文档管理应同步展示供应链演示原文件并提供预览、移动和删除闭环");
 assert.match(localDocumentsHtml, /data-local-document-preview="SCM-DOC-01"[^>]*>详情<\/button>[\s\S]*data-local-document-move="SCM-DOC-01"[^>]*>移动<\/button>[\s\S]*data-local-document-delete="SCM-DOC-01"[^>]*>删除<\/button>/, "文档管理行操作应按详情、移动、删除排列");
+assert.doesNotMatch(localDocumentsHtml, /<div class="table-secondary">(?:SCM-DOC|DOC)-\d+/, "文档管理列表不应在文件名下方展示文档 ID");
 assert.doesNotMatch(localDocumentsHtml, /data-local-document-download|>下载<\/button>/, "文档列表不应提供原文件下载快捷操作");
 const localUploadHtml = pages.localDocuments.render({ name: "local-documents", id: "upload", query: { step: "upload" } }, state);
 assert.match(localUploadHtml, /local-upload-stack[\s\S]*<details class="[^"]*\bupload-folder-picker\b[^"]*" data-upload-folder-picker>[\s\S]*upload-folder-picker__summary[\s\S]*目标位置[\s\S]*data-directory-tree="local-upload-target"[\s\S]*<\/details>[\s\S]*<label class="file-drop"/, "上传文档页应在上传区域上方使用可折叠的目标位置目录树");
@@ -149,6 +151,9 @@ assert.ok(state.documents.every((item) => item.localAssetId), "每个知识库�
 const supplyPdfKnowledgePreview = pages.knowledge.render({ name: "knowledge", id: "KB-SCM-2024-V1", query: { preview: "SCM-DOC-05" } }, state);
 assert.match(supplyPdfKnowledgePreview, /05_2024全球供应链趋势白皮书\.pdf[\s\S]*src="assets\/documents\/supply-chain\/05_2024全球供应链趋势白皮书\.pdf"/, "知识库文件预览应能打开供应链 PDF 原文件");
 assert.match(supplyPdfKnowledgePreview, /05-C01[\s\S]*data-chunk-expand[\s\S]*aria-expanded="false"/, "知识库文件预览应展示供应链切片并沿用折叠卡片交互");
+const supplyTextKnowledgeChunks = pages.knowledge.render({ name: "knowledge", id: "KB-SCM-2024-V1", query: { tab: "chunks", document: "SCM-DOC-01" } }, state);
+assert.match(supplyTextKnowledgeChunks, /document-source-preview--linked[\s\S]*data-source-block=/, "切片对照视图的原文件应输出可联动的原文块");
+assert.match(supplyTextKnowledgeChunks, /data-chunk-preview-card="01-C01" data-section-path="[^"]+"/, "切片卡片应携带章节路径用于原文联动定位");
 const supplyLocalPreview = pages.localDocuments.render({ name: "local-documents", id: "SCM-DOC-01", query: { knowledgeBaseId: "KB-SCM-2024-V1" } }, state);
 assert.match(supplyLocalPreview, /data-local-preview-kb-select[\s\S]*全球供应链管理知识库/, "供应链文件在文档管理预览中应能查看实际引用知识库的切片");
 assert.doesNotMatch(supplyLocalPreview, /文档处理结果/, "文档管理不得提供脱离知识库的切片结果来源");
@@ -236,6 +241,30 @@ const embeddingModelsHtml = modelsHtml.slice(modelsHtml.indexOf('data-model-grou
 const rerankerModelsHtml = modelsHtml.slice(modelsHtml.indexOf('data-model-group="reranker"'));
 assert.match(llmModelsHtml, /<th>模型名称<\/th><th>连接状态<\/th><th>操作<\/th>[\s\S]*DeepSeek-V4-Pro[\s\S]*Qwen3\.8-2\.4T-A95B[\s\S]*Qwen3\.5-397B-A17B/, "LLM 表应显示三个预置模型及三列基础信息");
 assert.doesNotMatch(llmModelsHtml, /参数规模|models-table__dimension/, "LLM 表不应展示或预留参数规模列");
+assert.doesNotMatch(llmModelsHtml, /models-group__note|长期用于回答生成/, "LLM 分组不应新增表头说明文案");
+assert.equal((llmModelsHtml.match(/model-active-tag/g) || []).length, 1, "LLM 表应仅标记一个使用中模型");
+assert.match(llmModelsHtml, /DeepSeek-V4-Pro[\s\S]*?model-active-tag">使用中/, "默认回答生成使用的 DeepSeek-V4-Pro 应标记为使用中");
+assert.doesNotMatch(llmModelsHtml, /models-table__row--designated/, "使用中 LLM 行不应改变行颜色");
+const activeRowHtml = llmModelsHtml.match(/<tr[^>]*data-model-active="true"[\s\S]*?<\/tr>/)?.[0] || "";
+assert.ok(activeRowHtml, "应能定位使用中 LLM 行");
+assert.match(activeRowHtml, /data-model-delete[^>]*disabled/, "使用中 LLM 行应保留禁用的删除按钮");
+assert.match(activeRowHtml, /data-model-designate[^>]*disabled/, "使用中 LLM 行应保留禁用的使用操作以固定位置");
+assert.equal((llmModelsHtml.match(/>使用</g) || []).length, 3, "每个 LLM 行都应有位置固定的使用操作");
+assert.match(activeRowHtml, /data-model-edit[\s\S]*?data-model-designate[\s\S]*?data-model-test[\s\S]*?data-model-delete/, "LLM 行操作顺序应为编辑、使用、测试、删除");
+assert.match(llmModelsHtml, /data-model-edit[\s\S]*?data-model-designate[\s\S]*?data-model-test[\s\S]*?data-model-delete/, "备用 LLM 行也应保持编辑、使用、测试、删除顺序");
+assert.match(embeddingModelsHtml + rerankerModelsHtml, /data-model-edit[\s\S]*?data-model-test[\s\S]*?data-model-delete/, "向量与 Rerank 行操作顺序应为编辑、测试、删除");
+assert.doesNotMatch(embeddingModelsHtml + rerankerModelsHtml, />使用中<|model-active-tag|data-model-designate/, "向量与 Rerank 表不应出现 LLM 使用中标记或设置操作");
+assert.equal(actions.designateRagAnswerModel("MODEL-LLM-QWEN3-8-MAX")?.id, "MODEL-LLM-QWEN3-8-MAX", "设为使用中动作应切换回答生成模型");
+assert.equal(state.rag.answerGeneration.modelId, "MODEL-LLM-QWEN3-8-MAX", "回答生成配置应指向新使用中的 LLM");
+assert.equal(actions.deleteRagModel("llm", "MODEL-LLM-QWEN3-8-MAX"), null, "使用中的 LLM 不能删除");
+const switchedModelsHtml = pages.models.render({ name: "models", id: null, query: {} }, state);
+const switchedLlmHtml = switchedModelsHtml.slice(switchedModelsHtml.indexOf('data-model-group="llm"'), switchedModelsHtml.indexOf('data-model-group="embedding"'));
+assert.match(switchedLlmHtml, /Qwen3\.8-2\.4T-A95B[\s\S]*?model-active-tag">使用中/, "切换后新使用中的 LLM 应显示标记");
+const switchedActiveRowHtml = switchedLlmHtml.match(/<tr[^>]*data-model-active="true"[\s\S]*?<\/tr>/)?.[0] || "";
+assert.match(switchedActiveRowHtml, /Qwen3\.8-2\.4T-A95B[\s\S]*?data-model-designate[^>]*disabled/, "切换后使用中 LLM 的使用操作应禁用");
+const switchedSpareRowHtml = switchedLlmHtml.match(/<tr[^>]*data-model-id="MODEL-LLM-DEEPSEEK-V4-PRO"[\s\S]*?<\/tr>/)?.[0] || "";
+assert.match(switchedSpareRowHtml, /data-model-designate(?![^>]*disabled)/, "原使用中的 LLM 使用操作应恢复可用");
+assert.equal(actions.designateRagAnswerModel("MODEL-LLM-DEEPSEEK-V4-PRO")?.id, "MODEL-LLM-DEEPSEEK-V4-PRO", "应能切回默认使用中的 LLM");
 assert.match(embeddingModelsHtml, /<th>向量维度<\/th>[\s\S]*<td class="models-table__dimension"><div class="table-primary">[^<]+ 维<\/div><\/td>/, "向量表应展示向量维度");
 assert.match(rerankerModelsHtml, /<th>模型名称<\/th><th>连接状态<\/th><th>操作<\/th>[\s\S]*<td><div class="model-connection">/, "Rerank 表应使用三列基础信息契约");
 assert.doesNotMatch(rerankerModelsHtml, /向量维度|models-table__dimension/, "Rerank 表不应显示或预留向量维度列");
@@ -247,7 +276,11 @@ assert.match(tokenConsumptionSummaryHtml, /Token 总量[\s\S]*输入 Token[\s\S]
 assert.doesNotMatch(tokenConsumptionSummaryHtml, /API 请求次数|推理调用次数/, "Token 消耗页签不应混入请求次数");
 assert.match(consumptionHtml, /role="tablist" aria-label="消耗统计类型"[\s\S]*data-consumption-tab="tokens"[\s\S]*data-consumption-tab="requests"/, "消耗统计应提供 Token 和 API 请求两个页签");
 assert.match(consumptionHtml, /data-consumption-model[\s\S]*全部模型|<option value="all" selected>全部模型[\s\S]*data-consumption-model/, "消耗统计应提供默认为全部模型的筛选控件");
-assert.match(consumptionHtml, /<option value="MODEL-LLM-DEEPSEEK-V4-PRO">DeepSeek-V4-Pro<\/option>/, "消耗统计模型筛选应列出 LLM 名称");
+assert.match(consumptionHtml, /<option value="MODEL-LLM-DEEPSEEK-V4-PRO">DeepSeek-V4-Pro<\/option>/, "消耗统计模型筛选应列出默认 LLM 名称");
+assert.match(consumptionHtml, /<option value="MODEL-LLM-QWEN3-8-MAX">Qwen3\.8-2\.4T-A95B<\/option>/, "消耗统计模型筛选应至少列出第二个 LLM");
+assert.ok(state.consumption.models.filter((item) => item.typeLabel === "生成模型").length >= 2, "消耗统计应保留至少两个生成模型");
+assert.ok(state.consumption.models.every((item) => Array.isArray(item.daily) && item.daily.length === 31), "每个消耗模型应有 31 天独立模拟序列");
+assert.match(consumptionHtml, /page-header__tools[^>]*>[\s\S]*data-consumption-model[\s\S]*data-consumption-range/, "模型筛选应与时间范围统一放在页面 Header");
 assert.doesNotMatch(consumptionHtml, /Qwen3-Embedding-8B|Qwen3-Reranker-0\.6B|（生成模型）/, "消耗统计模型筛选不应列出向量、Rerank 模型或附加类型说明");
 assert.match(consumptionHtml, /data-consumption-token/, "Token 页签应只渲染 Token 图表");
 assert.doesNotMatch(consumptionHtml, /data-consumption-request/, "Token 页签不应同时渲染 API 请求图表");
@@ -258,8 +291,11 @@ assert.match(requestConsumptionSummaryHtml, /API 请求次数[\s\S]*日均请求
 assert.match(requestConsumptionHtml, /data-consumption-request/, "API 请求页签应只渲染请求图表");
 assert.doesNotMatch(requestConsumptionHtml, /data-consumption-token/, "API 请求页签不应同时渲染 Token 图表");
 const modelConsumptionHtml = pages.consumption.render({ name: "consumption", id: null, query: { model: "MODEL-LLM-DEEPSEEK-V4-PRO" } }, state);
+const secondModelConsumptionHtml = pages.consumption.render({ name: "consumption", id: null, query: { model: "MODEL-LLM-QWEN3-8-MAX" } }, state);
 assert.match(modelConsumptionHtml, /value="MODEL-LLM-DEEPSEEK-V4-PRO" selected/, "模型筛选应从路由恢复选中状态");
+assert.match(secondModelConsumptionHtml, /value="MODEL-LLM-QWEN3-8-MAX" selected/, "第二个模型筛选也应从路由恢复选中状态");
 assert.notEqual(modelConsumptionHtml.match(/summary-cell__value">([^<]+)<\/div>/)?.[1], consumptionHtml.match(/summary-cell__value">([^<]+)<\/div>/)?.[1], "单模型筛选应改变聚合 Token 指标");
+assert.notEqual(secondModelConsumptionHtml.match(/summary-cell__value">([^<]+)<\/div>/)?.[1], modelConsumptionHtml.match(/summary-cell__value">([^<]+)<\/div>/)?.[1], "两个生成模型应呈现不同模拟消耗");
 const retrievalConfigHtml = pages.rag.render({ name: "retrieval-config", id: null, query: {} }, state);
 const retrievalSystemConfig = state.rag.retrievalSettings.system;
 const retrievalOperatorConfig = state.rag.retrievalSettings.operator;
@@ -271,7 +307,7 @@ assert.equal(retrievalSystemConfig.deduplicationEnabled, true, "RRF 合并两路
 assert.equal(Object.prototype.hasOwnProperty.call(retrievalSystemConfig, "fusionWeights"), false, "RRF 系统配置不应残留加权融合参数");
 assert.equal(Object.prototype.hasOwnProperty.call(retrievalOperatorConfig, "keywordWeight"), false, "运营设置不应保存关键词权重");
 assert.equal(Object.prototype.hasOwnProperty.call(retrievalOperatorConfig, "semanticWeight"), false, "运营设置不应保存语义权重");
-assert.deepEqual(state.rag.answerGeneration, { modelId: "MODEL-LLM-DEEPSEEK-V4-PRO", model: "DeepSeek-V4-Pro", temperature: 0.2, citationsEnabled: true }, "回答生成模型、温度与引用能力应由系统固定配置");
+assert.deepEqual(state.rag.answerGeneration, { modelId: "MODEL-LLM-DEEPSEEK-V4-PRO", model: "DeepSeek-V4-Pro", temperature: 0.2, citationsEnabled: true }, "回答生成温度与引用能力应保持固定，模型使用当前设置的使用中 LLM");
 assert.match(retrievalConfigHtml, /data-open-retrieval-test/, "检索配置页头应提供检索测试快捷入口");
 assert.match(retrievalConfigHtml, /data-save-retrieval-settings[^>]*disabled[\s\S]*更新配置|更新配置[\s\S]*data-save-retrieval-settings[^>]*disabled/, "检索配置主操作应命名为更新配置，并在初始无修改时禁用");
 assert.doesNotMatch(retrievalConfigHtml, />保存设置<|>系统默认</, "检索配置不应残留“保存设置”文案或“系统默认”标签");
@@ -387,12 +423,12 @@ const invalidKnowledgeWorkspaceHtml = pages.retrievalTest.render({ name: "retrie
 const fallbackRetrievalTest = state.rag.retrievalTests[0];
 assert.equal(fallbackRetrievalTest.knowledgeBaseId, "KB-SCM-2024-V1", "供应链演示检索题应排在预置检索测试第一位");
 assert.match(invalidKnowledgeWorkspaceHtml, /data-retrieval-kb-option="KB-SCM-2024-V1"[^>]*aria-selected="true"|aria-selected="true"[^>]*data-retrieval-kb-option="KB-SCM-2024-V1"/, "无效知识库 URL 应回退到首个可用预置测试");
-const processingModes = ["smart", "semantic", "structure", "separator", "fixed", "page", "whole_document"];
+const processingModes = ["smart", "semantic", "structure", "separator", "fixed", "page"];
 const visibleProcessingPresets = state.rag.ingestionProfiles.filter((profile) => profile.visible !== false && profile.chunking);
-assert.ok(processingModes.every((mode) => visibleProcessingPresets.some((profile) => profile.chunking.mode === mode)), "代码预置方案应覆盖自动、语义及结构、分隔符、固定长度、按页和整篇五种自定义方式");
-assert.equal(visibleProcessingPresets.length, 7, "新流程应提供两个顶层方案与五个自定义方法对应的七个代码预置");
-assert.deepEqual(visibleProcessingPresets.slice().sort((left, right) => left.displayOrder - right.displayOrder).map((profile) => profile.id), ["ING-01", "ING-SEMANTIC", "ING-STRUCTURE", "ING-SEPARATOR", "ING-FIXED", "ING-PAGE", "ING-WHOLE"], "七个可见预置应使用稳定顺序支撑 3+5 信息层级");
-assert.deepEqual(processingModes.slice(2).map((mode) => visibleProcessingPresets.find((profile) => profile.chunking.mode === mode).displayOrder), [3, 4, 5, 6, 7], "五个自定义预置应依次使用 displayOrder 3–7");
+assert.ok(processingModes.every((mode) => visibleProcessingPresets.some((profile) => profile.chunking.mode === mode)), "代码预置方案应覆盖自动、语义及结构、分隔符、固定长度、按页四种自定义方式");
+assert.equal(visibleProcessingPresets.length, 6, "新流程应提供两个顶层方案与四个自定义方法对应的六个代码预置");
+assert.deepEqual(visibleProcessingPresets.slice().sort((left, right) => left.displayOrder - right.displayOrder).map((profile) => profile.id), ["ING-01", "ING-SEMANTIC", "ING-STRUCTURE", "ING-SEPARATOR", "ING-FIXED", "ING-PAGE"], "六个可见预置应使用稳定顺序支撑 3+4 信息层级");
+assert.deepEqual(processingModes.slice(2).map((mode) => visibleProcessingPresets.find((profile) => profile.chunking.mode === mode).displayOrder), [3, 4, 5, 6], "四个自定义预置应依次使用 displayOrder 3–6");
 const fixedProfile = state.rag.ingestionProfiles.find((profile) => profile.id === "ING-FIXED");
 assert.ok(fixedProfile && fixedProfile.chunking.mode === "fixed", "ING-FIXED 应作为正式固定长度算法预置");
 assert.equal(fixedProfile.displayGroup, "primary", "固定长度应进入主预置组");
@@ -737,10 +773,12 @@ assert.doesNotMatch(knowledgeInfoMatch[0], /访问等级|权限等级|access-lev
 assert.doesNotMatch(knowledgeInfoMatch[0], /knowledge-info__item--status|<div class="knowledge-info__label">检索状态<\/div>/, "知识库概要不应重复展示与下方检索节点相同的状态标签");
 assert.doesNotMatch(knowledgeInfoMatch[0], /文件数量|文档处理策略/, "知识库常驻信息不应重复文件数量或展示文件级处理策略");
 assert.match(knowledgeInfoMatch[0], /知识处理与检索状态[\s\S]*文档解析[\s\S]*切片处理[\s\S]*向量化[\s\S]*索引[\s\S]*检索/, "知识库信息第二行应整行展示处理与检索状态链");
-assert.match(seedKnowledgeDetailHtml, /<th>文件<\/th>[\s\S]*<th>文件状态<\/th>[\s\S]*<th>切片数<\/th>[\s\S]*<th>更新时间<\/th>[\s\S]*<th>操作<\/th>/, "文件列表应使用单一生命周期、切片数、更新时间与必要操作列");
+assert.match(seedKnowledgeDetailHtml, /<th>文件<\/th>[\s\S]*<th>来源<\/th>[\s\S]*<th>文件状态<\/th>[\s\S]*<th>切片数<\/th>[\s\S]*<th>更新时间<\/th>[\s\S]*<th>操作<\/th>/, "文件列表应包含来源、单一生命周期、切片数、更新时间与必要操作列");
+assert.match(seedKnowledgeDetailHtml, /data-document-preview="DOC-001"[\s\S]*?<td>文档管理<\/td>/, "文件列表应回显每个文件的真实导入来源");
 assert.doesNotMatch(seedKnowledgeDetailHtml, /当前修订|有效等级|<th>页数<\/th>|<th>处理状态<\/th>|<th>检索状态<\/th>/, "文件列表不得展示版本、文件等级、页数或双状态");
 assert.match(seedKnowledgeDetailHtml, /data-document-preview="DOC-001"[\s\S]*data-document-delete="DOC-001"/, "文件列表应至少提供预览与删除操作");
 assert.match(seedKnowledgeDetailHtml, /data-document-preview="DOC-001"[^>]*>详情<\/button>[\s\S]*data-document-delete="DOC-001"/, "知识库文件列表的行操作应使用详情命名");
+assert.doesNotMatch(seedKnowledgeDetailHtml, /data-document-preview="DOC-001"[^>]*>[^<]+<\/button><div class="table-secondary">/, "知识库文件列表文件名下方不应再保留 ID 或占位分类副标题");
 assert.match(seedKnowledgeDetailHtml, /data-document-preview="DOC-001"[^>]*>海岳电子供应商框架合同\.pdf<\/[^>]+>/, "文件名称本身应可点击进入预览");
 assert.match(seedKnowledgeDetailHtml, /role="tablist"[\s\S]*data-knowledge-content-tab="documents"[^>]*>文件<\/[\s\S]*data-knowledge-content-tab="chunks"[^>]*>切片<\//, "知识库详情应保留文件和切片两个页签");
 assert.match(seedKnowledgeDetailHtml, /data-knowledge-content-tab="documents"[^>]*aria-selected="true"|aria-selected="true"[^>]*data-knowledge-content-tab="documents"/, "知识库详情默认应选中文件页签");
@@ -793,6 +831,7 @@ assert.equal(state.rag.ingestionProfiles.some((item) => (item.usedByKnowledgeBas
 assert.equal(Object.prototype.hasOwnProperty.call(createdKnowledgeBase, "currentRetrievalProfileId"), false, "V2 全局检索设置不应向新知识库写入配置版本引用");
 const knowledgeDetailHtml = pages.knowledge.render({ name: "knowledge", id: createdKnowledgeBase.id, query: { tab: "documents" } }, state);
 assert.match(knowledgeDetailHtml, new RegExp(`data-test-kb="${createdKnowledgeBase.id}"`), "知识库详情页头应提供并带入当前对象的检索测试快捷入口");
+assert.match(knowledgeDetailHtml, new RegExp(`data-kb-edit="${createdKnowledgeBase.id}"`), "知识库详情页头应提供与列表一致的编辑基础信息入口");
 
 const uploadHtml = pages.knowledge.render({ name: "knowledge", id: createdKnowledgeBase.id, query: { onboarding: "1", step: "upload" } }, state);
 assert.match(uploadHtml, /local-upload-stack[\s\S]*<details class="[^"]*\bupload-folder-picker\b[^"]*" data-upload-folder-picker>[\s\S]*目标位置[\s\S]*data-directory-tree="local-upload-target"[\s\S]*<label class="file-drop"/, "知识库上传应复用文档管理的可折叠目标目录选择器");
@@ -805,7 +844,7 @@ assert.doesNotMatch(uploadHtml, /data-import-upload-mode|>上传文件<\/button>
 assert.doesNotMatch(uploadHtml, /import-resource-list__header|data-import-resource-title/, "资料列表不应重复当前来源页签标题");
 assert.match(uploadHtml, /data-import-source-browser[\s\S]*data-import-local-directory[\s\S]*data-import-local-directory-list[\s\S]*data-import-enterprise-directory[\s\S]*data-import-enterprise-directory-list[\s\S]*class="table-wrap"/, "知识库选文件应提供文档管理目录和独立企业数据目录");
 assert.doesNotMatch(uploadHtml, /enterprise-source-directory__heading|data-import-enterprise-location|enterprise-source-location|<span>文件目录<\/span>/, "企业数据目录不应重复展示左右标题栏");
-assert.match(uploadHtml, /<colgroup>[\s\S]*import-resource-table__col-name[\s\S]*import-resource-table__col-size[\s\S]*import-resource-table__col-status[\s\S]*<th>名称<\/th>[\s\S]*<th>大小<\/th>[\s\S]*<th>状态<\/th>[\s\S]*<th>更新时间<\/th>[\s\S]*import-resource-table__action-heading/, "文档管理与企业数据应共用固定列宽的逐行资料表");
+assert.match(uploadHtml, /<colgroup>[\s\S]*import-resource-table__col-name[\s\S]*import-resource-table__col-size[\s\S]*import-resource-table__col-status[\s\S]*<th>名称<\/th>[\s\S]*<th>大小<\/th>[\s\S]*<th class="import-resource-table__status">状态<\/th>[\s\S]*<th>更新时间<\/th>[\s\S]*import-resource-table__action-heading/, "文档管理与企业数据应共用固定列宽的逐行资料表，企业数据页签隐藏状态列");
 assert.doesNotMatch(uploadHtml, /import-resource-table__col-source|<th>来源<\/th>|<th>操作<\/th>|<td>文档管理<\/td>/, "来源已由 Tab 区分，资料列表不应再显示来源列或操作表头");
 assert.match(uploadHtml, /data-upload-cancel[\s\S]*data-upload-start/, "导入步骤底部只保留取消和导入动作");
 const enterpriseSnapshotChoices = actions.listEnterpriseSourceObjects();
@@ -816,15 +855,17 @@ assert.equal(new Set(enterpriseSnapshotChoices.map((item) => item.directoryId)).
 const parseHtml = pages.knowledge.render({ name: "knowledge", id: createdKnowledgeBase.id, query: { onboarding: "1", step: "parse" } }, state);
 assert.doesNotMatch(parseHtml, /name="parse-effort"|解析精细度/, "MinerU 解析模式应由识别内容自动派生，不再要求用户选择精细度");
 assert.doesNotMatch(parseHtml, /creation-section-intro"><h2>/, "第 3 步正文不应重复步骤条中的“文档解析策略”标题");
-assert.match(parseHtml, /id="parse-text-content" type="checkbox" checked disabled[\s\S]*id="parse-layout-structure" type="checkbox" checked disabled/, "文本内容与版面结构必须固定开启且不可取消");
+assert.match(parseHtml, /id="parse-text-content" type="checkbox" checked disabled[\s\S]*id="parse-layout-structure" type="checkbox" checked disabled[\s\S]*id="parse-table" type="checkbox" checked disabled/, "文本内容、版面结构与表格解析必须固定开启且不可取消");
 assert.match(parseHtml, /id="parse-visual-understanding" type="checkbox"/, "图片与图表内容理解应合并为一个可选项");
 assert.doesNotMatch(parseHtml, /id="parse-visual-understanding"[^>]*checked/, "VLM 内容理解应默认关闭");
 assert.doesNotMatch(parseHtml, /parse-return-images|parse-addon-title|附加输出|保留原图/, "原图保存应由系统默认处理，不应向运营人员提供选项");
 assert.doesNotMatch(parseHtml, /value="flash"|value="advanced"|目标切片|重叠 Token/, "MinerU 解析步骤不得虚构第三档或混入切片参数");
 assert.doesNotMatch(parseHtml, /endpoint|parse-location|data-remote|id="parse-remote/, "MinerU 解析步骤应固定本地执行，不暴露远程服务配置控件");
-assert.match(parseHtml, /value="auto"[\s\S]*value="txt"[\s\S]*value="ocr"[\s\S]*parse-text-content[\s\S]*parse-layout-structure[\s\S]*parse-table[\s\S]*parse-formula[\s\S]*parse-visual-understanding/, "解析步骤应覆盖解析方法、必选基础内容与合并视觉理解");
+assert.match(parseHtml, /parse-method-summary[\s\S]*<h3>自动识别<\/h3>[\s\S]*优先读取文档原生文字[\s\S]*自动使用 OCR[\s\S]*parse-text-content[\s\S]*parse-layout-structure[\s\S]*parse-table[\s\S]*parse-formula[\s\S]*parse-visual-understanding/, "解析步骤应以告知式自动判断说明文字提取，并覆盖必选基础内容与合并视觉理解");
+assert.doesNotMatch(parseHtml, /id="parse-recognition"|value="txt"|value="ocr"|文字提取方式（必填）/, "文字提取方式不应再作为用户选择项");
 assert.doesNotMatch(parseHtml, /保留结构化内容列表|保留页 \/ 块定位|parse-image-understanding|parse-chart-understanding/, "解析页面不应继续展示旧辅助开关或拆分视觉选项");
 assert.doesNotMatch(parseHtml, /data-import-processing-status|data-import-inline-result|<h2>解析结果<\/h2>/, "第 3 步只展示解析配置，提交后再异步开始解析");
+assert.doesNotMatch(parseHtml, /parse-vlm-note|data-parse-mode-status|开启图片 \/ 图表内容理解后/, "识别内容下方不应再展示 VLM 联动提示");
 assert.match(parseHtml, /data-onboarding-cancel[\s\S]*data-parse-back[\s\S]*data-parse-next/, "解析配置页应提供返回当前批次资料选择的上一步操作");
 const parseBackBatch = actions.startKnowledgeImport(createdKnowledgeBase.id, { files: [{ name: "解析返回链路.txt", size: 128, sourcePreview: "解析返回链路" }], deferred: true });
 assert.ok(actions.startImportParsing(parseBackBatch.id, { mineruParseConfig: createdKnowledgeBase.mineruParseConfig }), "模拟解析页返回前应能启动异步解析");
@@ -839,9 +880,9 @@ assert.doesNotMatch(processingHtml, /creation-section-intro"><h2>/, "第 4 步�
 const renderedProcessingFamilies = Array.from(processingHtml.matchAll(/<input\b(?=[^>]*\bname="processing-family")(?=[^>]*\bvalue="([^"]+)")[^>]*>/g), (match) => match[1]);
 const renderedCustomMethods = Array.from(processingHtml.matchAll(/<input\b(?=[^>]*\bname="processing-method")(?=[^>]*\bvalue="([^"]+)")[^>]*>/g), (match) => match[1]);
 assert.deepEqual(renderedProcessingFamilies, ["smart", "semantic", "custom"], "文档处理首层应且仅应提供自动、语义和自定义三个 family");
-assert.deepEqual(renderedCustomMethods, ["structure", "separator", "fixed", "page", "whole_document"], "自定义 family 应按稳定顺序提供结构、分隔符、固定长度、按页和整篇五种 method");
+assert.deepEqual(renderedCustomMethods, ["structure", "separator", "fixed", "page"], "自定义 family 应按稳定顺序提供结构、分隔符、固定长度和按页四种 method");
 assert.match(processingHtml, /data-processing-family-list[\s\S]*value="smart"[\s\S]*<strong>自动切片<\/strong>[\s\S]*value="semantic"[\s\S]*<strong>语义切片<\/strong>[\s\S]*value="custom"[\s\S]*<strong>自定义切片<\/strong>/, "三个首层 family 应展示普通用户名称并保持顺序");
-assert.match(processingHtml, /data-processing-method-list[\s\S]*value="structure"[\s\S]*<strong>结构切片<\/strong>[\s\S]*value="separator"[\s\S]*<strong>分隔符切片<\/strong>[\s\S]*value="fixed"[\s\S]*<strong>固定长度<\/strong>[\s\S]*value="page"[\s\S]*<strong>按页切片<\/strong>[\s\S]*value="whole_document"[\s\S]*<strong>整篇切片<\/strong>/, "五个自定义 method 应按顺序展示完整、可理解的普通名称");
+assert.match(processingHtml, /data-processing-method-list[\s\S]*value="structure"[\s\S]*<strong>结构切片<\/strong>[\s\S]*value="separator"[\s\S]*<strong>分隔符切片<\/strong>[\s\S]*value="fixed"[\s\S]*<strong>固定长度<\/strong>[\s\S]*value="page"[\s\S]*<strong>按页切片<\/strong>/, "四个自定义 method 应按顺序展示完整、可理解的普通名称");
 assert.doesNotMatch(processingHtml, /name="processing-method" value="recursive"|data-processing-profile-id="ING-RECURSIVE"/, "新建流程不得再显示独立递归方法；逐级递归应作为分隔符切片的内置降级机制");
 assert.match(processingHtml, /name="processing-family" value="smart"[^>]*data-processing-profile-id="ING-01"[^>]*checked/, "进入文档处理步骤应默认选中自动 family");
 assert.match(processingHtml, /class="processing-method-picker" data-processing-method-picker hidden/, "默认选中自动 family 时应保持自定义 method 区隐藏");
@@ -1216,9 +1257,7 @@ assert.equal(actions.deleteKnowledgeBase(customMethodKnowledgeBase.id), customMe
 assert.equal(actions.deleteKnowledgeBase(separatorMethodKnowledgeBase.id), separatorMethodKnowledgeBase, "闭环测试完成后应能删除未启用的分隔符 method 测试库");
 
 const pageProfile = state.rag.ingestionProfiles.find((item) => item.id === "ING-PAGE");
-const wholeDocumentProfile = state.rag.ingestionProfiles.find((item) => item.id === "ING-WHOLE");
 const pageProfileBefore = structuredClone(pageProfile);
-const wholeDocumentProfileBefore = structuredClone(wholeDocumentProfile);
 const pageMethodKnowledgeBase = actions.createKnowledgeBase({
   name: "按页切片参数闭环测试库",
   purpose: "验证连续分页参数、界面边界和零重叠快照。",
@@ -1248,7 +1287,7 @@ for (const snapshot of [pageConfigured.processingProfileSnapshot.chunking, pageC
 const pageProcessingHtml = pages.knowledge.render({ name: "knowledge", id: pageMethodKnowledgeBase.id, query: { onboarding: "1", step: "processing" } }, state);
 assert.match(pageProcessingHtml, /name="processing-method" value="page"[^>]*data-processing-profile-id="ING-PAGE"[^>]*checked/, "按页模式应回显对应方法卡片");
 assert.match(pageProcessingHtml, /<input\b(?=[^>]*\bdata-processing-param="pagesPerChunk")(?=[^>]*\bmin="1")(?=[^>]*\bmax="10")(?=[^>]*\bstep="1")(?=[^>]*\bvalue="3")[^>]*>/, "按页编辑区应以 1–10 的整数页数控件回显已保存参数");
-assert.doesNotMatch(pageProcessingHtml, /data-processing-param="(?:maxChars|overlapPercent|separatorType|semanticSensitivity|longDocumentFallback)"/, "按页编辑区不得混入字符切片或整篇专用参数");
+assert.doesNotMatch(pageProcessingHtml, /data-processing-param="(?:maxChars|overlapPercent|separatorType|semanticSensitivity|longDocumentFallback)"/, "按页编辑区不得混入字符切片专用参数");
 assert.match(pageProcessingHtml, /父子块检索[\s\S]*data-processing-param="parentChildEnabled"/, "按页切片应保留独立父子块检索开关");
 assert.doesNotMatch(pageProcessingHtml, /data-processing-param="contextPolicy"|上下文补全策略/, "按页切片不应展示上下文补全策略下拉");
 const pageProcessingHelp = pageProcessingHtml.match(/id="processing-pages-help"[^>]*>([\s\S]*?)<\/div>/)?.[1] || "";
@@ -1257,50 +1296,6 @@ assert.match(pageProcessingHelp, /解析/, "按页提示应交代依赖解析结
 assert.match(pageProcessingHelp, /分页|页码/, "按页提示应明确依赖分页或页码边界");
 assert.deepEqual(pageProfile, pageProfileBefore, "本次按页参数不得改写共享代码预置");
 assert.equal(actions.deleteKnowledgeBase(pageMethodKnowledgeBase.id), pageMethodKnowledgeBase, "按页参数测试后应清理测试库");
-
-for (const longDocumentFallback of ["smart", "stop"]) {
-  const wholeMethodKnowledgeBase = actions.createKnowledgeBase({
-    name: `整篇切片参数闭环测试库-${longDocumentFallback}`,
-    purpose: "验证整篇阈值提示、超长处理选项与不适用参数隔离。",
-    embeddingModelId: "MODEL-EMBEDDING-PRIMARY",
-  });
-  assert.equal(actions.setKnowledgeBaseOnboardingConfig(wholeMethodKnowledgeBase.id, {
-    ingestionProfileId: "ING-WHOLE",
-    processingParameters: { mode: "whole_document", longDocumentFallback: "truncate" },
-  }), null, "整篇切片不得接受自动切片或停止以外的超长处理值");
-  const wholeConfigured = actions.setKnowledgeBaseOnboardingConfig(wholeMethodKnowledgeBase.id, {
-    ingestionProfileId: "ING-WHOLE",
-    processingParameters: { mode: "whole_document", longDocumentFallback, overlapPercent: 17, includeContext: true, separatorType: "paragraph", semanticSensitivity: "inactive", pagesPerChunk: 0 },
-    completed: true,
-  });
-  assert.ok(wholeConfigured, `${longDocumentFallback} 超长处理选项应可保存`);
-  for (const snapshot of [wholeConfigured.processingProfileSnapshot.chunking, wholeConfigured.processingParametersSnapshot]) {
-    assert.equal(snapshot.mode, "whole_document", "整篇快照应保留独立模式");
-    assert.equal(snapshot.longDocumentFallback, longDocumentFallback, "整篇快照应保存所选超长处理方式");
-    assert.equal(snapshot.overlapPercent, 0, "整篇快照必须为零重叠，不继承字符切片的重叠参数");
-    assert.equal(snapshot.includeContext, false, "整篇快照必须关闭不存在的相邻切片上下文");
-    assert.equal(snapshot.contextPolicy, "none", "整篇快照应固化无上下文补全策略");
-    assert.equal(snapshot.separatorType, "literal", "整篇快照应使用独立字面边界类型");
-    assert.equal(snapshot.separator, "", "整篇快照必须保留空分隔符，不被隐藏下拉的段落值污染");
-  }
-  assert.equal(wholeConfigured.processingProfileSnapshot.chunking.maxDocumentChars, 20000, "整篇处理应保留 20000 字符的现有文档阈值");
-  const wholeProcessingHtml = pages.knowledge.render({ name: "knowledge", id: wholeMethodKnowledgeBase.id, query: { onboarding: "1", step: "processing" } }, state);
-  assert.match(wholeProcessingHtml, /name="processing-method" value="whole_document"[^>]*data-processing-profile-id="ING-WHOLE"[^>]*checked/, "整篇模式应回显对应方法卡片");
-  const wholeFallbackSelect = wholeProcessingHtml.match(/<select\b(?=[^>]*\bdata-processing-param="longDocumentFallback")[^>]*>[\s\S]*?<\/select>/)?.[0] || "";
-  assert.deepEqual(Array.from(wholeFallbackSelect.matchAll(/<option\b[^>]*\bvalue="([^"]+)"/g), (match) => match[1]), ["smart", "stop"], "整篇超长处理下拉应且仅应保留自动切片与停止两项");
-  assert.match(wholeFallbackSelect, new RegExp('<option\\b[^>]*value="' + longDocumentFallback + '"[^>]*\\bselected\\b'), "整篇超长处理应正确回显已保存的选项");
-  assert.doesNotMatch(wholeProcessingHtml, /data-processing-param="(?:maxChars|overlapPercent|pagesPerChunk|separatorType|semanticSensitivity|includeContext)"/, "整篇编辑区不得展示不适用的切片参数和相邻上下文开关");
-  const wholeParentChildControl = wholeProcessingHtml.match(/<input\b(?=[^>]*\bdata-processing-param="parentChildEnabled")[^>]*>/)?.[0] || "";
-  assert.match(wholeProcessingHtml, /父子块检索[\s\S]*通过上下文增强，在检索命中后补充更完整的内容[\s\S]*子块：参与 Embedding、检索和评分[\s\S]*父块：命中后补充上下文/, "整篇模式应保留统一的父子块说明");
-  assert.doesNotMatch(wholeProcessingHtml, /<span class="tag">(?:不适用|上下文增强)<\/span>|整篇切片本身就是完整上下文|父子块检索不适用于整篇切片|如需父子块检索/, "整篇模式只通过置灰开关表达不可用，不应额外展示标签或差异化说明");
-  assert.match(wholeParentChildControl, /\bdisabled\b/, "整篇模式的父子块开关应禁用");
-  assert.match(wholeProcessingHtml, /高级配置[\s\S]*data-processing-param="tableText"[\s\S]*data-processing-param="formulaText"[\s\S]*data-processing-param="imageText"/, "整篇模式仅在高级配置保留表格、公式和图片图表索引项");
-  assert.doesNotMatch(wholeProcessingHtml, /处理策略摘要|data-processing-param="contextPolicy"|上下文补全策略/, "整篇模式不应展示摘要或上下文策略下拉");
-  assert.doesNotMatch(wholeProcessingHtml, /data-processing-param="(?:documentName|headingPath|pageNumber|includeContext)"/, "整篇模式不得把来源定位或相邻上下文作为普通复选项");
-  assert.match(wholeProcessingHtml, /20,?000\s*字符/, "整篇编辑区应显示现有 20000 字符阈值，解释超长处理的触发条件");
-  assert.equal(actions.deleteKnowledgeBase(wholeMethodKnowledgeBase.id), wholeMethodKnowledgeBase, "整篇参数测试后应清理测试库");
-}
-assert.deepEqual(wholeDocumentProfile, wholeDocumentProfileBefore, "本次整篇参数不得改写共享代码预置");
 
 const parameterIsolationKnowledgeBase = actions.createKnowledgeBase({
   name: "切片参数隔离闭环测试库",
@@ -1325,7 +1320,7 @@ for (const profile of visibleProcessingPresets) {
       mode, maxChars: 1001, overlapPercent: 10,
       semanticSensitivity: mode === "semantic" ? "balanced" : "inactive",
       pagesPerChunk: mode === "page" ? 2 : 0,
-      longDocumentFallback: mode === "whole_document" ? "smart" : "inactive",
+      longDocumentFallback: "inactive",
       parentChildEnabled: true,
     },
   });
@@ -1333,24 +1328,16 @@ for (const profile of visibleProcessingPresets) {
   for (const snapshot of [normalizedConfiguration.processingProfileSnapshot.chunking, normalizedConfiguration.processingParametersSnapshot]) {
     assert.equal(snapshot.maxChars, 1001, `${mode} 应保存非百位整数上限，不能只支持步长 100`);
     for (const key of ["targetTokens", "maxTokens", "overlapTokens"]) assert.equal(Object.hasOwn(snapshot, key), false, `${mode} 规范化快照不得残留旧 ${key} 设置`);
-    assert.equal(snapshot.parentChildEnabled, mode !== "whole_document", `${mode} 应按适用性固化父子块开关`);
-    assert.equal(snapshot.contextPolicy, mode === "whole_document" ? "none" : "enhanced", `${mode} 应按适用性固化上下文补全策略`);
+    assert.equal(snapshot.parentChildEnabled, true, `${mode} 应固化已启用的父子块开关`);
+    assert.equal(snapshot.contextPolicy, "enhanced", `${mode} 应固化增强上下文补全策略`);
   }
-  if (mode === "whole_document") assert.equal(normalizedConfiguration.processingProfileSnapshot.chunking.maxDocumentChars, 1001, "整篇文档阈值应与其字符上限保持一致");
   const modeProcessingHtml = pages.knowledge.render({ name: "knowledge", id: parameterIsolationKnowledgeBase.id, query: { onboarding: "1", step: "processing" } }, state);
   assert.equal((modeProcessingHtml.match(/<input\b(?=[^>]*\bdata-processing-param="parentChildEnabled")/g) || []).length, 1, `${mode} 应且仅应展示一个父子块检索开关`);
   const modeParentChildControl = modeProcessingHtml.match(/<input\b(?=[^>]*\bdata-processing-param="parentChildEnabled")[^>]*>/)?.[0] || "";
   assert.ok(modeParentChildControl, `${mode} 页面应保留父子块检索开关`);
   assert.doesNotMatch(modeProcessingHtml, /data-processing-param="contextPolicy"|上下文补全策略/, `${mode} 页面不应保留上下文策略下拉`);
-  if (mode === "whole_document") {
-    assert.match(modeParentChildControl, /\bdisabled\b/, "整篇模式下父子块开关应可见但不可操作");
-    assert.doesNotMatch(modeParentChildControl, /\bchecked\b/, "整篇模式下不得伪回显已启用的父子块");
-    assert.match(modeProcessingHtml, /父子块检索[\s\S]*通过上下文增强，在检索命中后补充更完整的内容[\s\S]*子块：参与 Embedding、检索和评分[\s\S]*父块：命中后补充上下文/, "整篇模式应保留统一的父子块说明");
-    assert.doesNotMatch(modeProcessingHtml, /<span class="tag">(?:不适用|上下文增强)<\/span>|整篇切片本身就是完整上下文|父子块检索不适用于整篇切片|如需父子块检索/, "整篇模式不应额外展示标签或差异化说明");
-  } else {
-    assert.doesNotMatch(modeParentChildControl, /\bdisabled\b/, `${mode} 的父子块开关应可操作`);
-    assert.match(modeParentChildControl, /\bchecked\b/, `${mode} 应回显已保存的父子块开关`);
-  }
+  assert.doesNotMatch(modeParentChildControl, /\bdisabled\b/, `${mode} 的父子块开关应可操作`);
+  assert.match(modeParentChildControl, /\bchecked\b/, `${mode} 应回显已保存的父子块开关`);
 }
 const fractionalFixedConfiguration = actions.setKnowledgeBaseOnboardingConfig(parameterIsolationKnowledgeBase.id, {
   ingestionProfileId: "ING-FIXED",
@@ -1363,7 +1350,7 @@ const existingImportUploadHtml = pages.knowledge.render({ name: "knowledge", id:
 const existingImportParseHtml = pages.knowledge.render({ name: "knowledge", id: "KB-001", query: { onboarding: "1", step: "parse", flow: "import" } }, state);
 const existingImportProcessingHtml = pages.knowledge.render({ name: "knowledge", id: "KB-001", query: { onboarding: "1", step: "processing", flow: "import" } }, state);
 assert.match(existingImportUploadHtml, /page-header__title">导入文件[\s\S]*creation-steps[\s\S]*data-existing-import="true"/, "已有知识库导入应从完整四步流程的文件上传步骤进入");
-assert.match(existingImportParseHtml, /page-header__title">导入文件[\s\S]*parse-recognition[\s\S]*parse-visual-understanding/, "已有知识库导入应完整保留文档解析编辑步骤");
+assert.match(existingImportParseHtml, /page-header__title">导入文件[\s\S]*parse-method-summary[\s\S]*parse-visual-understanding/, "已有知识库导入应完整保留文档解析编辑步骤");
 assert.match(existingImportParseHtml, /data-parse-back/, "普通已有知识库导入的解析页应允许返回资料选择");
 assert.doesNotMatch(existingImportParseHtml, /parse-return-images|parse-addon-title|附加输出|保留原图/, "已有知识库导入同样不应暴露原图保存选项");
 assert.match(existingImportProcessingHtml, /page-header__title">导入文件[\s\S]*name="processing-family"[\s\S]*data-processing-method-list[\s\S]*data-processing-param="maxChars"[\s\S]*data-existing-import="true"/, "已有知识库导入应完整保留 family/method 选择和本次参数编辑");
@@ -1454,6 +1441,10 @@ createdKnowledgeBase.mineruParseConfig.returnImages = false;
 const createdImportBatch = actions.startKnowledgeImport(createdKnowledgeBase.id, { files: [{ name: "长文档示例.pdf", size: 1200 }] });
 assert.equal(createdImportBatch.status, "pending_configuration", "导入只先登记文件，处理需要显式提交");
 await completeBatch(createdImportBatch);
+const uploadedDocument = state.documents.find((item) => item.knowledgeBaseId === createdKnowledgeBase.id && item.name === "长文档示例.pdf");
+assert.equal(uploadedDocument && uploadedDocument.sourceChannel, "upload", "直接上传入库的文件应记录上传文件来源");
+const uploadedDocumentDetailHtml = pages.knowledge.render({ name: "knowledge", id: createdKnowledgeBase.id, query: {} }, state);
+assert.match(uploadedDocumentDetailHtml, /长文档示例\.pdf[\s\S]*?<td>上传文件<\/td>/, "直接上传的文件应在文件列表显示上传文件来源");
 assert.equal(createdImportBatch.mineruParseConfig.returnImages, true, "直接导入批次快照不得继承旧配置中的原图关闭状态");
 assert.deepEqual(createdImportBatch.items[0].processingEstimate.embeddingStages.map((item) => item.key), ["final_chunk_embedding"], "自动切片入库只应生成最终索引向量，不得静默增加语义边界 Embedding");
 const createdIndexTransaction = state.knowledgeVersions.find((item) => item.id === createdImportBatch.resultingKnowledgeVersionId);
@@ -1471,7 +1462,7 @@ assert.equal(state.documents.find((item) => item.id === stagedOnboardingBatch.it
 const pendingImportHtml = pages.knowledge.render({ name: "knowledge", id: createdKnowledgeBase.id, query: { tab: "documents" } }, state);
 assert.doesNotMatch(pendingImportHtml, /处理任务|knowledge-import-task|data-import-task-/, "知识库详情页不应为待配置批次追加处理任务板块");
 const pendingImportConfigurationHtml = pages.knowledge.render({ name: "knowledge", id: createdKnowledgeBase.id, query: { onboarding: "1", step: "parse", batch: stagedOnboardingBatch.id, flow: "import" } }, state);
-assert.match(pendingImportConfigurationHtml, /page-header__title">导入文件[\s\S]*parse-recognition[\s\S]*data-parse-next/, "移除详情任务板块后，带批次的正常解析配置路径仍应可用");
+assert.match(pendingImportConfigurationHtml, /page-header__title">导入文件[\s\S]*parse-method-summary[\s\S]*data-parse-next/, "移除详情任务板块后，带批次的正常解析配置路径仍应可用");
 assert.match(pendingImportConfigurationHtml, /data-parse-back/, "带批次的普通导入解析页仍应允许返回资料选择");
 actions.testRagModelConnection("embedding", primaryEmbedding.id, { simulateFailure: true });
 assert.equal(actions.completeImportProcessing(stagedOnboardingBatch.id, {

@@ -81,14 +81,16 @@
   top: var(--directory-tree-branch-line-top);
   bottom: var(--directory-tree-branch-line-bottom);
   left: calc(
-    var(--directory-tree-toggle-width)
-    + (var(--directory-parent-depth, 0) * var(--directory-tree-indent-step))
+    (var(--directory-parent-depth, 0) * var(--directory-tree-indent-step))
     + (var(--directory-tree-indent-step) * 0.5)
     + var(--directory-tree-branch-line-shift)
   );
   width: var(--directory-tree-line-width);
   background: var(--directory-tree-line-color);
   content: "";
+}
+.directory-tree__node--root > .directory-tree__group::before {
+  display: none;
 }
 .directory-tree__row {
   position: relative;
@@ -100,7 +102,7 @@
   padding-right: var(--directory-tree-row-pad-x);
   padding-top: var(--directory-tree-row-pad-y);
   padding-bottom: var(--directory-tree-row-pad-y);
-  grid-template-columns: var(--directory-tree-toggle-width) auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) var(--directory-tree-toggle-width);
   border-radius: 6px;
   color: var(--text-2);
 }
@@ -143,6 +145,7 @@
 }
 .directory-tree__toggle {
   display: inline-flex;
+  justify-self: end;
   width: var(--directory-tree-toggle-width);
   height: var(--directory-tree-toggle-height);
   align-items: center;

@@ -203,8 +203,7 @@
       separator: "分隔符切片",
       recursive: "递归切块",
       fixed: "固定长度切片",
-      page: "按页切片",
-      whole_document: "整篇切片"
+      page: "按页切片"
     }[mode] || "自动切片";
   }
 
@@ -253,7 +252,7 @@
       var availability = currentAvailability.key;
       var availabilityLabel = currentAvailability.label;
       return '<tr data-kb-enabled="' + (item.enabled ? "true" : "false") + '" data-kb-issue="' + (item.openImportIssueCount ? "true" : "false") + '" data-kb-availability="' + esc(availability) + '">' +
-        '<td><div class="knowledge-name-line"><button type="button" class="table-primary table-primary--link" data-kb-open="' + esc(item.id) + '">' + esc(item.name) + '</button></div><div class="table-secondary">' + esc(item.id) + "</div></td>" +
+        '<td><div class="knowledge-name-line"><button type="button" class="table-primary table-primary--link" data-kb-open="' + esc(item.id) + '">' + esc(item.name) + "</button></div></td>" +
         "<td>" + dom.status(availabilityLabel, iconStatus(availability)) + "</td>" +
         '<td><div class="table-primary">' + number(item.documentCounts.total) + "</div></td>" +
         "<td>" + displayDate(item.updatedAt || item.contentUpdatedAt) + "</td>" +
@@ -267,7 +266,7 @@
       actions: dom.button("新建知识库", { variant: "primary", icon: "plus", attrs: "data-create-kb" }),
       toolbar: { search: { placeholder: "搜索知识库", attrs: "data-kb-search" } }
     }) + '<div class="page-content"><section class="panel">' +
-      '<div class="table-wrap"><table class="data-table knowledge-table"><thead><tr><th>知识库名称 / ID</th><th>检索状态</th><th>文件数量</th><th>更新时间</th><th>创建时间</th><th>操作</th></tr></thead>' +
+      '<div class="table-wrap"><table class="data-table knowledge-table"><thead><tr><th>知识库名称</th><th>检索状态</th><th>文件数量</th><th>更新时间</th><th>创建时间</th><th>操作</th></tr></thead>' +
       '<tbody data-kb-table>' + rows + "</tbody></table></div>" +
       '<div class="table-footer"><span>共 ' + state.knowledgeBases.length + " 个知识库</span></div></section></div>";
   }
@@ -281,7 +280,8 @@
     var toggleAction = !kb.enabled && !retrievalReady ?
       dom.button(!hasSearchableIndex ? "等待索引建立" : "模型连接不可用", { variant: "secondary", icon: !hasSearchableIndex ? "clock-3" : "circle-alert", disabled: true, attrs: 'title="' + (!hasSearchableIndex ? "完成索引构建后可启用检索" : "向量模型未通过连通性测试") + '"' }) :
       dom.button(toggleLabel, { variant: toggleVariant, icon: kb.enabled ? "pause" : "play", attrs: 'data-toggle-kb="' + esc(kb.id) + '" data-next="' + (kb.enabled ? "false" : "true") + '"' });
-    return dom.button("检索测试", { variant: "secondary", icon: "search-check", attrs: 'data-test-kb="' + esc(kb.id) + '"' }) +
+    return dom.button("编辑", { variant: "secondary", icon: "pencil", attrs: 'data-kb-edit="' + esc(kb.id) + '"' }) +
+      dom.button("检索测试", { variant: "secondary", icon: "search-check", attrs: 'data-test-kb="' + esc(kb.id) + '"' }) +
       dom.button("导入文件", { variant: "secondary", icon: "upload", disabled: !embeddingReady, attrs: 'data-import-kb="' + esc(kb.id) + '"' + (embeddingReady ? "" : ' title="向量模型连接不可用"') }) + toggleAction;
   }
 
@@ -339,7 +339,7 @@
     var modelErrorTitle = !embeddingReady ? "向量模型连接不可用" : "";
     var modelErrorDescription = "原文件与处理结果仍可查看，恢复连接后可继续向量化和检索。";
     var embeddingError = modelErrorTitle ? '<div class="notice notice--danger knowledge-model-error">' + dom.icon("circle-alert", 16) + '<div class="notice__content"><div class="notice__title">' + modelErrorTitle + '</div>' + modelErrorDescription + dom.button("前往模型管理", { variant: "secondary", attrs: 'data-open-config="models"' }) + '</div></div>' : "";
-    return '<section class="panel knowledge-info"><div class="panel__header"><h2 class="panel__title">知识库信息</h2></div><div class="panel__body">' +
+    return '<section class="panel knowledge-info"><div class="panel__header"><h2 class="panel__title">基本信息</h2></div><div class="panel__body">' +
       '<div class="knowledge-info__grid">' +
       knowledgeInfoItem("知识库 ID", esc(kb.id), "id") +
       knowledgeInfoItem("描述", esc(kb.purpose), "description") +
@@ -356,6 +356,13 @@
       "</div></div>";
   }
 
+  var sourceChannelLabels = { upload: "上传文件", library: "文档管理", enterprise: "企业数据" };
+  function documentSourceLabel(item) {
+    if (item.sourceChannel && sourceChannelLabels[item.sourceChannel]) return sourceChannelLabels[item.sourceChannel];
+    if (item.sourceType === "enterprise_snapshot") return "企业数据";
+    return "文档管理";
+  }
+
   function renderDocumentsTab(state, kb) {
     var documents = knowledgeDocuments(state, kb.id);
     var rows = documents.map(function map(item) {
@@ -363,15 +370,16 @@
       var chunks = documentChunks(state, item);
       var chunkCount = item.chunkCount == null ? chunks.length : item.chunkCount;
       return "<tr>" +
-        '<td><button type="button" class="table-primary table-primary--link" data-document-preview="' + esc(item.id) + '"' + '>' + esc(item.name) + '</button><div class="table-secondary">' + esc(item.id) + " · " + esc(item.documentType) + "</div></td>" +
+        '<td><button type="button" class="table-primary table-primary--link" data-document-preview="' + esc(item.id) + '"' + '>' + esc(item.name) + "</button></td>" +
+        "<td>" + esc(documentSourceLabel(item)) + "</td>" +
         "<td>" + dom.status(lifecycle.label, lifecycleTone(lifecycle.key)) + "</td>" +
         "<td>" + (chunkCount ? number(chunkCount) + " 个" : "—") + "</td>" +
         "<td>" + displayDate(item.updatedAt || item.importedAt) + "</td>" +
         '<td><div class="knowledge-row-actions"><button type="button" class="table-action" data-document-preview="' + esc(item.id) + '"' + '>详情</button><button type="button" class="table-action table-action--danger" data-document-delete="' + esc(item.id) + '">移除</button><button type="button" class="table-action" data-document-reprocess="' + esc(item.id) + '">重新处理</button></div></td>' +
         "</tr>";
     }).join("");
-    return '<section class="panel knowledge-assets knowledge-files">' + renderKnowledgeContentTabs("documents") + '<div id="knowledge-documents-panel" class="knowledge-assets__panel" role="tabpanel"><div class="table-wrap"><table class="data-table knowledge-files__table"><thead><tr><th>文件</th><th>文件状态</th><th>切片数</th><th>更新时间</th><th>操作</th></tr></thead><tbody>' +
-      (rows || '<tr><td colspan="5">' + dom.empty("暂无文件", "导入文件后可查看处理状态与切片。", "files") + "</td></tr>") + "</tbody></table></div><div class=\"table-footer\">当前展示 " + documents.length + " 个文件</div></div></section>";
+    return '<section class="panel knowledge-assets knowledge-files">' + renderKnowledgeContentTabs("documents") + '<div id="knowledge-documents-panel" class="knowledge-assets__panel" role="tabpanel"><div class="table-wrap"><table class="data-table knowledge-files__table"><thead><tr><th>文件</th><th>来源</th><th>文件状态</th><th>切片数</th><th>更新时间</th><th>操作</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="6">' + dom.empty("暂无文件", "导入文件后可查看处理状态与切片。", "files") + "</td></tr>") + "</tbody></table></div><div class=\"table-footer\">当前展示 " + documents.length + " 个文件</div></div></section>";
   }
 
   function renderChunksTab(state, kb, requestedDocumentId) {
@@ -481,7 +489,7 @@
       '<button type="button" class="tab is-active" role="tab" aria-selected="true" data-import-source-tab="assets"><span>文档管理</span><span class="import-source-tab-count" data-import-source-count="assets" hidden>0</span></button>' +
       '<button type="button" class="tab" role="tab" aria-selected="false" data-import-source-tab="enterprise"><span>企业数据</span><span class="import-source-tab-count" data-import-source-count="enterprise" hidden>0</span></button>' +
       '</div><div class="import-source-toolbar__actions"><div class="search-box import-resource-list__search" data-import-resource-search-wrap>' + dom.icon("search", 15) + '<input class="field field--search" type="search" placeholder="搜索文档" aria-label="搜索文档" data-import-resource-search></div></div></div>';
-    var existing = kb.isLocalDocumentFlow ? "" : '<section class="import-source-pane import-resource-pane" data-import-resource-pane><div class="document-directory-browser import-directory-browser" data-import-source-browser><aside class="document-directory-sidebar" aria-label="文档管理文件目录" data-import-local-directory><div data-import-local-directory-list></div></aside><aside class="document-directory-sidebar" aria-label="企业数据文件目录" data-import-enterprise-directory hidden><div data-import-enterprise-directory-list></div></aside><div class="document-directory-content import-resource-list"><div class="document-directory-context" data-import-directory-path></div><div class="table-wrap"><table class="data-table import-resource-table"><colgroup><col class="import-resource-table__col-check"><col class="import-resource-table__col-name"><col class="import-resource-table__col-size"><col class="import-resource-table__col-status"><col class="import-resource-table__col-updated"><col class="import-resource-table__col-action"></colgroup><thead><tr><th class="import-resource-table__check"><span class="sr-only">选择</span></th><th>名称</th><th>大小</th><th>状态</th><th>更新时间</th><th class="import-resource-table__action-heading"><span class="sr-only">预览</span></th></tr></thead><tbody data-import-resource-rows></tbody></table></div></div></div></section>';
+    var existing = kb.isLocalDocumentFlow ? "" : '<section class="import-source-pane import-resource-pane" data-import-resource-pane><div class="document-directory-browser import-directory-browser" data-import-source-browser><aside class="document-directory-sidebar" aria-label="文档管理文件目录" data-import-local-directory><div data-import-local-directory-list></div></aside><aside class="document-directory-sidebar" aria-label="企业数据文件目录" data-import-enterprise-directory hidden><div data-import-enterprise-directory-list></div></aside><div class="document-directory-content import-resource-list"><div class="document-directory-context" data-import-directory-path></div><div class="table-wrap"><table class="data-table import-resource-table"><colgroup><col class="import-resource-table__col-check"><col class="import-resource-table__col-name"><col class="import-resource-table__col-size"><col class="import-resource-table__col-status"><col class="import-resource-table__col-updated"><col class="import-resource-table__col-action"></colgroup><thead><tr><th class="import-resource-table__check"><span class="sr-only">选择</span></th><th>名称</th><th>大小</th><th class="import-resource-table__status">状态</th><th>更新时间</th><th class="import-resource-table__action-heading"><span class="sr-only">预览</span></th></tr></thead><tbody data-import-resource-rows></tbody></table></div></div></div></section>';
     var fileDrop = '<label class="file-drop" for="kb-upload-files" data-upload-drop>' + dom.icon("file-up", 30) + '<strong>点击选择文件，或将文件拖入此处</strong><span>支持 PDF、图片、Word、PPT、Excel 和 TXT，可多选</span><span class="btn btn--secondary file-drop__choose">选择文件</span><input id="kb-upload-files" class="sr-only" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt" data-upload-files /></label>';
     var initialFolderId = uploadFolderId(state, route && route.query && route.query.folder || "FOLDER-UNCATEGORIZED");
     var uploadBody = '<div class="local-upload-stack"><div class="upload-folder-picker-inline"><div class="form-field"><label class="form-label">目标位置</label></div><details class="upload-folder-picker upload-folder-picker--standalone" data-upload-folder-picker>' + renderUploadFolderPicker(state, initialFolderId, []) + "</details></div>" + fileDrop + "</div>";
@@ -513,7 +521,16 @@
     return { ingestionProfileId: draft.profileId, processingParameters: parameters };
   }
 
-  function renderVersionSource(version) {
+  function renderSourceBlocks(text) {
+    return String(text || "").split(/\n\s*\n/).map(function render(paragraph, index) {
+      var value = paragraph.replace(/\s+$/g, "");
+      if (!value.trim()) return "";
+      if (/^(?:-{3,}|—{3,}|_{3,})$/.test(value.trim())) return '<hr class="document-source-separator" aria-hidden="true">';
+      return '<span class="document-source-block" data-source-block="' + index + '" role="button" tabindex="0" title="点击定位对应切片">' + esc(value) + "</span>";
+    }).join("");
+  }
+
+  function renderVersionSource(version, options) {
     if (!version) return dom.empty("暂无原文件", "选择资料后可查看原文件。", "file-text");
     var source = version.sourceFile;
     var sourceUrl = version.sourceUrl || "";
@@ -529,7 +546,9 @@
       return '<div class="import-preview-image"><img src="' + esc(sourceUrl) + '" alt="' + esc(version.name) + '"></div>';
     }
     if (!version.sourcePreview) return dom.empty("原文件已保存", source || sourceUrl ? "此格式暂不支持在线预览，可下载原文件查看。" : "此预置资料没有原始二进制文件，可查看已生成的切片。", "file-text");
-    return '<article class="document-source-preview"><div class="document-source-preview__page"><div class="document-source-preview__file">' + dom.icon("file-text", 17) + '<span>' + esc(version.name) + '</span></div><div class="document-source-preview__content">' + esc(version.sourcePreview) + '</div></div></article>';
+    var addressable = Boolean(options && options.addressable);
+    var sourceContent = addressable ? renderSourceBlocks(version.sourcePreview) : esc(version.sourcePreview);
+    return '<article class="document-source-preview' + (addressable ? " document-source-preview--linked" : "") + '"><div class="document-source-preview__page"><div class="document-source-preview__file">' + dom.icon("file-text", 17) + '<span>' + esc(version.name) + '</span></div><div class="document-source-preview__content">' + sourceContent + '</div></div></article>';
   }
 
   function openImportChoicePreview(trigger, title, size, body) {
@@ -608,15 +627,15 @@
     var config = kb.mineruParseConfig || {};
     var visualUnderstanding = visualUnderstandingEnabled(config);
     return '<div class="creation-config-stack">' +
-      '<section class="parse-config-section" aria-labelledby="parse-method-title"><div class="parse-config-section__header"><div><h2 id="parse-method-title">解析方法</h2><p>设置文字提取方式；解析模式由所选识别内容自动确定。</p></div></div>' +
-      '<div class="creation-control-grid creation-control-grid--single"><div class="form-field">' + dom.requiredLabel("文字提取方式", { forId: "parse-recognition" }) + '<select id="parse-recognition" class="select-field" required aria-required="true"><option value="auto">自动判断（推荐）</option><option value="txt">优先原生文本</option><option value="ocr">全文 OCR</option></select><div class="form-help">自动判断会优先读取文档原生文字；扫描型、图片型 PDF 或文字层异常时自动使用 OCR。</div></div></div></section>' +
+      '<section class="parse-config-section" aria-labelledby="parse-method-title"><div class="parse-config-section__header"><div><h2 id="parse-method-title">解析方法</h2></div></div>' +
+      '<div class="parse-method-summary"><span class="parse-method-summary__icon" aria-hidden="true">' + dom.icon("scan-text", 18) + '</span><div><h3>自动识别</h3><p>优先读取文档原生文字；扫描型、图片型 PDF 或文字层异常时自动使用 OCR。</p></div></div></section>' +
       '<section class="parse-config-section" aria-labelledby="parse-content-title"><div class="parse-config-section__header"><div><h2 id="parse-content-title">识别内容</h2><p>文本与版面结构是后续切片、索引和引用定位所需的基础内容。</p></div></div><div class="parse-toggle-list">' +
       requiredParseOutput("parse-text-content", "文本内容", "正文、段落、列表文字、链接和代码") +
       requiredParseOutput("parse-layout-structure", "版面结构", "标题、目录 / 索引、段落、列表、参考文献与阅读顺序") +
-      optionToggle("parse-table", "表格解析", "输出 HTML / Markdown 表格与单元格结构", config.tableEnabled !== false) +
+      requiredParseOutput("parse-table", "表格解析", "输出 HTML / Markdown 表格与单元格结构") +
       optionToggle("parse-formula", "公式解析", "输出 LaTeX 与公式位置", config.formulaEnabled !== false) +
       optionToggle("parse-visual-understanding", "图片 / 图表内容理解", "识别图像 / 图表类型、物体场景、图中文字与印章、结构化数据、流程结构及内容趋势", visualUnderstanding, false, "依赖 VLM") +
-      '</div><div class="parse-vlm-note"><span class="parse-vlm-status' + (visualUnderstanding ? " is-on" : "") + '" data-parse-mode-status role="status" aria-live="polite">' + (visualUnderstanding ? "精细解析 · VLM 已开启" : "标准解析 · 系统自动") + '</span><p>开启图片 / 图表内容理解后，系统自动使用精细解析并启用 Image Analysis。</p></div></section></div>';
+      '</div></section></div>';
   }
 
   function renderKnowledgeParse(state, kb, isExistingImport) {
@@ -657,7 +676,7 @@
   function processingCustomMethodForDraft(draft) {
     var mode = draft && draft.mode || "smart";
     if (mode === "recursive") return "separator";
-    if (["structure", "separator", "fixed", "page", "whole_document"].indexOf(mode) >= 0) return mode;
+    if (["structure", "separator", "fixed", "page"].indexOf(mode) >= 0) return mode;
     return "structure";
   }
 
@@ -678,8 +697,7 @@
       { value: "structure", title: "结构切片", summary: "依据解析得到的标题、段落、列表和表格等结构切分；超长内容块仍按长度上限拆分。", profile: structureProfile },
       { value: "separator", title: "分隔符切片", summary: "优先按选定的常用边界切分；超长片段由系统继续递归拆分。", profile: separatorProfile },
       { value: "fixed", title: "固定长度", summary: "按设定的字符数切分，适合结构较弱、内容连续的文本。", profile: fixedProfile },
-      { value: "page", title: "按页切片", summary: "按原文连续页分组，适合需要保留页面整体内容的 PDF 或演示文稿。", profile: profileForMode("page") },
-      { value: "whole_document", title: "整篇切片", summary: "将短文档整体保留为一个切片；超长时按所选方式处理。", profile: profileForMode("whole_document") }
+      { value: "page", title: "按页切片", summary: "按原文连续页分组，适合需要保留页面整体内容的 PDF 或演示文稿。", profile: profileForMode("page") }
     ].filter(function filterMethod(method) { return !!method.profile; });
     if (!methodDefinitions.some(function some(method) { return method.value === selectedMethod; })) selectedMethod = methodDefinitions.length ? methodDefinitions[0].value : "";
 
@@ -691,7 +709,7 @@
     var familyDefinitions = [
       smartProfile && { value: "smart", title: "自动切片", summary: "依次按解析结构、逐级边界与长度上限生成切片，不调用语义模型。", profile: smartProfile, recommended: true },
       semanticProfile && { value: "semantic", title: "语义切片", summary: "比较相邻句段的语义变化，在主题切换处生成边界；效果需用真实问题集验证，入库会增加句段 Embedding 消耗。", profile: semanticProfile },
-      methodDefinitions.length && { value: "custom", title: "自定义切片", summary: "明确选择结构、分隔符、固定长度、按页或整篇处理，适合已知文档形态。", profile: null }
+      methodDefinitions.length && { value: "custom", title: "自定义切片", summary: "明确选择结构、分隔符、固定长度或按页处理，适合已知文档形态。", profile: null }
     ].filter(Boolean);
     var familyCards = familyDefinitions.map(function mapFamily(family) {
       return renderProfileCard({
@@ -716,7 +734,7 @@
       });
     }).join("");
     return '<div class="processing-profile-list processing-family-list" role="radiogroup" aria-label="切片类型" data-processing-family-list>' + familyCards + '</div>' +
-      '<section class="processing-method-picker" data-processing-method-picker' + (selectedFamily === "custom" ? "" : " hidden") + '><div class="processing-method-picker__header"><strong id="processing-method-title">自定义切片方法</strong><span>每次选择一种方法，再配置对应参数。</span></div><div class="processing-profile-list processing-method-list" role="radiogroup" aria-labelledby="processing-method-title" data-processing-method-list>' + methodCards + '</div></section>';
+      '<section class="processing-method-picker" data-processing-method-picker' + (selectedFamily === "custom" ? "" : " hidden") + '><div class="processing-method-picker__header"><strong id="processing-method-title">自定义切片方法</strong></div><div class="processing-profile-list processing-method-list" role="radiogroup" aria-labelledby="processing-method-title" data-processing-method-list>' + methodCards + '</div></section>';
   }
 
   function normalizedSemanticSensitivity(value) {
@@ -724,7 +742,6 @@
   }
 
   function normalizedContextPolicy(mode, parentChildEnabled) {
-    if (mode === "whole_document") return "none";
     return parentChildEnabled ? "enhanced" : "standard";
   }
 
@@ -743,7 +760,7 @@
     var indexContent = profile.indexContent || {};
     var sourceMode = chunking.mode || "smart";
     var mode = sourceMode === "recursive" ? "separator" : sourceMode;
-    var parentChildEnabled = mode !== "whole_document" && chunking.parentChildEnabled === true;
+    var parentChildEnabled = chunking.parentChildEnabled === true;
     var contextPolicy = normalizedContextPolicy(mode, parentChildEnabled);
     var separatorTypes = ["structure", "paragraph", "newline", "zh_period", "zh_exclamation", "zh_question", "en_period", "en_exclamation", "en_question"];
     var separatorTypeByLiteral = { "\n\n": "paragraph", "\n": "newline", "。": "zh_period", "！": "zh_exclamation", "？": "zh_question", ".": "en_period", "!": "en_exclamation", "?": "en_question" };
@@ -756,15 +773,15 @@
       knowledgeBaseId: knowledgeBaseId,
       profileId: profile.id,
       mode: mode,
-      maxChars: Number(chunking.maxChars || 1200),
+      maxChars: Number(chunking.maxChars || 512),
       maxDocumentChars: Number(chunking.maxDocumentChars || chunking.maxChars || 20000),
-      overlapPercent: Number(chunking.overlapPercent || 0),
+      overlapPercent: Number(chunking.overlapPercent || 10),
       semanticSensitivity: normalizedSemanticSensitivity(chunking.semanticSensitivity),
       separatorType: separatorType,
       pagesPerChunk: Number(chunking.pagesPerChunk || 1),
       longDocumentFallback: chunking.longDocumentFallback || "smart",
       mergeShortChunks: chunking.mergeShortChunks !== false,
-      includeContext: mode !== "whole_document",
+      includeContext: true,
       parentChildEnabled: parentChildEnabled,
       contextPolicy: contextPolicy,
       documentName: true,
@@ -836,11 +853,9 @@
     }
     if (mode === "fixed") strategyFields = fixedSizeFields;
     if (mode === "page") strategyFields = '<div class="form-field form-field--full">' + dom.requiredLabel("每个切片页数", { forId: "processing-pages" }) + '<div class="field-with-suffix"><input id="processing-pages" class="field" type="number" min="1" max="10" step="1" value="' + esc(draft.pagesPerChunk) + '" data-processing-param="pagesPerChunk" required aria-required="true" aria-describedby="processing-pages-help"><span>页</span></div><div id="processing-pages-help" class="form-help">需解析结果包含原文分页信息；每片包含指定数量的连续页，尾片可不足该页数。页数不能替代模型输入长度校验。</div></div>';
-    if (mode === "whole_document") strategyFields = '<div class="form-field form-field--full">' + dom.requiredLabel("超长文档处理", { forId: "processing-long-document" }) + '<select id="processing-long-document" class="select-field" data-processing-param="longDocumentFallback" required aria-required="true" aria-describedby="processing-whole-help"><option value="smart"' + (draft.longDocumentFallback === "smart" ? " selected" : "") + '>改用自动切片</option><option value="stop"' + (draft.longDocumentFallback === "stop" ? " selected" : "") + '>停止处理并提示</option></select><div id="processing-whole-help" class="form-help">Demo 预置整篇上限为 ' + number(draft.maxDocumentChars) + ' 字符；超长处理选项目前仅保存配置。正式接入时还需按向量模型的 Token 上限校验。</div></div>';
-    var parentChildAvailable = mode !== "whole_document";
     var parentChildDescription = "通过上下文增强，在检索命中后补充更完整的内容，降低孤立切片理解偏差。";
     var parentChildDetail = '<div class="processing-parent-child-flow" id="processing-parent-child-help"><p>子块：参与 Embedding、检索和评分，负责定位最相关的细粒度证据。</p><p>父块：命中后补充上下文，并用于同父去重。</p></div>';
-    var parentChildOption = '<section class="processing-context-option' + (parentChildAvailable ? "" : " is-disabled") + '" aria-labelledby="processing-parent-child-title"><div class="processing-context-option__main"><div class="processing-context-option__copy"><div class="processing-context-option__title"><strong id="processing-parent-child-title">父子块检索</strong></div><p id="processing-parent-child-summary">' + esc(parentChildDescription) + '</p></div><label class="processing-context-toggle" for="processing-parent-child"><input id="processing-parent-child" class="sr-only" type="checkbox" data-processing-param="parentChildEnabled" aria-describedby="processing-parent-child-summary processing-parent-child-help"' + (draft.parentChildEnabled && parentChildAvailable ? " checked" : "") + (parentChildAvailable ? "" : " disabled") + '><span class="switch" aria-hidden="true"></span><span class="sr-only">启用父子块检索</span></label></div>' + parentChildDetail + '</section>';
+    var parentChildOption = '<section class="processing-context-option" aria-labelledby="processing-parent-child-title"><div class="processing-context-option__main"><div class="processing-context-option__copy"><div class="processing-context-option__title"><strong id="processing-parent-child-title">父子块检索</strong></div><p id="processing-parent-child-summary">' + esc(parentChildDescription) + '</p></div><label class="processing-context-toggle" for="processing-parent-child"><input id="processing-parent-child" class="sr-only" type="checkbox" data-processing-param="parentChildEnabled" aria-describedby="processing-parent-child-summary processing-parent-child-help"' + (draft.parentChildEnabled ? " checked" : "") + '><span class="switch" aria-hidden="true"></span><span class="sr-only">启用父子块检索</span></label></div>' + parentChildDetail + '</section>';
     return '<section class="processing-parameters">' +
       '<div class="processing-parameter-grid' + (mode === "semantic" ? " processing-parameter-grid--semantic" : "") + '">' + strategyFields + '</div>' +
       parentChildOption +
@@ -865,10 +880,9 @@
       title: kb.isLocalDocumentFlow ? "上传文档" : (isExistingImport ? "导入文件" : "新建知识库"),
       back: { label: kb.isLocalDocumentFlow ? "返回文档管理" : "返回知识库", route: importReturnRoute(kb.id, kb.importBatchId) }
     }) + '<div class="page-content creation-page"><div class="creation-page__top">' + renderCreationSteps(4, kb.isLocalDocumentFlow) + '</div><section class="panel creation-panel"><div class="panel__body creation-panel__body"><div class="creation-panel__scroll">' +
-      '<div class="processing-section-label">' + dom.requiredLabel("切片策略", { tag: "div" }) + '<p>先选择切片类型；如需精确控制，再在自定义切片中选择具体方法。</p></div><div class="processing-profile-picker">' + processingProfileCards(state, kb, processingDraft) + '</div>' +
-      '<div data-processing-draft>' + renderProcessingParameters(processingDraft) + '</div>' +
-      '<div class="vector-cost-notice">' + dom.icon("circle-alert", 15) + '<span>完成后将为本次导入内容生成向量并写入索引，产生 Embedding Token 消耗。</span></div></div>' +
-      '<div class="creation-actions">' + dom.button("取消", { variant: "secondary", attrs: 'data-onboarding-cancel="' + esc(kb.id) + '"' }) + dom.button("上一步", { variant: "secondary", icon: "arrow-left", attrs: 'data-processing-back="' + esc(kb.id) + '"' }) + dom.button("确认处理", { variant: "primary", icon: "check", disabled: !processingDraft, attrs: 'data-processing-finish="' + esc(kb.id) + '" data-existing-import="' + (isExistingImport ? "true" : "false") + '"' }) + '</div></div></section></div>';
+      '<div class="processing-section-label">' + dom.requiredLabel("切片策略", { tag: "div" }) + '</div><div class="processing-profile-picker">' + processingProfileCards(state, kb, processingDraft) + '</div>' +
+      '<div data-processing-draft>' + renderProcessingParameters(processingDraft) + '</div></div>' +
+      '<div class="creation-actions"><div class="vector-cost-notice">' + dom.icon("circle-alert", 15) + '<span>完成后将为本次导入内容生成向量并写入索引，产生 Embedding Token 消耗。</span></div>' + dom.button("取消", { variant: "secondary", attrs: 'data-onboarding-cancel="' + esc(kb.id) + '"' }) + dom.button("上一步", { variant: "secondary", icon: "arrow-left", attrs: 'data-processing-back="' + esc(kb.id) + '"' }) + dom.button("确认", { variant: "primary", icon: "check", disabled: !processingDraft, attrs: 'data-processing-finish="' + esc(kb.id) + '" data-existing-import="' + (isExistingImport ? "true" : "false") + '"' }) + '</div></div></section></div>';
   }
   function renderChunkCards(state, item, options) {
     var chunks = documentChunks(state, item);
@@ -899,7 +913,7 @@
 
   function renderDocumentSource(state, item) {
     var detail = actions.getFileAssetDetail && actions.getFileAssetDetail(item.fileId || item.localAssetId, { fileVersionId: item.fileVersionId, knowledgeBaseId: item.knowledgeBaseId });
-    return renderVersionSource(detail && detail.version || item);
+    return renderVersionSource(detail && detail.version || item, { addressable: true });
   }
 
   function renderKnowledgeDetail(state, route, kb) {
@@ -1135,7 +1149,7 @@
     if (parseConfig.formulaEnabled !== false) outputs.push("公式");
     if (visualUnderstandingEnabled(parseConfig)) outputs.push("图片 / 图表内容理解");
     outputs.push("原图");
-    var recognition = { auto: "自动判断（推荐）", txt: "优先原生文本", ocr: "全文 OCR" }[parseConfig.parseMethod] || "自动判断（推荐）";
+    var recognition = { auto: "自动识别", txt: "优先原生文本", ocr: "全文 OCR" }[parseConfig.parseMethod] || "自动识别";
     return {
       effort: visualUnderstandingEnabled(parseConfig) ? "系统自动 · 精细解析" : "系统自动 · 标准解析",
       recognition: recognition,
@@ -1408,7 +1422,9 @@
         search.placeholder = selection.source === "enterprise" ? (selection.enterpriseDirectoryId === "all" ? "搜索企业数据文件" : "搜索当前目录") : "搜索文档";
         search.setAttribute("aria-label", search.placeholder);
       }
+      var resourceTable = root.querySelector(".import-resource-table");
       if (selection.source === "enterprise") {
+        if (resourceTable) resourceTable.classList.add("import-resource-table--enterprise");
         if (localDirectory) localDirectory.hidden = true;
         if (directory) directory.hidden = false;
         renderEnterpriseDirectories(current);
@@ -1419,17 +1435,17 @@
         });
         var enterpriseRows = visibleEnterpriseObjects.map(function map(source) {
           var connection = (current.enterpriseConnections || []).find(function match(item) { return item.id === source.connectionId; });
-          var available = source.available !== false;
           var checked = selection.sourceObjectIds.indexOf(source.id) >= 0;
           var searchableText = [source.fileName || source.name, source.directoryPath, connection && connection.name, source.connectionId].join(" ").toLowerCase();
           if (query && searchableText.indexOf(query) < 0) return "";
           var inputId = "import-source-" + source.id;
-          return '<tr class="import-resource-row' + (checked ? " is-selected" : "") + (available ? "" : " is-disabled") + '"><td class="import-resource-table__check"><input id="' + esc(inputId) + '" type="checkbox" data-import-enterprise-object="' + esc(source.id) + '"' + (checked ? " checked" : "") + (available ? "" : " disabled") + '></td><td><label class="table-primary" for="' + esc(inputId) + '">' + esc(source.fileName || source.name) + '</label></td><td>' + esc(source.fileSizeLabel || "—") + '</td><td>' + dom.status(available ? "可引用" : "连接不可用", available ? "success" : "danger") + '</td><td>' + displayDate(source.updatedAt) + '</td><td class="import-resource-table__action">' + importChoicePreviewButton('data-import-enterprise-preview="' + esc(source.id) + '"') + '</td></tr>';
+          return '<tr class="import-resource-row' + (checked ? " is-selected" : "") + '"><td class="import-resource-table__check"><input id="' + esc(inputId) + '" type="checkbox" data-import-enterprise-object="' + esc(source.id) + '"' + (checked ? " checked" : "") + '></td><td><label class="table-primary" for="' + esc(inputId) + '">' + esc(source.fileName || source.name) + '</label></td><td>' + esc(source.fileSizeLabel || "—") + '</td><td>' + displayDate(source.updatedAt) + '</td><td class="import-resource-table__action">' + importChoicePreviewButton('data-import-enterprise-preview="' + esc(source.id) + '"') + '</td></tr>';
         }).join("");
-        container.innerHTML = enterpriseRows || '<tr><td colspan="6">' + dom.empty("暂无可选企业数据", query ? "试试其他名称。" : "当前目录没有可添加到该知识库的文件。", "database") + '</td></tr>';
+        container.innerHTML = enterpriseRows || '<tr><td colspan="5">' + dom.empty("暂无可选企业数据", query ? "试试其他名称。" : "当前目录没有可添加到该知识库的文件。", "database") + '</td></tr>';
         dom.hydrateIcons(container);
         return;
       }
+      if (resourceTable) resourceTable.classList.remove("import-resource-table--enterprise");
       if (localDirectory) localDirectory.hidden = false;
       if (directory) directory.hidden = true;
       renderLocalDirectories(current);
@@ -1447,7 +1463,7 @@
         var processedLabel = detail.parseResult && detail.parseResult.status === "ready" ? "已解析" : status === "parsing" ? "解析中" : status === "failed" ? "异常" : "未处理";
         var checked = selection.versionIds.indexOf(version.id) >= 0;
         var inputId = "import-version-" + version.id;
-        return '<tr class="import-resource-row' + (checked ? " is-selected" : "") + '"><td class="import-resource-table__check"><input id="' + esc(inputId) + '" type="checkbox" data-import-version="' + esc(version.id) + '"' + (checked ? " checked" : "") + '></td><td><label class="table-primary" for="' + esc(inputId) + '">' + esc(version.name || asset.name) + '</label></td><td>' + esc(version.fileSizeLabel || "原文件") + '</td><td>' + dom.status(processedLabel, "info") + '</td><td>' + displayDate(version.createdAt || asset.createdAt) + '</td><td class="import-resource-table__action">' + importChoicePreviewButton('data-import-file-preview="' + esc(asset.id) + '" data-import-file-version="' + esc(version.id) + '"') + '</td></tr>';
+        return '<tr class="import-resource-row' + (checked ? " is-selected" : "") + '"><td class="import-resource-table__check"><input id="' + esc(inputId) + '" type="checkbox" data-import-version="' + esc(version.id) + '"' + (checked ? " checked" : "") + '></td><td><label class="table-primary" for="' + esc(inputId) + '">' + esc(version.name || asset.name) + '</label></td><td>' + esc(version.fileSizeLabel || "原文件") + '</td><td class="import-resource-table__status">' + dom.status(processedLabel, "info") + '</td><td>' + displayDate(version.createdAt || asset.createdAt) + '</td><td class="import-resource-table__action">' + importChoicePreviewButton('data-import-file-preview="' + esc(asset.id) + '" data-import-file-version="' + esc(version.id) + '"') + '</td></tr>';
       }).join("");
       container.innerHTML = rows || '<tr><td colspan="6">' + dom.empty("暂无可选文档", query ? "试试其他名称。" : "当前目录没有可添加到该知识库的文件。", "files") + '</td></tr>';
       dom.hydrateIcons(container);
@@ -1604,6 +1620,10 @@
       root.querySelectorAll("[data-import-source-tab]").forEach(function bind(button) { button.addEventListener("click", function handle() { showSource(button.dataset.importSourceTab); }); });
       var resourceSearch = root.querySelector("[data-import-resource-search]");
       if (resourceSearch) resourceSearch.addEventListener("input", renderResourceChoices);
+      function expandSelectedDirectory(collapsed, folderId) {
+        var index = collapsed.indexOf(folderId);
+        if (index >= 0) collapsed.splice(index, 1);
+      }
       root.addEventListener("click", function selectImportDirectory(event) {
         var button = event.target.closest("[data-directory-select], [data-directory-toggle]");
         if (!button) return;
@@ -1616,8 +1636,10 @@
           else collapsed.push(button.dataset.directoryToggle);
         } else if (scope === "knowledge-enterprise") {
           selection.enterpriseDirectoryId = button.dataset.directorySelect || "all";
+          expandSelectedDirectory(selection.enterpriseCollapsedIds, selection.enterpriseDirectoryId);
         } else if (scope === "knowledge-local") {
           selection.localFolderId = button.dataset.directorySelect || "all";
+          expandSelectedDirectory(selection.localCollapsedIds, selection.localFolderId);
         } else if (scope === "local-upload-target") {
           selection.localFolderId = uploadFolderId(OpsDemo.core.store.getState(), button.dataset.directorySelect);
           selectedUploadTarget = true;
@@ -1707,34 +1729,16 @@
         router.navigate(importReturnRoute(button.dataset.onboardingCancel, route.query.batch));
       });
     });
-    var parseRecognition = root.querySelector("#parse-recognition");
     var parseVisualUnderstanding = root.querySelector("#parse-visual-understanding");
-    function syncVisualUnderstanding() {
-      var visualEnabled = Boolean(parseVisualUnderstanding && parseVisualUnderstanding.checked);
-      var status = root.querySelector("[data-parse-mode-status]");
-      if (status) {
-        status.textContent = visualEnabled ? "精细解析 · VLM 已开启" : "标准解析 · 系统自动";
-        status.classList.toggle("is-on", visualEnabled);
-      }
-    }
-    if (parseVisualUnderstanding) {
-      parseVisualUnderstanding.addEventListener("change", syncVisualUnderstanding);
-      syncVisualUnderstanding();
-    }
-    if (route.id && ((route.query.onboarding === "1" && route.query.step === "parse") || route.query.settings === "parse")) {
-      var activeKb = findKnowledgeBase(state, route.id, route.query.batch);
-      var activeParseConfig = (activeKb && activeKb.mineruParseConfig) || {};
-      if (parseRecognition) parseRecognition.value = activeParseConfig.parseMethod || "auto";
-    }
     function readParseConfig() {
       var imageAnalysisEnabled = Boolean(parseVisualUnderstanding && parseVisualUnderstanding.checked);
       return {
-        parseMethod: parseRecognition ? parseRecognition.value : "auto",
+        parseMethod: "auto",
         executionMode: "local",
         remoteAuthorized: false,
         textContentEnabled: true,
         layoutStructureEnabled: true,
-        tableEnabled: root.querySelector("#parse-table").checked,
+        tableEnabled: true,
         formulaEnabled: root.querySelector("#parse-formula").checked,
         imageAnalysisEnabled: imageAnalysisEnabled,
         returnContentList: true,
@@ -1817,7 +1821,7 @@
       }
       var configured = actions.setKnowledgeBaseOnboardingConfig(parseSettingsSave.dataset.parseSettingsSave, { mineruParseConfig: nextParseConfig });
       if (!configured) {
-        overlay.toast("策略未保存", "请检查文字提取方式与识别内容。", "warning");
+        overlay.toast("策略未保存", "请检查识别内容。", "warning");
         return;
       }
       overlay.toast("文档解析策略已保存", "仅影响之后新导入的文件，已有文件不会重新处理。", "success");
@@ -2025,7 +2029,7 @@
             }
             draft[key] = input.checked;
             if (key === "parentChildEnabled") {
-              draft.includeContext = draft.mode !== "whole_document";
+              draft.includeContext = true;
               draft.contextPolicy = normalizedContextPolicy(draft.mode, draft.parentChildEnabled);
             }
           }
@@ -2199,6 +2203,85 @@
       router.navigate("knowledge/" + previewDocumentSelect.dataset.previewDocumentSelect + "?tab=chunks&document=" + encodeURIComponent(previewDocumentSelect.value));
     });
     preview.bindChunkCards(root);
+    var chunkLinkPanel = root.querySelector(".knowledge-chunk-comparison");
+    if (chunkLinkPanel) {
+      function linkBlocks() { return Array.prototype.slice.call(chunkLinkPanel.querySelectorAll("[data-source-block]")); }
+      function linkCards() { return Array.prototype.slice.call(chunkLinkPanel.querySelectorAll("[data-chunk-preview-card]")); }
+      function linkText(value) { return String(value || "").replace(/^#+\s*/, "").replace(/\s+/g, "\u0001").toLowerCase(); }
+      function linkContains(haystack, needle) {
+        if (!haystack || !needle) return false;
+        var index = haystack.indexOf(needle);
+        while (index >= 0) {
+          var startsAtBoundary = index === 0 || haystack.charAt(index - 1) === "\u0001";
+          var endsAtBoundary = index + needle.length === haystack.length || haystack.charAt(index + needle.length) === "\u0001";
+          if (startsAtBoundary && endsAtBoundary) return true;
+          index = haystack.indexOf(needle, index + 1);
+        }
+        return false;
+      }
+      function blockMatchesContent(block, contentText) {
+        var lines = String(block.textContent || "").split(/\n/).map(linkText).filter(function substantive(line) { return line.length >= 4; });
+        if (!lines.length || !contentText) return false;
+        var matched = 0;
+        var chunkInsideBlock = false;
+        lines.forEach(function visit(line) {
+          var lineInChunk = linkContains(contentText, line);
+          if (lineInChunk) matched++;
+          if (linkContains(line, contentText)) chunkInsideBlock = true;
+        });
+        return chunkInsideBlock || matched / lines.length >= 0.5;
+      }
+      function cardContentText(card) {
+        var content = card.querySelector(".chunk-preview-card__content");
+        return content ? content.textContent : card.textContent;
+      }
+      function blockMatchesCard(block, card) {
+        return blockMatchesContent(block, linkText(cardContentText(card)));
+      }
+      function markChunkTargets(card, state, scroll) {
+        var contentText = linkText(cardContentText(card));
+        var matched = [];
+        linkBlocks().forEach(function visit(block) {
+          block.classList.remove(state);
+          if (!blockMatchesContent(block, contentText)) return;
+          matched.push(block);
+          block.classList.add(state);
+        });
+        if (scroll && matched.length) matched[0].scrollIntoView({ behavior: "smooth", block: "center" });
+        return matched.length;
+      }
+      function markBlockTargets(block, state, scroll) {
+        var matched = linkCards().filter(function filter(card) { return blockMatchesCard(block, card); });
+        linkCards().forEach(function clear(card) { card.classList.remove(state); });
+        matched.forEach(function mark(card) { card.classList.add(state); });
+        if (scroll && matched.length) matched[0].scrollIntoView({ behavior: "smooth", block: "center" });
+        return matched.length;
+      }
+      linkCards().forEach(function bindCard(card) {
+        card.addEventListener("click", function handle(event) {
+          if (event.target.closest("button, a, input, textarea, select")) return;
+          linkCards().forEach(function clearActive(other) { other.classList.remove("is-link-active"); });
+          card.classList.add("is-link-active");
+          if (!markChunkTargets(card, "is-link-active", true)) overlay.toast("未找到原文定位", "该切片缺少原文定位信息。", "warning");
+        });
+        card.addEventListener("mouseenter", function handle() { markChunkTargets(card, "is-link-hover", false); });
+        card.addEventListener("mouseleave", function handle() { linkBlocks().forEach(function clear(block) { block.classList.remove("is-link-hover"); }); });
+      });
+      linkBlocks().forEach(function bindBlock(block) {
+        block.addEventListener("click", function handle() {
+          linkBlocks().forEach(function clearActive(other) { other.classList.remove("is-link-active"); });
+          block.classList.add("is-link-active");
+          if (!markBlockTargets(block, "is-link-active", true)) overlay.toast("未匹配到切片", "该原文块暂无对应切片。", "warning");
+        });
+        block.addEventListener("mouseenter", function handle() { markBlockTargets(block, "is-link-hover", false); });
+        block.addEventListener("mouseleave", function handle() { linkCards().forEach(function clear(card) { card.classList.remove("is-link-hover"); }); });
+        block.addEventListener("keydown", function handle(event) {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          block.click();
+        });
+      });
+    }
     root.querySelectorAll("[data-chunk-add]").forEach(function bind(button) {
       button.addEventListener("click", function handle() {
         if (button.disabled) return;

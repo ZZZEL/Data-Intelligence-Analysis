@@ -147,6 +147,7 @@
 
   function dailyForModel(daily, model) {
     if (!model) return daily;
+    if (Array.isArray(model.daily) && model.daily.length) return model.daily;
     var ratio = model.usageRatio || {};
     return daily.map(function map(item) {
       var inputTokensM = round((Number(item.inputTokensM) || 0) * (Number(ratio.inputTokensM) || 0), 1);
@@ -192,7 +193,7 @@
       return '<option value="' + dom.escape(model.id) + '"' + (current && current.id === model.id ? " selected" : "") + ">" + dom.escape(model.name) + "</option>";
     })).join("");
 
-    return '<label class="consumption-model-control"><span class="consumption-model-label">模型</span>' +
+    return '<label class="consumption-model-control">' +
       '<select class="select-field consumption-model-select" aria-label="筛选模型" data-consumption-model>' + options + "</select></label>";
   }
 
@@ -232,8 +233,10 @@
         '<input type="date" class="consumption-date-field" value="' + dom.escape(range.end) + '" min="' + dom.escape(range.start || earliest) + '" max="' + dom.escape(latest) + '" aria-label="结束日期" data-consumption-end>' +
       "</div>" : "";
 
-    return '<div class="consumption-range-control">' + dom.icon("calendar-range", 16) +
-      '<select class="select-field consumption-range-select" aria-label="统计时间范围" data-consumption-range>' + options + "</select>" + custom + "</div>";
+    return '<div class="consumption-range-control">' +
+      '<div class="consumption-range-field">' + dom.icon("calendar-range", 16) +
+        '<select class="select-field consumption-range-select" aria-label="统计时间范围" data-consumption-range>' + options + "</select>" +
+      "</div>" + custom + "</div>";
   }
 
   function renderConsumption(route, state) {
@@ -247,10 +250,10 @@
 
     return dom.pageHeader({
       title: "消耗统计",
-      toolbar: { end: renderRangeControl(daily) }
+      toolbar: { end: renderModelControl(consumption, route) + renderRangeControl(daily) }
     }) +
       '<div class="page-content page-content--flush-top consumption-page">' +
-      '<div class="consumption-view-header">' + renderMetricTabs(metric) + renderModelControl(consumption, route) + "</div>" +
+      '<div class="consumption-view-header">' + renderMetricTabs(metric) + "</div>" +
       (metric === "requests" ? renderRequestPanel(summary, range) : renderTokenPanel(summary, range)) +
       "</div>";
   }

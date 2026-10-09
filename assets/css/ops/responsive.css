@@ -3,6 +3,10 @@
   .retrieval-result-summary--quality {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .creation-actions .vector-cost-notice {
+    max-width: min(360px, 52%);
+  }
 }
 
 @media (min-width: 1024px) and (max-width: 1260px) {

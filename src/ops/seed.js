@@ -111,6 +111,116 @@
     return result;
   }, []);
 
+  var CONSUMPTION_START_MS = Date.UTC(2026, 6, 27);
+  var CONSUMPTION_DAY_COUNT = 31;
+
+  function consumptionDate(index) {
+    return new Date(CONSUMPTION_START_MS + index * 86400000).toISOString().slice(0, 10);
+  }
+
+  function consumptionWave(index, base, amplitude, phase, minimum) {
+    var wave = Math.sin(index * 0.57 + phase) * 0.65 + Math.sin(index * 0.21 + phase * 1.8) * 0.35;
+    return Math.max(minimum, base + amplitude * wave);
+  }
+
+  function buildConsumptionModels() {
+    var definitions = [
+      {
+        id: "MODEL-LLM-DEEPSEEK-V4-PRO",
+        name: "DeepSeek-V4-Pro",
+        typeLabel: "生成模型",
+        requests: [52, 16, 0.1, 28],
+        inputTokens: [4.6, 1.35, 0.2, 2.5],
+        outputTokens: [1.15, 0.34, 1.1, 0.6],
+      },
+      {
+        id: "MODEL-LLM-QWEN3-8-MAX",
+        name: "Qwen3.8-2.4T-A95B",
+        typeLabel: "生成模型",
+        requests: [25, 8, 2.2, 12],
+        inputTokens: [1.55, 0.46, 1.4, 0.8],
+        outputTokens: [0.28, 0.09, 2.4, 0.12],
+      },
+      {
+        id: "MODEL-EMBEDDING-PRIMARY",
+        name: "Qwen3-Embedding-8B",
+        typeLabel: "向量模型",
+        requests: [21, 5, 4.1, 12],
+        inputTokens: [1.72, 0.34, 3.1, 1.15],
+        outputTokens: [0, 0, 0, 0],
+      },
+      {
+        id: "MODEL-RERANK-PRIMARY",
+        name: "Qwen3-Reranker-0.6B",
+        typeLabel: "Rerank 模型",
+        requests: [15, 4, 5.3, 8],
+        inputTokens: [0.82, 0.18, 4.4, 0.52],
+        outputTokens: [0, 0, 0, 0],
+      },
+    ];
+
+    return definitions.map(function map(definition) {
+      var daily = [];
+      for (var index = 0; index < CONSUMPTION_DAY_COUNT; index += 1) {
+        daily.push({
+          date: consumptionDate(index),
+          apiRequests: Math.round(consumptionWave(index, definition.requests[0], definition.requests[1], definition.requests[2], definition.requests[3])),
+          inputTokensM: Number(consumptionWave(index, definition.inputTokens[0], definition.inputTokens[1], definition.inputTokens[2], definition.inputTokens[3]).toFixed(2)),
+          outputTokensM: Number(consumptionWave(index, definition.outputTokens[0], definition.outputTokens[1], definition.outputTokens[2], definition.outputTokens[3]).toFixed(2)),
+        });
+      }
+      return Object.assign({}, definition, { daily: daily });
+    });
+  }
+
+  function buildConsumptionDaily(models) {
+    var byDate = {};
+    models.forEach(function eachModel(model) {
+      model.daily.forEach(function eachDay(item) {
+        var row = byDate[item.date] = byDate[item.date] || {
+          date: item.date,
+          apiRequests: 0,
+          inputTokensM: 0,
+          outputTokensM: 0,
+        };
+        row.apiRequests += item.apiRequests;
+        row.inputTokensM += item.inputTokensM;
+        row.outputTokensM += item.outputTokensM;
+      });
+    });
+    return Object.keys(byDate).sort().map(function map(date) {
+      var row = byDate[date];
+      row.apiRequests = Math.round(row.apiRequests);
+      row.inputTokensM = Number(row.inputTokensM.toFixed(1));
+      row.outputTokensM = Number(row.outputTokensM.toFixed(1));
+      row.totalTokensM = Number((row.inputTokensM + row.outputTokensM).toFixed(1));
+      return row;
+    });
+  }
+
+  function buildConsumptionSummary(daily) {
+    return daily.reduce(function reduce(summary, item) {
+      summary.apiRequests += item.apiRequests;
+      summary.inputTokensM += item.inputTokensM;
+      summary.outputTokensM += item.outputTokensM;
+      return summary;
+    }, {
+      inferenceCalls: 0,
+      apiRequests: 0,
+      inputTokensM: 0,
+      outputTokensM: 0,
+      totalTokensM: 0,
+    });
+  }
+
+  var consumptionModels = buildConsumptionModels();
+  var consumptionDaily = buildConsumptionDaily(consumptionModels);
+  var consumptionMonthSummary = buildConsumptionSummary(consumptionDaily);
+  consumptionMonthSummary.inferenceCalls = Math.round(consumptionMonthSummary.apiRequests * 5.85);
+  consumptionMonthSummary.inputTokensM = Number(consumptionMonthSummary.inputTokensM.toFixed(1));
+  consumptionMonthSummary.outputTokensM = Number(consumptionMonthSummary.outputTokensM.toFixed(1));
+  consumptionMonthSummary.totalTokensM = Number((consumptionMonthSummary.inputTokensM + consumptionMonthSummary.outputTokensM).toFixed(1));
+
   var TEMPLATE = {
     schemaVersion: "1.0.0",
     meta: {
@@ -147,7 +257,7 @@
         documents: { total: 240, searchable: 238, label: "文件" },
         importIssues: { open: 1, label: "导入异常" },
         consumption: {
-          totalTokensM: 268.4,
+          totalTokensM: consumptionMonthSummary.totalTokensM,
           label: "本月 Token 消耗",
         },
       },
@@ -1038,7 +1148,7 @@
           structureSchemaVersion: "DF-Document-2.1",
           chunking: {
             mode: "smart",
-            maxChars: 1200,
+            maxChars: 512,
             overlapPercent: 10,
             separator: "\n\n",
             separatorType: "literal",
@@ -1092,8 +1202,8 @@
           structureSchemaVersion: "DF-Document-2.1",
           chunking: {
             mode: "smart",
-            maxChars: 2000,
-            overlapPercent: 8,
+            maxChars: 512,
+            overlapPercent: 10,
             separator: "\n\n",
             separatorType: "literal",
             includeContext: true,
@@ -1146,8 +1256,8 @@
           structureSchemaVersion: "DF-Document-2.1",
           chunking: {
             mode: "semantic",
-            maxChars: 1600,
-            overlapPercent: 0,
+            maxChars: 512,
+            overlapPercent: 10,
             semanticSensitivity: "balanced",
             breakpointPercentile: 85,
             semanticMinChars: 320,
@@ -1216,7 +1326,7 @@
           structureSchemaVersion: "DF-Document-2.1",
           chunking: {
             mode: "fixed",
-            maxChars: 1000,
+            maxChars: 512,
             overlapPercent: 10,
             includeContext: true,
             parentChildEnabled: false,
@@ -1267,7 +1377,7 @@
           structureSchemaVersion: "DF-Document-2.1",
           chunking: {
             mode: "recursive",
-            maxChars: 1000,
+            maxChars: 512,
             overlapPercent: 10,
             includeContext: true,
             parentChildEnabled: false,
@@ -1307,8 +1417,8 @@
           structureSchemaVersion: "DF-Document-2.1",
           chunking: {
             mode: "structure",
-            maxChars: 1600,
-            overlapPercent: 5,
+            maxChars: 512,
+            overlapPercent: 10,
             separator: "\n\n",
             separatorType: "structure",
             separatorPreset: "structure",
@@ -1362,8 +1472,8 @@
           structureSchemaVersion: "DF-Document-2.1",
           chunking: {
             mode: "separator",
-            maxChars: 1600,
-            overlapPercent: 5,
+            maxChars: 512,
+            overlapPercent: 10,
             separator: "\n\n",
             separatorType: "paragraph",
             separatorPreset: "paragraph",
@@ -1443,62 +1553,6 @@
           requirements: {
             structuredContent: false,
             pageLocator: true,
-            tableContent: true,
-            imageText: false
-          },
-          embeddingModelId: "MODEL-EMBEDDING-PRIMARY",
-          embeddingModelAlias: "Qwen3-Embedding-8B",
-          vectorDimension: 4096,
-          indexEngine: "OpenSearch",
-          indexEngineReadOnly: true,
-          usedByKnowledgeBaseIds: [],
-          requiresReindexWhenChanged: true,
-          editable: false,
-          canCopyAsDraft: true
-        },
-        {
-          id: "ING-WHOLE",
-          name: "整篇切片",
-          description: "将短文档整体保留为一个切片；超过预置上限时，按所选方式回退或停止。",
-          displayGroup: "primary",
-          displayOrder: 7,
-          enabled: true,
-          visible: true,
-          builtIn: true,
-          updatedAt: "2026-08-26T09:16:00+08:00",
-          revision: 1,
-          status: "effective",
-          statusLabel: "已启用",
-          mineru: { service: "MinerU", fixed: true, configurable: false, display: "MinerU（固定解析服务）" },
-          structureSchemaVersion: "DF-Document-2.1",
-          chunking: {
-            mode: "whole_document",
-            maxChars: 20000,
-            maxDocumentChars: 20000,
-            overlapPercent: 0,
-            separator: "",
-            separatorType: "literal",
-            includeContext: false,
-            parentChildEnabled: false,
-            longDocumentFallback: "smart",
-            strategy: "whole_document",
-            strategyLabel: "整篇切片",
-            targetTokens: 4000,
-            maxTokens: 8000,
-            overlapTokens: 0,
-            tableRule: "表格与正文共同保留在单一内容块中",
-            preserveLocators: ["page", "section", "table"]
-          },
-          indexContent: {
-            documentName: true,
-            headingPath: false,
-            pageNumber: false,
-            tableText: true,
-            imageText: false
-          },
-          requirements: {
-            structuredContent: false,
-            pageLocator: false,
             tableContent: true,
             imageText: false
           },
@@ -1975,69 +2029,11 @@
 
     consumption: {
       reportingPeriod: { start: "2026-08-01", end: "2026-08-26", label: "本月" },
-      models: [
-        {
-          id: "MODEL-LLM-DEEPSEEK-V4-PRO",
-          name: "DeepSeek-V4-Pro",
-          typeLabel: "生成模型",
-          usageRatio: { apiRequests: 0.52, inputTokensM: 0.64, outputTokensM: 1 },
-        },
-        {
-          id: "MODEL-EMBEDDING-PRIMARY",
-          name: "Qwen3-Embedding-8B",
-          typeLabel: "向量模型",
-          usageRatio: { apiRequests: 0.28, inputTokensM: 0.24, outputTokensM: 0 },
-        },
-        {
-          id: "MODEL-RERANK-PRIMARY",
-          name: "Qwen3-Reranker-0.6B",
-          typeLabel: "Rerank 模型",
-          usageRatio: { apiRequests: 0.2, inputTokensM: 0.12, outputTokensM: 0 },
-        },
-      ],
-      monthSummary: {
-        inferenceCalls: 17140,
-        apiRequests: 2932,
-        inputTokensM: 224.1,
-        outputTokensM: 44.3,
-        totalTokensM: 268.4,
-      },
-      daily: [
-        { date: "2026-07-27", calls: 520, apiRequests: 88, inputTokensM: 6.5, outputTokensM: 1.2, totalTokensM: 7.7 },
-        { date: "2026-07-28", calls: 550, apiRequests: 94, inputTokensM: 6.9, outputTokensM: 1.3, totalTokensM: 8.2 },
-        { date: "2026-07-29", calls: 570, apiRequests: 98, inputTokensM: 7.2, outputTokensM: 1.4, totalTokensM: 8.6 },
-        { date: "2026-07-30", calls: 600, apiRequests: 102, inputTokensM: 7.6, outputTokensM: 1.5, totalTokensM: 9.1 },
-        { date: "2026-07-31", calls: 620, apiRequests: 106, inputTokensM: 7.9, outputTokensM: 1.5, totalTokensM: 9.4 },
-        { date: "2026-08-01", calls: 540, apiRequests: 92, inputTokensM: 6.8, outputTokensM: 1.3, totalTokensM: 8.1 },
-        { date: "2026-08-02", calls: 510, apiRequests: 88, inputTokensM: 6.4, outputTokensM: 1.2, totalTokensM: 7.6 },
-        { date: "2026-08-03", calls: 600, apiRequests: 104, inputTokensM: 7.6, outputTokensM: 1.5, totalTokensM: 9.1 },
-        { date: "2026-08-04", calls: 620, apiRequests: 108, inputTokensM: 7.9, outputTokensM: 1.5, totalTokensM: 9.4 },
-        { date: "2026-08-05", calls: 650, apiRequests: 111, inputTokensM: 8.2, outputTokensM: 1.6, totalTokensM: 9.8 },
-        { date: "2026-08-06", calls: 680, apiRequests: 116, inputTokensM: 8.7, outputTokensM: 1.7, totalTokensM: 10.4 },
-        { date: "2026-08-07", calls: 660, apiRequests: 113, inputTokensM: 8.4, outputTokensM: 1.6, totalTokensM: 10.0 },
-        { date: "2026-08-08", calls: 610, apiRequests: 105, inputTokensM: 7.8, outputTokensM: 1.5, totalTokensM: 9.3 },
-        { date: "2026-08-09", calls: 560, apiRequests: 96, inputTokensM: 7.0, outputTokensM: 1.4, totalTokensM: 8.4 },
-        { date: "2026-08-10", calls: 640, apiRequests: 109, inputTokensM: 8.1, outputTokensM: 1.6, totalTokensM: 9.7 },
-        { date: "2026-08-11", calls: 670, apiRequests: 115, inputTokensM: 8.5, outputTokensM: 1.7, totalTokensM: 10.2 },
-        { date: "2026-08-12", calls: 590, apiRequests: 101, inputTokensM: 7.4, outputTokensM: 1.4, totalTokensM: 8.8 },
-        { date: "2026-08-13", calls: 620, apiRequests: 107, inputTokensM: 7.8, outputTokensM: 1.5, totalTokensM: 9.3 },
-        { date: "2026-08-14", calls: 580, apiRequests: 99, inputTokensM: 7.3, outputTokensM: 1.4, totalTokensM: 8.7 },
-        { date: "2026-08-15", calls: 610, apiRequests: 104, inputTokensM: 7.7, outputTokensM: 1.5, totalTokensM: 9.2 },
-        { date: "2026-08-16", calls: 650, apiRequests: 111, inputTokensM: 8.4, outputTokensM: 1.7, totalTokensM: 10.1 },
-        { date: "2026-08-17", calls: 630, apiRequests: 108, inputTokensM: 7.8, outputTokensM: 1.6, totalTokensM: 9.4 },
-        { date: "2026-08-18", calls: 670, apiRequests: 114, inputTokensM: 8.9, outputTokensM: 1.8, totalTokensM: 10.7 },
-        { date: "2026-08-19", calls: 690, apiRequests: 118, inputTokensM: 9.3, outputTokensM: 1.9, totalTokensM: 11.2 },
-        { date: "2026-08-20", calls: 720, apiRequests: 123, inputTokensM: 9.7, outputTokensM: 1.9, totalTokensM: 11.6 },
-        { date: "2026-08-21", calls: 820, apiRequests: 140, inputTokensM: 12.4, outputTokensM: 2.5, totalTokensM: 14.9 },
-        { date: "2026-08-22", calls: 780, apiRequests: 134, inputTokensM: 11.0, outputTokensM: 2.2, totalTokensM: 13.2 },
-        { date: "2026-08-23", calls: 680, apiRequests: 116, inputTokensM: 8.8, outputTokensM: 1.7, totalTokensM: 10.5 },
-        { date: "2026-08-24", calls: 820, apiRequests: 139, inputTokensM: 11.7, outputTokensM: 2.3, totalTokensM: 14.0 },
-        { date: "2026-08-25", calls: 780, apiRequests: 132, inputTokensM: 10.4, outputTokensM: 2.2, totalTokensM: 12.6 },
-        { date: "2026-08-26", calls: 760, apiRequests: 129, inputTokensM: 10.1, outputTokensM: 2.1, totalTokensM: 12.2 },
-      ],
+      models: consumptionModels,
+      monthSummary: consumptionMonthSummary,
+      daily: consumptionDaily,
       privacyBoundary: "只展示模型级聚合的 API 请求与 Token，不展示用户问题、单任务、模型输出或报告内容。",
     },
-
     configurationRecords: [
       {
         id: "CR-001",
@@ -2205,6 +2201,7 @@
       item.sourceType = "local_upload";
       item.sourceTypeLabel = "本地上传";
     }
+    if (!item.sourceChannel) item.sourceChannel = "library";
   });
 
   function deepClone(value) {

@@ -121,7 +121,7 @@
   // `recursive` and `boundaryMode` remain readable for old snapshots. New
   // snapshots use one separator strategy whose selected boundary recurses to
   // finer built-in boundaries when a piece is still oversized.
-  var PROCESSING_MODES = ["smart", "semantic", "structure", "separator", "recursive", "fixed", "page", "whole_document"];
+  var PROCESSING_MODES = ["smart", "semantic", "structure", "separator", "recursive", "fixed", "page"];
   var RECURSIVE_BOUNDARIES = ["paragraph", "newline", "sentence", "whitespace", "character"];
   var SENTENCE_SEPARATOR = "。！？.!?";
   var SEPARATOR_BY_TYPE = {
@@ -162,8 +162,7 @@
       semantic: "语义切片",
       structure: "结构切片",
       fixed: "固定长度",
-      page: "按页切片",
-      whole_document: "整篇切片"
+      page: "按页切片"
     }[mode] || "自动切片";
   }
 
@@ -207,13 +206,13 @@
     var baseMode = baseChunking.mode || "smart";
     var mode = requestedMode === "recursive" ? "separator" : requestedMode;
 
-    var maxChars = Number(Object.prototype.hasOwnProperty.call(input, "maxChars") ? input.maxChars : (baseChunking.maxChars || 1200));
-    var overlapPercent = Number(Object.prototype.hasOwnProperty.call(input, "overlapPercent") ? input.overlapPercent : (baseChunking.overlapPercent || 0));
+    var maxChars = Number(Object.prototype.hasOwnProperty.call(input, "maxChars") ? input.maxChars : (baseChunking.maxChars || 512));
+    var overlapPercent = Number(Object.prototype.hasOwnProperty.call(input, "overlapPercent") ? input.overlapPercent : (baseChunking.overlapPercent || 10));
     if (!Number.isFinite(maxChars) || !Number.isFinite(overlapPercent)) return null;
     if (["smart", "semantic", "structure", "fixed", "separator"].indexOf(mode) >= 0 && (maxChars < 200 || maxChars > 10000)) return null;
     if (!Number.isInteger(maxChars)) return null;
-    if ((mode === "page" || mode === "whole_document") && (maxChars < 200 || maxChars > 50000)) return null;
-    if (mode === "semantic" || mode === "page" || mode === "whole_document") overlapPercent = 0;
+    if (mode === "page" && (maxChars < 200 || maxChars > 50000)) return null;
+    if (mode === "semantic" || mode === "page") overlapPercent = 0;
     if (overlapPercent < 0 || overlapPercent > 50 || !Number.isInteger(overlapPercent)) return null;
 
     var semanticSensitivity = input.semanticSensitivity || baseChunking.semanticSensitivity || "balanced";
@@ -234,7 +233,7 @@
     var mayInheritBaseSeparator = mode === "separator" && (baseMode === "separator" || baseMode === "recursive") && !legacyAutomaticSeparator;
     var separatorType = legacyAutomaticSeparator && mode === "separator" ? "paragraph" :
       (input.separatorType || input.separatorPreset || (mayInheritBaseSeparator ? baseSeparatorType : "") || (mode === "structure" ? "structure" : "paragraph"));
-    if (mode === "page" || mode === "whole_document") separatorType = "literal";
+    if (mode === "page") separatorType = "literal";
     if (mode === "structure") separatorType = "structure";
     if (SEPARATOR_TYPES.indexOf(separatorType) < 0) return null;
     var legacySeparator = hasInputSeparator ? String(input.separator || "") : String(baseChunking.separator || "");
@@ -266,24 +265,19 @@
     }
     if (mode === "structure") separatorType = "structure";
     var separator = Object.prototype.hasOwnProperty.call(SEPARATOR_BY_TYPE, separatorType) ? SEPARATOR_BY_TYPE[separatorType] : (customSeparator || legacySeparator);
-    if (mode === "page" || mode === "whole_document") {
+    if (mode === "page") {
       separatorType = "literal";
-      separator = mode === "page" ? "\f" : "";
+      separator = "\f";
     }
     if (separatorType !== "custom") customSeparator = "";
 
     var pagesPerChunk = mode === "page" ? Number(Object.prototype.hasOwnProperty.call(input, "pagesPerChunk") ? input.pagesPerChunk : (baseChunking.pagesPerChunk || 1)) : 1;
     if (!Number.isInteger(pagesPerChunk) || pagesPerChunk < 1 || pagesPerChunk > 10) return null;
-    var longDocumentFallback = mode === "whole_document" ? input.longDocumentFallback || baseChunking.longDocumentFallback || "smart" : "smart";
+    var longDocumentFallback = "smart";
     if (["smart", "stop"].indexOf(longDocumentFallback) < 0) return null;
-    var parentChildEnabled = mode !== "whole_document" && (Object.prototype.hasOwnProperty.call(input, "parentChildEnabled") ? input.parentChildEnabled === true : baseChunking.parentChildEnabled === true);
-    var includeContext = mode !== "whole_document";
-    var contextPolicy = mode === "whole_document" ? "none" : parentChildEnabled ? "enhanced" : "standard";
-    if (mode === "whole_document") {
-      contextPolicy = "none";
-      includeContext = false;
-      parentChildEnabled = false;
-    }
+    var parentChildEnabled = Object.prototype.hasOwnProperty.call(input, "parentChildEnabled") ? input.parentChildEnabled === true : baseChunking.parentChildEnabled === true;
+    var includeContext = true;
+    var contextPolicy = parentChildEnabled ? "enhanced" : "standard";
 
     var indexPatch = Object.assign({}, parameters && parameters.indexContent || {}, input);
     var indexContent = processingIndexContent(indexPatch, source.indexContent);
@@ -311,8 +305,7 @@
         structure: "parsed_structure_boundary",
         separator: "separator_recursive_fallback",
         fixed: "fixed_length",
-        page: "page_boundary",
-        whole_document: "whole_document"
+        page: "page_boundary"
       }[mode];
       source.chunking.usesSemanticModel = mode === "semantic";
     }
@@ -343,12 +336,6 @@
     }
     if (mode !== "fixed") {
       ["targetTokens", "maxTokens", "overlapTokens"].forEach(function removeLegacyTokenSetting(key) { delete source.chunking[key]; });
-    }
-    if (mode === "whole_document") {
-      source.chunking.includeContext = false;
-      source.chunking.parentChildEnabled = false;
-      source.chunking.contextPolicy = "none";
-      source.chunking.maxDocumentChars = maxChars;
     }
     if (source.chunking.parentChildEnabled) {
       source.chunking.parentChunkStrategy = "parsed_section_or_adjacent_window";
@@ -993,7 +980,7 @@
   function estimateDocumentShape(candidate, processingProfile) {
     var chunking = processingProfile && processingProfile.chunking || {};
     var mode = chunking.mode || "smart";
-    var maxChars = Number(chunking.maxChars || 1200);
+    var maxChars = Number(chunking.maxChars || 512);
     var characterCount = candidate.characterCount == null ? Math.max(800, Math.round(Number(candidate.size || 0) * 0.03)) : candidate.characterCount;
     var fillRate = 0.82;
     if (mode === "semantic") {
@@ -1002,7 +989,7 @@
     var estimatedChunkChars = Math.max(200, Math.round(maxChars * fillRate));
     var semantic = mode === "semantic";
     var chunkCount = Math.max(1, Math.ceil(characterCount / estimatedChunkChars));
-    var parentChildEnabled = mode !== "whole_document" && chunking.parentChildEnabled === true;
+    var parentChildEnabled = chunking.parentChildEnabled === true;
     return {
       characterCount: characterCount,
       chunkCount: chunkCount,
@@ -1044,7 +1031,7 @@
 
   function runtimeChunkLimits(chunking) {
     var config = chunking || {};
-    var maxChars = Math.max(1, Math.floor(Number(config.maxChars) || 1200));
+    var maxChars = Math.max(1, Math.floor(Number(config.maxChars) || 512));
     var overlapPercent = Math.max(0, Math.min(50, Number(config.overlapPercent) || 0));
     return {
       maxChars: maxChars,
@@ -1175,9 +1162,9 @@
       if (!chunk.metadata) return;
       relationFields.forEach(function removeMetadataField(key) { delete chunk.metadata[key]; });
     });
-    if (config.parentChildEnabled !== true || config.mode === "whole_document" || items.length < 2) return [];
+    if (config.parentChildEnabled !== true || items.length < 2) return [];
 
-    var childLimit = Math.max(200, Number(config.maxChars || 1200));
+    var childLimit = Math.max(200, Number(config.maxChars || 512));
     var parentLimit = Math.min(30000, Math.max(childLimit * 3, childLimit + 1));
     var groups = [];
     var pending = [];
@@ -2302,13 +2289,36 @@
 
   function applyFixedAnswerGeneration(rag) {
     if (!rag) return null;
+    var current = rag.answerGeneration || {};
     rag.answerGeneration = {
-      modelId: ANSWER_GENERATION_CONFIG.modelId,
-      model: ANSWER_GENERATION_CONFIG.model,
+      modelId: current.modelId || ANSWER_GENERATION_CONFIG.modelId,
+      model: current.model || ANSWER_GENERATION_CONFIG.model,
       temperature: ANSWER_GENERATION_CONFIG.temperature,
       citationsEnabled: ANSWER_GENERATION_CONFIG.citationsEnabled
     };
     return rag.answerGeneration;
+  }
+
+  function designateRagAnswerModel(id) {
+    return commit("rag-answer-model-designated", function mutate(state) {
+      var model = findRagModel(state, "llm", id);
+      if (!model || !isRagModelReady(model)) return null;
+      state.rag.answerGeneration = state.rag.answerGeneration || {};
+      state.rag.answerGeneration.modelId = model.id;
+      state.rag.answerGeneration.model = model.alias || model.name;
+      applyFixedAnswerGeneration(state.rag);
+      record(state, {
+        objectType: "rag_model",
+        objectId: model.id,
+        objectName: model.alias || model.name,
+        action: "designated_answer_model",
+        actionLabel: "设为使用中",
+        before: null,
+        after: { modelId: model.id, model: state.rag.answerGeneration.model },
+        impact: "该 LLM 已成为当前唯一长期使用的回答生成模型。",
+      });
+      return model;
+    });
   }
 
   function normalizedAnswerSentence(value) {
@@ -3579,6 +3589,7 @@
     testRagModelConnection: testRagModelConnection,
     getRagModelUsage: getRagModelUsage,
     deleteRagModel: deleteRagModel,
+    designateRagAnswerModel: designateRagAnswerModel,
     updateRetrievalSettings: updateRetrievalSettings,
     previewRetrievalSettings: previewRetrievalSettings,
     clearRetrievalTestDraft: clearRetrievalTestDraft,

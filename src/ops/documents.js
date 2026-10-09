@@ -73,6 +73,7 @@
     pendingFolderNameClick = null;
   }
   function navigateToFolder(folderId) {
+    if (folderId && folderId !== "all") collapsedFolderIds.delete(folderId);
     router.navigate(folderId === "all" ? "local-documents" : "local-documents?folder=" + encodeURIComponent(folderId));
   }
   function scheduleFolderSelection(folderId) {
@@ -197,7 +198,7 @@
     var name = version.name || asset.name;
     var referenceCell = refs.length ? '<button class="table-action" type="button" data-local-document-references="' + esc(asset.id) + '">' + number(refs.length) + ' 个知识库</button>' : '<span class="table-secondary file-asset-reference-empty">未被引用</span>';
     return '<tr data-local-document-row data-local-document-id="' + esc(asset.id) + '" data-local-document-status="' + esc(status) + '" data-local-document-search="' + esc((name + " " + asset.id).toLowerCase()) + '">' +
-      '<td><button class="table-primary table-primary--link" type="button" data-local-document-preview="' + esc(asset.id) + '">' + esc(name) + '</button><div class="table-secondary">' + esc(asset.id) + (asset.sourceType === "enterprise_snapshot" ? " · 企业数据快照" : "") + '</div></td>' +
+      '<td><button class="table-primary table-primary--link" type="button" data-local-document-preview="' + esc(asset.id) + '">' + esc(name) + '</button>' + (asset.sourceType === "enterprise_snapshot" ? '<div class="table-secondary">企业数据快照</div>' : "") + '</td>' +
       '<td>' + badge(status) + '</td><td>' + referenceCell + '</td>' +
       '<td>' + esc(version.fileSizeLabel || "—") + '</td><td>' + dateCell(version.createdAt || asset.createdAt) + '</td>' +
       '<td><div class="knowledge-row-actions"><button class="table-action" type="button" data-local-document-preview="' + esc(asset.id) + '">详情</button><button class="table-action" type="button" data-local-document-move="' + esc(asset.id) + '">移动</button><button class="table-action table-action--danger" type="button" data-local-document-delete="' + esc(asset.id) + '">删除</button></div></td></tr>';
@@ -262,6 +263,8 @@
         var requested = find(localFolders(current), button.dataset.directorySelect);
         if (!requested) return;
         targetFolderId = requested.id;
+        var collapsedIndex = collapsedIds.indexOf(targetFolderId);
+        if (collapsedIndex >= 0) collapsedIds.splice(collapsedIndex, 1);
         pickerHost.innerHTML = picker(current, false);
       }
       dom.hydrateIcons(pickerHost);

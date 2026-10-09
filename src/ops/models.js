@@ -27,6 +27,16 @@
     return state && state.rag && state.rag.modelCatalog ? state.rag.modelCatalog : {};
   }
 
+  function designatableKind(kind) {
+    return kind === "llm";
+  }
+
+  function activeModelId(state, kind) {
+    var rag = state && state.rag;
+    if (!rag || kind !== "llm") return "";
+    return rag.answerGeneration && rag.answerGeneration.modelId || "";
+  }
+
   function apiEndpoint(model) {
     var api = model && model.apiConfig ? model.apiConfig : {};
     return text(api.endpoint || api.serviceAddress, "未配置");
@@ -117,35 +127,44 @@
       : time.textContent;
   }
 
-  function rowActions(kind, model) {
+  function rowActions(kind, model, isActive) {
     var attrs = ' data-model-kind="' + kind + '" data-model-id="' + dom.escape(model.id) + '"';
+    var useAction = designatableKind(kind)
+      ? '<button type="button" class="table-action" data-model-designate' + attrs + (isActive ? ' disabled title="当前已是使用中的模型"' : "") + '>使用</button>'
+      : "";
+    var deleteAction = designatableKind(kind) && isActive
+      ? '<button type="button" class="table-action table-action--danger" data-model-delete' + attrs + ' disabled title="使用中的模型不能删除">删除</button>'
+      : '<button type="button" class="table-action table-action--danger" data-model-delete' + attrs + '>删除</button>';
     return '<div class="table-actions model-row-actions">' +
-      '<button type="button" class="table-action" data-model-test' + attrs + '>测试</button>' +
       '<button type="button" class="table-action" data-model-edit' + attrs + '>编辑</button>' +
-      '<button type="button" class="table-action table-action--danger" data-model-delete' + attrs + '>删除</button>' +
+      useAction +
+      '<button type="button" class="table-action" data-model-test' + attrs + '>测试</button>' +
+      deleteAction +
     "</div>";
   }
 
-  function modelRows(group) {
+  function modelRows(group, state) {
+    var activeId = designatableKind(group.kind) ? activeModelId(state, group.kind) : "";
     return group.models.map(function row(model) {
+      var isActive = Boolean(activeId && model.id === activeId);
       var dimensionCell = group.kind === "embedding"
         ? '<td class="models-table__dimension"><div class="table-primary">' + dom.escape(model.dimension ? dom.formatNumber(model.dimension) + " 维" : "—") + "</div></td>"
         : "";
-      return '<tr data-model-row data-model-kind="' + group.kind + '" data-model-id="' + dom.escape(model.id) + '">' +
-        '<td><div class="model-name-cell"><span class="model-icon">' + dom.icon(group.icon, 16) + '</span><div class="model-identity"><div class="table-primary">' + dom.escape(text(model.alias || model.name, "未命名模型")) + '</div></div></div></td>' +
+      return '<tr data-model-row data-model-kind="' + group.kind + '" data-model-id="' + dom.escape(model.id) + '"' + (isActive ? ' data-model-active="true"' : "") + '>' +
+        '<td><div class="model-name-cell"><span class="model-icon">' + dom.icon(group.icon, 16) + '</span><div class="model-identity"><div class="model-name-line"><div class="table-primary">' + dom.escape(text(model.alias || model.name, "未命名模型")) + "</div>" + (isActive ? '<div class="tag model-active-tag">使用中</div>' : "") + '</div></div></div></td>' +
         dimensionCell +
         '<td>' + connectionCell(model) + "</td>" +
-        '<td>' + rowActions(group.kind, model) + "</td>" +
+        '<td>' + rowActions(group.kind, model, isActive) + "</td>" +
       "</tr>";
     }).join("");
   }
 
-  function groupTable(group) {
+  function groupTable(group, state) {
     var hasDimension = group.kind === "embedding";
     var columns = '<colgroup><col class="models-table__col models-table__col--name">' + (hasDimension ? '<col class="models-table__col models-table__col--dimension">' : "") + '<col class="models-table__col models-table__col--connection"><col class="models-table__col models-table__col--actions"></colgroup>';
     return '<section class="models-group" data-model-group="' + group.kind + '">' +
       '<div class="models-group__header"><div class="models-group__identity"><span class="models-group__icon">' + dom.icon(group.icon, 17) + '</span><h2>' + group.title + '</h2><span class="models-group__count" data-model-group-count>' + group.models.length + "</span></div></div>" +
-      '<div class="models-group__surface"><div class="table-wrap"><table class="data-table models-table models-table--' + group.kind + '">' + columns + '<thead><tr><th>模型名称</th>' + (hasDimension ? '<th>向量维度</th>' : "") + '<th>连接状态</th><th>操作</th></tr></thead><tbody>' + modelRows(group) + "</tbody></table></div>" +
+      '<div class="models-group__surface"><div class="table-wrap"><table class="data-table models-table models-table--' + group.kind + '">' + columns + '<thead><tr><th>模型名称</th>' + (hasDimension ? '<th>向量维度</th>' : "") + '<th>连接状态</th><th>操作</th></tr></thead><tbody>' + modelRows(group, state) + "</tbody></table></div>" +
       '<div class="models-group__empty" data-model-group-empty hidden>没有匹配的' + group.title + "</div></div>" +
     "</section>";
   }
@@ -183,7 +202,7 @@
       : status === "success"
       ? dom.icon("circle-check", 15) + '<span>' + dom.escape(message || "连接正常") + "</span>"
       : status === "failed"
-        ? dom.icon("circle-x", 15) + '<span>' + dom.escape(message || "连接失败，请检查 API 地址和 API Key。") + "</span>"
+        ? dom.icon("circle-x", 15) + '<span>' + dom.escape(message || "连接失败") + "</span>"
         : '<span>' + dom.escape(message || "修改配置后需要重新测试。") + "</span>";
     result.hidden = status === "idle";
     dom.hydrateIcons(result);
@@ -225,7 +244,7 @@
     });
     lockedControls.forEach(function lock(item) { item.control.disabled = true; });
     button.dataset.testing = "true";
-    setDraftTestState(scope, "testing", "连接测试中");
+    setDraftTestState(scope, "testing", "连通性测试中...");
     window.setTimeout(function finish() {
       if (!button.isConnected) return;
       if (JSON.stringify(modelPayload(scope, current)) !== signature) {
@@ -240,9 +259,7 @@
       if (passed && payload.kind === "embedding" && dimensionField && Number.isFinite(result.dimension)) {
         dimensionField.value = String(result.dimension);
       }
-      setDraftTestState(scope, passed ? "success" : "failed", passed
-        ? (payload.kind === "embedding" && result.dimension ? "连接正常，已读取 " + dom.formatNumber(result.dimension) + " 维" : "连接正常")
-        : "连接失败，请检查 API 地址和 API Key。");
+      setDraftTestState(scope, passed ? "success" : "failed", passed ? "连接正常" : "连接失败");
       lockedControls.forEach(function unlock(item) { item.control.disabled = item.disabled; });
       button.removeAttribute("data-testing");
     }, 420);
@@ -272,7 +289,7 @@
       kind: "dialog",
       title: current ? "编辑模型" : "新增模型",
       wide: true,
-      confirmLabel: current ? "保存修改" : "保存模型",
+      confirmLabel: current ? "保存修改" : "添加模型",
       body: editorBody(current),
       onConfirm: function onConfirm(scope) {
         var payload = modelPayload(scope, current);
@@ -283,12 +300,12 @@
         }
         var connection = invoke("testRagModelDraft", [payload]);
         if (!connection || !connection.passed) {
-          setDraftTestState(scope, "failed", "连接失败，请检查 API 地址和 API Key。");
+          setDraftTestState(scope, "failed", "连接失败");
           return false;
         }
         if (payload.kind === "embedding") {
           if (!Number.isFinite(connection.dimension) || connection.dimension < 1) {
-            setDraftTestState(scope, "failed", "未能读取向量维度，请重新测试连接。");
+            setDraftTestState(scope, "failed", "连接失败");
             return false;
           }
           payload.dimension = connection.dimension;
@@ -308,7 +325,7 @@
       footer.classList.add("model-editor__footer");
       var testGroup = document.createElement("div");
       testGroup.className = "model-editor__footer-test";
-      testGroup.innerHTML = '<button type="button" class="btn btn--secondary" data-model-draft-test>' + dom.icon("plug-zap", 15) + '测试连接</button><div class="model-draft-result" data-model-draft-result hidden></div>';
+      testGroup.innerHTML = '<button type="button" class="btn btn--secondary" data-model-draft-test>' + dom.icon("plug-zap", 15) + '测试</button><div class="model-draft-result" data-model-draft-result hidden></div>';
       footer.insertBefore(testGroup, footer.firstChild);
       dom.hydrateIcons(testGroup);
     }
@@ -375,6 +392,27 @@
     }, 900);
   }
 
+  function confirmDesignate(state, kind, id) {
+    if (!designatableKind(kind)) return;
+    var model = findModel(state, kind, id);
+    if (!model) return;
+    var modelName = text(model.alias || model.name, "该模型");
+    overlay.confirm({
+      title: "使用模型",
+      confirmLabel: "使用",
+      body: '<p class="dialog-copy">将“' + dom.escape(modelName) + '”设为使用中的模型后，系统将长期使用它生成回答，直到切换到其他 LLM。</p>',
+      onConfirm: function onConfirm() {
+        var result = invoke("designateRagAnswerModel", [id]);
+        if (!result) {
+          overlay.toast("设置未生效", "仅连接正常的 LLM 可设为使用中。", "warning");
+          return false;
+        }
+        overlay.toast("已设为使用中", "“" + dom.escape(modelName) + "”已成为当前长期使用的回答生成模型。", "success");
+        return true;
+      },
+    });
+  }
+
   function confirmDelete(state, kind, id) {
     var model = findModel(state, kind, id);
     if (!model) return;
@@ -398,9 +436,9 @@
   function render(route, state) {
     return dom.pageHeader({
       title: "模型管理",
-      actions: dom.button("新增模型", { variant: "primary", icon: "plus", attrs: "data-model-create" }),
+      actions: dom.button("添加模型", { variant: "primary", icon: "plus", attrs: "data-model-create" }),
       toolbar: { search: { value: searchQuery, placeholder: "搜索模型名称", ariaLabel: "搜索模型", attrs: "data-model-search" } },
-    }) + '<div class="page-content models-page"><div class="models-groups">' + modelGroups(state).map(groupTable).join("") + '</div><div data-model-empty hidden>' + dom.empty("没有匹配的模型", "请尝试其他搜索词。", "search-x") + "</div></div>";
+    }) + '<div class="page-content models-page"><div class="models-groups">' + modelGroups(state).map(function renderGroup(group) { return groupTable(group, state); }).join("") + '</div><div data-model-empty hidden>' + dom.empty("没有匹配的模型", "请尝试其他搜索词。", "search-x") + "</div></div>";
   }
 
   function applySearch(root) {
@@ -430,7 +468,7 @@
     });
 
     root.addEventListener("click", function onClick(event) {
-      var trigger = event.target.closest("[data-model-create], [data-model-test], [data-model-edit], [data-model-delete]");
+      var trigger = event.target.closest("[data-model-create], [data-model-test], [data-model-edit], [data-model-designate], [data-model-delete]");
       if (!trigger) return;
       var state = runtime.core.store.getState();
       if (trigger.matches("[data-model-create]")) {
@@ -441,6 +479,7 @@
       var id = trigger.getAttribute("data-model-id");
       if (trigger.matches("[data-model-test]")) testExistingModel(trigger);
       else if (trigger.matches("[data-model-edit]")) openModelEditor(state, kind, id);
+      else if (trigger.matches("[data-model-designate]")) confirmDesignate(state, kind, id);
       else if (trigger.matches("[data-model-delete]")) confirmDelete(state, kind, id);
     });
     applySearch(root);

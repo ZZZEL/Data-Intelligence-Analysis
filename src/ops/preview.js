@@ -15,7 +15,8 @@
     sourceChunkId: "源切片 ID", sourceDocumentId: "源文档 ID", chunkSetId: "切片集 ID", fileId: "文件 ID", fileVersionId: "文件版本 ID", documentId: "知识库文档 ID", parseResultId: "解析结果 ID", embeddingRecordId: "向量记录 ID", embeddingModelId: "向量模型 ID", embeddingModelAlias: "向量模型", embeddingDimension: "向量维度", vectorDimension: "向量维度", modelId: "模型 ID", modelConfigKey: "模型配置标识", contentHash: "内容指纹", inputHash: "向量输入指纹", createdAt: "创建时间", updatedAt: "更新时间"
   };
 
-  var identificationKeys = ["origin", "manualOperation", "status", "statusLabel", "chunkType", "hierarchyLevel"];
+  var identificationKeys = ["chunkType", "hierarchyLevel"];
+  var documentLevelKeys = ["origin", "manualOperation", "status", "statusLabel"];
   var locationKeys = ["fileName", "documentName", "sectionPath", "headingPath", "pageNumber", "tableId", "coordinates", "prevChunkId", "nextChunkId", "parentChunkId"];
   var retrievalKeys = ["knowledgeBaseId", "indexId", "indexRevisionId", "indexStatus", "vectorStatus", "tags", "relations", "relationCount", "retrievalRole", "contextExpansion"];
   var technicalKeys = ["sourceChunkId", "sourceDocumentId", "chunkSetId", "fileId", "fileVersionId", "documentId", "parseResultId", "embeddingRecordId", "embeddingModelId", "embeddingModelAlias", "embeddingDimension", "vectorDimension", "modelId", "modelConfigKey", "contentHash", "inputHash", "createdAt", "updatedAt"];
@@ -48,11 +49,6 @@
     if (value && typeof value === "object") return stableJson(value).replace(/\n\s*/g, " ");
     return String(value);
   }
-  function metadataOrigin(chunk) {
-    if (chunk.origin !== "manual") return chunk.origin;
-    return chunk.manualOperation === "edit" ? "人工编辑" : "人工新增";
-  }
-
   function chunkMetadataGroups(chunk, index, characterCount) {
     var metadata = chunk.metadata || {};
     var values = {};
@@ -74,15 +70,14 @@
     }
     function addKeys(group, keys) {
       keys.forEach(function addKnown(key) {
-        var display = key === "origin" ? metadataOrigin(chunk) :
-          key === "manualOperation" ? (values[key] === "edit" ? "编辑" : values[key] === "add" ? "新增" : null) :
-          key === "chunkType" ? (values[key] === "child" ? "子块" : values[key] === "parent" ? "父块" : null) :
+        var display = key === "chunkType" ? (values[key] === "child" ? "子块" : values[key] === "parent" ? "父块" : null) :
           key === "retrievalRole" ? (values[key] === "search" ? "参与检索" : values[key] === "context" ? "仅补充上下文" : null) :
           key === "contextExpansion" && values[key] === "parent" ? "命中后补充父块" : null;
         add(group, key, values[key], display);
       });
     }
     consumed.id = true; consumed.index = true; consumed.order = true; consumed.characterCount = true;
+    documentLevelKeys.forEach(function skipDocumentLevel(key) { consumed[key] = true; });
     add(groups[0], "chunkId", chunk.id);
     add(groups[0], "index", chunk.index == null ? (chunk.order == null ? index + 1 : chunk.order) : chunk.index);
     add(groups[0], "characterCount", characterCount);
@@ -154,8 +149,8 @@
       var expandSubject = chunkId ? "切片 " + chunkId : "第 " + (index + 1) + " 个切片";
       var expandLabel = "展开" + expandSubject;
       var expandControl = '<button class="chunk-card-icon-button chunk-expand-trigger" type="button" data-chunk-expand data-chunk-expand-subject="' + dom.escape(expandSubject) + '" aria-label="' + dom.escape(expandLabel) + '" title="' + dom.escape(expandLabel) + '" aria-expanded="false" aria-controls="' + dom.escape(contentId) + '">' + dom.icon("chevron-down", 15) + "</button>";
-      return '<article class="chunk-preview-card file-asset-chunk' + (edit || remove ? " chunk-preview-card--editable" : "") + '" data-chunk-preview-card="' + dom.escape(cardKey) + '"><header><span class="chunk-preview-card__number">#' + String(chunk.index || chunk.order || index + 1).padStart(2, "0") + '</span><strong>' + dom.escape(chunkId || "未分配 ID") + '</strong>' + badges + '<span class="chunk-preview-card__characters">' + dom.formatNumber(characterCount) + ' 字符</span></header>' + (tools ? '<div class="chunk-preview-card__tools">' + tools + "</div>" : "") + (metadataEnabled ? renderMetadataPopover(chunk, index, characterCount, popoverId, titleId) : "") +
-        (metaLabel ? '<div class="file-asset-chunk__meta">' + dom.escape(metaLabel) + "</div>" : "") + '<p id="' + dom.escape(contentId) + '">' + dom.escape(content) + '</p><div class="file-asset-chunk__actions">' + actions + expandControl + "</div></article>";
+      return '<article class="chunk-preview-card file-asset-chunk' + (edit || remove ? " chunk-preview-card--editable" : "") + '" data-chunk-preview-card="' + dom.escape(cardKey) + '" data-section-path="' + dom.escape(String(chunk.metadata && (chunk.metadata.sectionPath || chunk.metadata.headingPath) || "")) + '"><header><span class="chunk-preview-card__number">#' + String(chunk.index || chunk.order || index + 1).padStart(2, "0") + '</span><strong>' + dom.escape(chunkId || "未分配 ID") + '</strong>' + badges + '<span class="chunk-preview-card__characters">' + dom.formatNumber(characterCount) + ' 字符</span></header>' + (tools ? '<div class="chunk-preview-card__tools">' + tools + "</div>" : "") + (metadataEnabled ? renderMetadataPopover(chunk, index, characterCount, popoverId, titleId) : "") +
+        (metaLabel ? '<div class="file-asset-chunk__meta">' + dom.escape(metaLabel) + "</div>" : "") + '<p class="chunk-preview-card__content" id="' + dom.escape(contentId) + '">' + dom.escape(content) + '</p><div class="file-asset-chunk__actions">' + actions + expandControl + "</div></article>";
     }).join("") + "</div>";
   }
 

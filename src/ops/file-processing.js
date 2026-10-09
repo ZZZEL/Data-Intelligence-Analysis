@@ -320,7 +320,9 @@
         fileSizeBytes: bytes,
         fileSizeLabel: fileSize(bytes),
         updatedAt: connection.updatedAt,
-        available: connection.status === "available",
+        // The knowledge-base import picker lists an already materialized snapshot;
+        // connection health belongs to the enterprise data section, not this file list.
+        available: true,
         content: content,
         fixture: true
       };
@@ -390,6 +392,7 @@
       var asset = version && find(state.fileAssets, version.fileId);
       return !version || version.lifecycleStatus === "retired" || !asset || asset.latestVersionId !== version.id;
     })) return null;
+    var libraryVersionIds = versions.map(function markLibrary(version) { return version.id; });
     var sourceCatalog = listEnterpriseSourceObjects();
     var sources = (input.sourceObjects || []).map(function lookup(source) { return find(sourceCatalog, typeof source === "string" ? source : source.id || source.sourceObjectId); });
     if (sources.some(function invalid(source) { return !source || !source.available; })) return null;
@@ -441,7 +444,7 @@
         var duplicateUpload = !target && duplicateVersionIds.indexOf(version.id) >= 0;
         var operation = same || duplicateUpload ? (input.reprocess && same ? "reprocess" : "skip") : (existing ? "replace" : "create");
         var skippedLabel = duplicateUpload ? "文档管理已存在相同内容" : "当前知识库已引用此文档";
-        var entry = { id: id("IMP-ITEM"), fileId: version.fileId, fileVersionId: version.id, fileName: version.name, name: version.name, fileSizeBytes: version.fileSizeBytes, contentHash: version.contentHash, type: version.mimeType, sourceFile: version.sourceFile, sourcePreview: version.sourcePreview, documentId: existing && existing.id || null, existingDocumentId: existing && existing.id || null, operation: operation, duplicateReason: duplicateUpload ? "same_content" : null, status: operation === "skip" ? "skipped" : "staged", statusLabel: operation === "skip" ? skippedLabel : "待配置", parseResultId: null, chunkSetId: null, pipeline: [], availableActions: operation === "replace" ? ["confirm_replacement"] : [], countsTowardDocumentTotal: !existing && Boolean(target) };
+        var entry = { id: id("IMP-ITEM"), fileId: version.fileId, fileVersionId: version.id, fileName: version.name, name: version.name, fileSizeBytes: version.fileSizeBytes, contentHash: version.contentHash, type: version.mimeType, sourceFile: version.sourceFile, sourcePreview: version.sourcePreview, documentId: existing && existing.id || null, existingDocumentId: existing && existing.id || null, operation: operation, duplicateReason: duplicateUpload ? "same_content" : null, status: operation === "skip" ? "skipped" : "staged", statusLabel: operation === "skip" ? skippedLabel : "待配置", parseResultId: null, chunkSetId: null, pipeline: [], availableActions: operation === "replace" ? ["confirm_replacement"] : [], countsTowardDocumentTotal: !existing && Boolean(target), sourceChannel: version.sourceType === "enterprise_snapshot" ? "enterprise" : (libraryVersionIds.indexOf(version.id) >= 0 ? "library" : "upload") };
         if (operation === "skip") batch.skippedCount += 1;
         if (!batch.autoSync && existing && operation !== "skip" && existing.sourceSyncStatus) {
           var sourceSyncBatch = existing.sourceSyncBatchId && find(current.importBatches, existing.sourceSyncBatchId);
@@ -833,7 +836,7 @@
       if (!doc) { doc = processing.createDocument({ knowledgeBaseId: kb.id, name: version.name, id: id("DOC") }); state.documents.unshift(doc); kb.documentCounts.total += 1; }
       var previousSetId = doc.chunkSetId || null;
       if (!doc.searchable) kb.documentCounts.searchable += 1;
-      Object.assign(doc, { localAssetId: version.fileId, fileId: version.fileId, fileVersionId: version.id, parseResultId: item.parseResultId, chunkSetId: item.chunkSetId, name: version.name, mimeType: version.mimeType, fileSizeBytes: version.fileSizeBytes, fileSizeLabel: version.fileSizeLabel, sourceType: version.sourceType, sourceFile: version.sourceFile, sourceUrl: version.sourceUrl || "", sourcePreview: version.sourcePreview, sourceMetadata: version.sourceMetadata || null, contentHash: version.contentHash, characterCount: set.chunks.reduce(function sum(n, chunk) { return n + chunk.content.length; }, 0), chunkCount: set.chunks.length, parentChunkCount: (set.parentChunks || []).length, searchable: true, pendingVectorization: false, currentStage: "ready", lifecycleStatus: "effective", lifecycleStatusLabel: "可检索", processingProfileSnapshot: clone(set.configSnapshot), mineruParseConfig: clone(batch.mineruParseConfig), importedAt: doc.importedAt || batch.createdAt });
+      Object.assign(doc, { localAssetId: version.fileId, fileId: version.fileId, fileVersionId: version.id, parseResultId: item.parseResultId, chunkSetId: item.chunkSetId, name: version.name, mimeType: version.mimeType, fileSizeBytes: version.fileSizeBytes, fileSizeLabel: version.fileSizeLabel, sourceType: version.sourceType, sourceTypeLabel: version.sourceType === "enterprise_snapshot" ? "企业数据" : (doc.sourceTypeLabel || "本地上传"), sourceChannel: item.sourceChannel || (version.sourceType === "enterprise_snapshot" ? "enterprise" : "library"), sourceFile: version.sourceFile, sourceUrl: version.sourceUrl || "", sourcePreview: version.sourcePreview, sourceMetadata: version.sourceMetadata || null, contentHash: version.contentHash, characterCount: set.chunks.reduce(function sum(n, chunk) { return n + chunk.content.length; }, 0), chunkCount: set.chunks.length, parentChunkCount: (set.parentChunks || []).length, searchable: true, pendingVectorization: false, currentStage: "ready", lifecycleStatus: "effective", lifecycleStatusLabel: "可检索", processingProfileSnapshot: clone(set.configSnapshot), mineruParseConfig: clone(batch.mineruParseConfig), importedAt: doc.importedAt || batch.createdAt });
       delete doc.sourceSyncStatus;
       var asset = find(state.fileAssets, version.fileId);
       if (asset) {

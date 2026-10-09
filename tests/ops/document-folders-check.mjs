@@ -21,7 +21,7 @@ const treeHtml = directoryTree.render({
   rootId: "all",
   rootLabel: "全部文档",
 });
-assert.match(treeHtml, /data-directory-toggle="FOLDER-SCM"[\s\S]*供应链管理[\s\S]*10 个文件/, "目录树应展示折叠按钮、文件夹名和后代文件数");
+assert.match(treeHtml, /data-directory-node="FOLDER-SCM"[\s\S]*供应链管理[\s\S]*10 个文件[\s\S]*data-directory-toggle="FOLDER-SCM"/, "目录树应展示文件夹名、后代文件数和文件数右侧的折叠按钮");
 assert.match(treeHtml, /data-directory-item="SCM-DOC-01"[\s\S]*01_供应链管理基础理论手册\.docx/, "目录树应在文件夹下展示文件名");
 const firstItem = treeHtml.slice(treeHtml.indexOf('data-directory-item="SCM-DOC-01"'), treeHtml.indexOf("</div></div>", treeHtml.indexOf('data-directory-item="SCM-DOC-01"')) + 12);
 assert.doesNotMatch(firstItem, /data-lucide=/, "目录树文件项不应显示图标");

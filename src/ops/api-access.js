@@ -202,20 +202,20 @@
     });
   }
 
+  function rerankerOptions(state, selectedId) {
+    var models = rerankerModels(state);
+    if (!models.length) return '<option value="" selected disabled>暂无连接正常的 Rerank 模型</option>';
+    return models.map(function map(model) {
+      return '<option value="' + dom.escape(model.id) + '"' + (model.id === selectedId ? " selected" : "") + '>' + dom.escape(model.alias || model.name) + '</option>';
+    }).join("");
+  }
+
   function knowledgeBaseOptions(state, selectedIds) {
     var selected = list(selectedIds);
     return knowledgeBases(state).map(function map(item) {
       return '<label class="api-key-kb-option"><input type="checkbox" value="' + dom.escape(item.id) + '" data-api-kb-option' + (selected.indexOf(item.id) >= 0 ? " checked" : "") + '>' +
         '<span class="api-key-kb-option__identity"><strong>' + dom.escape(item.name) + '</strong><small>' + dom.escape(item.id) + '</small></span>' +
         dom.status(item.enabled ? "检索已启用" : "检索已关闭", item.enabled ? "success" : "neutral") + '</label>';
-    }).join("");
-  }
-
-  function rerankerOptions(state, selectedId) {
-    var models = rerankerModels(state);
-    if (!models.length) return '<option value="" selected disabled>暂无连接正常的 Rerank 模型</option>';
-    return models.map(function map(model) {
-      return '<option value="' + dom.escape(model.id) + '"' + (model.id === selectedId ? " selected" : "") + '>' + dom.escape(model.alias || model.name) + '</option>';
     }).join("");
   }
 
