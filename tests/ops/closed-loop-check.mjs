@@ -160,7 +160,8 @@ assert.doesNotMatch(supplyLocalPreview, /文档处理结果/, "文档管理不�
 assert.doesNotMatch(supplyLocalPreview, /local-document-reference-list|local-document-reference-row/, "右侧不得重复展示选择器已有的知识库名称模块");
 assert.match(supplyLocalPreview, /01-C01[\s\S]*data-chunk-expand/, "供应链文档管理预览应展示清单切片卡片");
 assert.match(supplyLocalPreview, /data-chunk-metadata-trigger/, "文档管理预览应允许查看切片信息浮层");
-assert.match(supplyLocalPreview, /data-chunk-copy-id[\s\S]*data-chunk-copy-all/, "文档管理只读预览应支持复制 Chunk ID 和全部切片信息");
+assert.match(supplyLocalPreview, /data-chunk-copy-all/, "文档管理只读预览应支持在标题栏复制全部切片信息");
+assert.doesNotMatch(supplyLocalPreview, /data-chunk-copy-id/, "切片信息不再提供字段级复制按钮");
 assert.doesNotMatch(supplyLocalPreview, /data-local-preview-chunk-add|data-local-chunk-context|data-local-chunk-metadata|data-local-chunk-edit|data-local-chunk-delete|data-chunk-edit-trigger|data-chunk-context|data-chunk-metadata-edit|data-chunk-relation-edit|data-chunk-delete/, "文档管理预览不应暴露知识库切片编辑操作");
 assert.doesNotMatch(supplyLocalPreview, /data-local-result-status/, "文档管理预览的结果来源旁不应重复展示知识库状态");
 assert.doesNotMatch(supplyLocalPreview, /预置演示数据未内置原始二进制文件/, "供应链预置文件应保留可下载的原文件链接");
@@ -1911,9 +1912,14 @@ const editTriggerCount = (chunkPreviewHtml.match(/data-chunk-edit-trigger/g) || 
 assert.equal(editTriggerCount, renderedChunkCardCount, "可编辑知识库中的每张切片卡片都应在右上角提供编辑图标");
 assert.doesNotMatch(chunkPreviewHtml, /data-chunk-edit="[^"]+"[^>]*>编辑<\/button>/, "共享切片卡片不应在底部重复展示文字编辑按钮");
 assert.match(chunkPreviewHtml, /data-chunk-metadata-trigger[^>]*aria-haspopup="dialog"[^>]*aria-controls="chunk-metadata-[^"]+"/, "切片信息入口应通过 aria-controls 关联非模态浮层");
-assert.match(chunkPreviewHtml, /识别信息[\s\S]*来源定位[\s\S]*检索治理[\s\S]*技术信息/, "切片信息应按识别、来源、检索治理和技术信息组织");
-assert.match(chunkPreviewHtml, /Chunk ID[\s\S]*data-chunk-copy-id[\s\S]*data-chunk-copy-all[\s\S]*复制全部信息/, "切片信息应支持单独复制 Chunk ID 和复制完整结构化信息");
-assert.match(chunkPreviewHtml, /EMB-CHK-DOC-001-001[\s\S]*MODEL-EMBEDDING-PRIMARY/, "检索投影切片应展示真实向量记录和模型标识");
+assert.doesNotMatch(chunkPreviewHtml, /chunk-metadata-popover__group[\s\S]*?<h3>|>识别信息<|>来源定位<|>检索治理</, "切片信息应平铺完整列出，不再拆分小标题分组");
+assert.match(chunkPreviewHtml, /chunk-metadata-popover__groups"><dl>[\s\S]*Chunk ID[\s\S]*章节路径[\s\S]*下一片/, "切片信息应在一列中完整列出识别与定位字段");
+const metadataPopoverHtml = chunkPreviewHtml.slice(chunkPreviewHtml.indexOf("chunk-metadata-popover\""), chunkPreviewHtml.indexOf("</section>", chunkPreviewHtml.indexOf("data-chunk-copy-payload")));
+assert.doesNotMatch(metadataPopoverHtml, /技术信息|知识库 ID|切片集 ID|向量记录 ID|tokensEst/, "切片信息不应再展示内部 ID 链、知识库 ID 或系统元数据");
+assert.match(chunkPreviewHtml, /chunk-metadata-popover__header[\s\S]*data-chunk-copy-all[^>]*aria-label="复制全部信息"/, "切片信息标题栏应提供图标化的复制全部信息按钮");
+assert.doesNotMatch(chunkPreviewHtml, /data-chunk-copy-id/, "切片信息不再提供字段级复制按钮");
+assert.doesNotMatch(chunkPreviewHtml, /chunk-metadata-popover__footer/, "切片信息不应保留独立底部操作栏");
+assert.doesNotMatch(chunkPreviewHtml, /EMB-CHK-DOC-001-001|MODEL-EMBEDDING-PRIMARY/, "检索投影切片同样不展示向量记录与模型等系统标识");
 assert.doesNotMatch(chunkPreviewHtml, /file-asset-chunk__relations|来源与关系/, "元数据应收进右上角信息浮层，不再占用切片卡片文档流");
 assert.match(chunkPreviewHtml, new RegExp(addedChunk.id + "[\\s\\S]*" + addedChunk.characterCount + " 字符[\\s\\S]*" + addedChunkContent), "切片卡片应展示切片 ID、字符数与内容");
 assert.match(chunkPreviewHtml, new RegExp(addedChunk.id + "[\\s\\S]*人工新增"), "人工新增的切片应显示来源标签");

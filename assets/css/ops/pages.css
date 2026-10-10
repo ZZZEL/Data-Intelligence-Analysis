@@ -2201,7 +2201,7 @@
   top: 0;
   left: 0;
   z-index: 1000;
-  width: min(570px, calc(100vw - 24px));
+  width: min(400px, calc(100vw - 24px));
   max-height: calc(100vh - 24px);
   overflow: auto;
   border: 1px solid #bfd2f4;
@@ -2216,8 +2216,7 @@
   display: none;
 }
 
-.chunk-metadata-popover__header,
-.chunk-metadata-popover__footer {
+.chunk-metadata-popover__header {
   position: sticky;
   z-index: 2;
   display: flex;
@@ -2246,6 +2245,25 @@
   border-radius: 5px;
 }
 
+.chunk-metadata-popover__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.chunk-metadata-popover__feedback {
+  color: var(--success, #12805c);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.chunk-metadata-popover__copy--all {
+  margin-top: 0;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
 .chunk-metadata-popover__close:hover,
 .chunk-metadata-popover__close:focus-visible,
 .chunk-metadata-popover__copy:hover,
@@ -2256,29 +2274,10 @@
 }
 
 .chunk-metadata-popover__groups {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0;
+  padding: 12px 14px;
 }
 
-.chunk-metadata-popover__group {
-  min-width: 0;
-  padding: 14px;
-  border-bottom: 1px solid var(--border-soft);
-}
-
-.chunk-metadata-popover__group:nth-child(odd) {
-  border-right: 1px solid var(--border-soft);
-}
-
-.chunk-metadata-popover__group h3 {
-  margin: 0 0 10px;
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 680;
-}
-
-.chunk-metadata-popover__group dl {
+.chunk-metadata-popover__groups dl {
   display: grid;
   gap: 8px;
   margin: 0;
@@ -2287,7 +2286,7 @@
 .chunk-metadata-popover__row {
   display: grid;
   min-width: 0;
-  grid-template-columns: 92px minmax(0, 1fr);
+  grid-template-columns: 108px minmax(0, 1fr);
   align-items: start;
   gap: 10px;
   font-size: 11px;
@@ -2328,22 +2327,6 @@
   font-size: 11px;
 }
 
-.chunk-metadata-popover__footer {
-  bottom: 0;
-  min-height: 48px;
-  justify-content: flex-end;
-  padding: 8px 12px;
-  border-top: 1px solid var(--border-soft);
-}
-
-.chunk-metadata-popover__feedback {
-  min-width: 0;
-  flex: 1;
-  color: var(--success, #12805c);
-  font-size: 11px;
-  text-align: right;
-}
-
 .chunk-metadata-popover__payload {
   position: fixed;
   width: 1px;
@@ -2351,16 +2334,6 @@
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
-}
-
-@media (max-width: 720px) {
-  .chunk-metadata-popover__groups {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .chunk-metadata-popover__group:nth-child(odd) {
-    border-right: 0;
-  }
 }
 
 .chunk-preview-card > p {

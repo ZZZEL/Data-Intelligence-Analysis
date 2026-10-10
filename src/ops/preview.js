@@ -12,14 +12,13 @@
     chunkId: "Chunk ID", index: "序号", order: "序号", origin: "生成来源", manualOperation: "人工操作", characterCount: "字符数", status: "状态", statusLabel: "状态说明",
     fileName: "文件名", documentName: "文件名", sectionPath: "章节路径", headingPath: "标题路径", pageNumber: "页码", tableId: "表格 ID", coordinates: "页面坐标", prevChunkId: "上一片", nextChunkId: "下一片", parentChunkId: "父块 ID",
     knowledgeBaseId: "知识库 ID", indexId: "索引 ID", indexRevisionId: "索引版本 ID", indexStatus: "索引状态", vectorStatus: "向量状态", tags: "标签", relations: "关系", relationCount: "关系数", chunkType: "层级类型", hierarchyLevel: "层级", retrievalRole: "检索角色", contextExpansion: "上下文扩展",
-    sourceChunkId: "源切片 ID", sourceDocumentId: "源文档 ID", chunkSetId: "切片集 ID", fileId: "文件 ID", fileVersionId: "文件版本 ID", documentId: "知识库文档 ID", parseResultId: "解析结果 ID", embeddingRecordId: "向量记录 ID", embeddingModelId: "向量模型 ID", embeddingModelAlias: "向量模型", embeddingDimension: "向量维度", vectorDimension: "向量维度", modelId: "模型 ID", modelConfigKey: "模型配置标识", contentHash: "内容指纹", inputHash: "向量输入指纹", createdAt: "创建时间", updatedAt: "更新时间"
+    sourceChunkId: "源切片 ID", sourceDocumentId: "源文档 ID", chunkSetId: "切片集 ID", fileId: "文件 ID", fileVersionId: "文件版本 ID", documentId: "知识库文档 ID", parseResultId: "解析结果 ID", embeddingRecordId: "向量记录 ID", embeddingModelId: "向量模型 ID", embeddingModelAlias: "向量模型", embeddingDimension: "向量维度", vectorDimension: "向量维度", modelId: "模型 ID", modelConfigKey: "模型配置标识", contentHash: "内容指纹", inputHash: "向量输入指纹", createdAt: "创建时间", updatedAt: "更新时间", contentType: "内容类型"
   };
 
-  var identificationKeys = ["chunkType", "hierarchyLevel"];
+  var identificationKeys = ["contentType"];
   var documentLevelKeys = ["origin", "manualOperation", "status", "statusLabel"];
-  var locationKeys = ["fileName", "documentName", "sectionPath", "headingPath", "pageNumber", "tableId", "coordinates", "prevChunkId", "nextChunkId", "parentChunkId"];
-  var retrievalKeys = ["knowledgeBaseId", "indexId", "indexRevisionId", "indexStatus", "vectorStatus", "tags", "relations", "relationCount", "retrievalRole", "contextExpansion"];
-  var technicalKeys = ["sourceChunkId", "sourceDocumentId", "chunkSetId", "fileId", "fileVersionId", "documentId", "parseResultId", "embeddingRecordId", "embeddingModelId", "embeddingModelAlias", "embeddingDimension", "vectorDimension", "modelId", "modelConfigKey", "contentHash", "inputHash", "createdAt", "updatedAt"];
+  var locationKeys = ["fileName", "documentName", "sectionPath", "headingPath", "pageNumber", "prevChunkId", "nextChunkId", "parentChunkId"];
+  var retrievalKeys = [];
 
   function split(options) {
     var opts = options || {};
@@ -59,9 +58,7 @@
     var consumed = {};
     var groups = [
       { key: "identification", title: "识别信息", empty: "暂无识别信息", fields: [] },
-      { key: "location", title: "来源定位", empty: "暂无原文定位信息", fields: [] },
-      { key: "retrieval", title: "检索治理", empty: "当前切片未关联检索信息", fields: [] },
-      { key: "technical", title: "技术信息", empty: "暂无其他技术信息", fields: [] }
+      { key: "location", title: "来源定位", empty: "暂无原文定位信息", fields: [] }
     ];
     function add(group, key, value, display) {
       consumed[key] = true;
@@ -70,9 +67,7 @@
     }
     function addKeys(group, keys) {
       keys.forEach(function addKnown(key) {
-        var display = key === "chunkType" ? (values[key] === "child" ? "子块" : values[key] === "parent" ? "父块" : null) :
-          key === "retrievalRole" ? (values[key] === "search" ? "参与检索" : values[key] === "context" ? "仅补充上下文" : null) :
-          key === "contextExpansion" && values[key] === "parent" ? "命中后补充父块" : null;
+        var display = key === "contentType" ? (values[key] === "text" ? "文本" : values[key] === "table" ? "表格" : values[key] === "image" ? "图片" : values[key] === "mixed" ? "混合" : null) : null;
         add(group, key, values[key], display);
       });
     }
@@ -84,36 +79,29 @@
     addKeys(groups[0], identificationKeys);
     addKeys(groups[1], locationKeys);
     addKeys(groups[2], retrievalKeys);
-    addKeys(groups[3], technicalKeys);
-    Object.keys(values).sort().forEach(function addRemaining(key) {
-      if (consumed[key] || !hasMetadataValue(values[key])) return;
-      var lower = key.toLowerCase();
-      var target = /(?:page|section|heading|table|coordinate|locator|position)/.test(lower) ? groups[1] :
-        /(?:knowledge|index|vector|retriev|tag|relation)/.test(lower) ? groups[2] : groups[3];
-      add(target, key, values[key]);
-    });
+    // 界面只展示白名单字段；其余元数据保留在系统与复制载荷之外的链路中。
     return groups;
   }
 
   function metadataPayload(groups) {
     return groups.reduce(function groupPayload(result, group) {
-      result[group.key] = group.fields.reduce(function fieldPayload(fields, field) { fields[field.key] = field.value; return fields; }, {});
-      return result;
+      return group.fields.reduce(function fieldPayload(fields, field) { fields[field.key] = field.value; return fields; }, result);
     }, {});
   }
   function renderMetadataField(field) {
     var displayed = hasMetadataValue(field.display) ? field.display : metadataValue(field.value);
-    var copy = field.key === "chunkId" ? '<button class="chunk-metadata-popover__copy" type="button" data-chunk-copy-id data-copy-value="' + dom.escape(String(field.value)) + '" aria-label="复制 Chunk ID">' + dom.icon("copy", 13) + '<span>复制</span></button>' : "";
-    return '<div class="chunk-metadata-popover__row"><dt>' + dom.escape(field.label) + '</dt><dd><span>' + dom.escape(displayed) + "</span>" + copy + "</dd></div>";
+    return '<div class="chunk-metadata-popover__row"><dt>' + dom.escape(field.label) + '</dt><dd><span>' + dom.escape(displayed) + "</span></dd></div>";
   }
   function renderMetadataPopover(chunk, index, characterCount, popoverId, titleId) {
     var groups = chunkMetadataGroups(chunk, index, characterCount);
     var payload = stableJson(metadataPayload(groups));
+    var fields = groups.reduce(function flatten(result, group) { return result.concat(group.fields); }, []);
+    var body = fields.length
+      ? '<dl>' + fields.map(renderMetadataField).join("") + "</dl>"
+      : '<p class="chunk-metadata-popover__empty">暂无切片信息</p>';
     return '<section class="chunk-metadata-popover" id="' + dom.escape(popoverId) + '" role="dialog" aria-modal="false" aria-labelledby="' + dom.escape(titleId) + '" hidden data-chunk-metadata-popover>' +
-      '<header class="chunk-metadata-popover__header"><strong id="' + dom.escape(titleId) + '">切片信息</strong><button type="button" class="chunk-metadata-popover__close" data-chunk-metadata-close aria-label="关闭切片信息">' + dom.icon("x", 15) + "</button></header>" +
-      '<div class="chunk-metadata-popover__groups">' + groups.map(function renderGroup(group) {
-        return '<section class="chunk-metadata-popover__group"><h3>' + group.title + '</h3>' + (group.fields.length ? '<dl>' + group.fields.map(renderMetadataField).join("") + "</dl>" : '<p class="chunk-metadata-popover__empty">' + group.empty + "</p>") + "</section>";
-      }).join("") + '</div><footer class="chunk-metadata-popover__footer"><span class="chunk-metadata-popover__feedback" data-chunk-copy-feedback role="status" aria-live="polite"></span><button class="btn btn--secondary btn--sm" type="button" data-chunk-copy-all>' + dom.icon("copy", 14) + '复制全部信息</button></footer>' +
+      '<header class="chunk-metadata-popover__header"><strong id="' + dom.escape(titleId) + '">切片信息</strong><div class="chunk-metadata-popover__header-actions"><span class="chunk-metadata-popover__feedback" data-chunk-copy-feedback role="status" aria-live="polite"></span><button class="chunk-metadata-popover__copy chunk-metadata-popover__copy--all" type="button" data-chunk-copy-all aria-label="复制全部信息" title="复制全部信息">' + dom.icon("copy", 14) + '</button><button type="button" class="chunk-metadata-popover__close" data-chunk-metadata-close aria-label="关闭切片信息">' + dom.icon("x", 15) + "</button></div></header>" +
+      '<div class="chunk-metadata-popover__groups">' + body + "</div>" +
       '<textarea class="chunk-metadata-popover__payload" tabindex="-1" aria-hidden="true" data-chunk-copy-payload>' + dom.escape(payload) + "</textarea></section>";
   }
 
@@ -172,7 +160,6 @@
       return;
     }
     var triggerRect = elements.trigger.getBoundingClientRect();
-    var cardRect = card.getBoundingClientRect();
     var viewportWidth = document.documentElement.clientWidth || window.innerWidth;
     var viewportHeight = document.documentElement.clientHeight || window.innerHeight;
     if (triggerRect.bottom < 0 || triggerRect.top > viewportHeight || triggerRect.right < 0 || triggerRect.left > viewportWidth) {
@@ -182,7 +169,8 @@
     var margin = 12;
     var gap = 8;
     var availableWidth = Math.max(160, viewportWidth - margin * 2);
-    var width = Math.min(570, Math.max(280, cardRect.width - 24), availableWidth);
+    var width = Math.min(400, availableWidth);
+    var previousScrollTop = elements.popover.scrollTop;
     elements.popover.style.visibility = "hidden";
     elements.popover.style.width = Math.floor(width) + "px";
     elements.popover.style.maxHeight = Math.max(160, viewportHeight - margin * 2) + "px";
@@ -199,6 +187,7 @@
     var left = Math.max(margin, Math.min(triggerRect.right - width, viewportWidth - margin - width));
     elements.popover.style.top = Math.round(top) + "px";
     elements.popover.style.left = Math.round(left) + "px";
+    elements.popover.scrollTop = Math.min(previousScrollTop, Math.max(0, elements.popover.scrollHeight - elements.popover.clientHeight));
     elements.popover.style.visibility = "";
     elements.popover.dataset.placement = placeAbove ? "top" : "bottom";
   }
@@ -302,16 +291,13 @@
     document.addEventListener("click", function handleMetadataPopoverAction(event) {
       var close = event.target.closest && event.target.closest("[data-chunk-metadata-close]");
       if (close && activeMetadataCard) { closeMetadata(activeMetadataCard, true); return; }
-      var copyId = event.target.closest && event.target.closest("[data-chunk-copy-id]");
       var copyAll = event.target.closest && event.target.closest("[data-chunk-copy-all]");
-      if (!activeMetadataCard || !copyId && !copyAll) return;
-      var copyButton = copyId || copyAll;
+      if (!activeMetadataCard || !copyAll) return;
       var elements = metadataElements(activeMetadataCard);
-      if (!elements.popover || !elements.popover.contains(copyButton)) return;
+      if (!elements.popover || !elements.popover.contains(copyAll)) return;
       var copyCard = activeMetadataCard;
       var payload = elements.popover.querySelector("[data-chunk-copy-payload]");
-      var text = copyId ? copyId.getAttribute("data-copy-value") : payload && payload.value;
-      copyText(text || "").then(function copied(success) { copyFeedback(copyCard, success ? (copyId ? "Chunk ID 已复制" : "全部信息已复制") : "复制失败，请手动复制"); });
+      copyText(payload && payload.value || "").then(function copied(success) { copyFeedback(copyCard, success ? "全部信息已复制" : "复制失败，请手动复制"); });
     });
     document.addEventListener("keydown", function closeOnEscape(event) {
       if (event.key !== "Escape" || !activeMetadataCard) return;
@@ -320,7 +306,12 @@
       closeMetadata(activeMetadataCard, true);
     }, true);
     window.addEventListener("resize", requestMetadataPosition);
-    document.addEventListener("scroll", requestMetadataPosition, true);
+    document.addEventListener("scroll", function handleMetadataScroll(event) {
+      if (!activeMetadataCard) return;
+      var elements = metadataElements(activeMetadataCard);
+      if (elements.popover && event.target && event.target !== document && elements.popover.contains(event.target)) return;
+      requestMetadataPosition();
+    }, true);
   }
 
   function bindChunkCards(root) {
