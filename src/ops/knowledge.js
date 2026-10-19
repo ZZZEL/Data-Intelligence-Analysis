@@ -20,7 +20,7 @@
 
   function normalizeImportRoute(route) {
     if (/^knowledge\/[^/]+\/import(?:\/|$)/.test(route.path || "")) {
-      return Object.assign({}, route, { query: Object.assign({}, route.query, { onboarding: "1", flow: "import" }) });
+      return Object.assign({}, route, { query: Object.assign({}, route.query, { onboarding: "1" }) });
     }
     return route;
   }
@@ -219,8 +219,6 @@
       effective: "success",
       historical: "neutral",
       building: "info",
-      pending_validation: "info",
-      pending_activation: "info",
       pending_configuration: "info",
       staged: "info",
       processing: "info",
@@ -257,7 +255,7 @@
         '<td><div class="table-primary">' + number(item.documentCounts.total) + "</div></td>" +
         "<td>" + displayDate(item.updatedAt || item.contentUpdatedAt) + "</td>" +
         "<td>" + displayDate(item.createdAt) + "</td>" +
-        '<td><div class="knowledge-row-actions"><button type="button" class="table-action" data-kb-open="' + esc(item.id) + '">详情</button><button type="button" class="table-action" data-kb-edit="' + esc(item.id) + '">编辑</button><button type="button" class="table-action" data-kb-test="' + esc(item.id) + '">测试</button><button type="button" class="table-action table-action--danger" data-kb-delete="' + esc(item.id) + '"' + (item.enabled ? ' disabled title="请先关闭检索再删除"' : "") + '>删除</button></div></td>' +
+        '<td><div class="knowledge-row-actions"><button type="button" class="table-action" data-kb-open="' + esc(item.id) + '">详情</button><button type="button" class="table-action" data-kb-edit="' + esc(item.id) + '">编辑</button><button type="button" class="table-action table-action--danger" data-kb-delete="' + esc(item.id) + '"' + (item.enabled ? ' disabled title="请先关闭检索再删除"' : "") + '>删除</button></div></td>' +
         "</tr>";
     }).join("");
 
@@ -277,12 +275,18 @@
     var hasSearchableIndex = Boolean(kb.currentKnowledgeVersionId && kb.documentCounts && kb.documentCounts.searchable);
     var embeddingReady = knowledgeEmbeddingReady(state, kb);
     var retrievalReady = hasSearchableIndex && embeddingReady;
-    var toggleAction = !kb.enabled && !retrievalReady ?
-      dom.button(!hasSearchableIndex ? "等待索引建立" : "模型连接不可用", { variant: "secondary", icon: !hasSearchableIndex ? "clock-3" : "circle-alert", disabled: true, attrs: 'title="' + (!hasSearchableIndex ? "完成索引构建后可启用检索" : "向量模型未通过连通性测试") + '"' }) :
-      dom.button(toggleLabel, { variant: toggleVariant, icon: kb.enabled ? "pause" : "play", attrs: 'data-toggle-kb="' + esc(kb.id) + '" data-next="' + (kb.enabled ? "false" : "true") + '"' });
-    return dom.button("编辑", { variant: "secondary", icon: "pencil", attrs: 'data-kb-edit="' + esc(kb.id) + '"' }) +
-      dom.button("检索测试", { variant: "secondary", icon: "search-check", attrs: 'data-test-kb="' + esc(kb.id) + '"' }) +
-      dom.button("导入文件", { variant: "secondary", icon: "upload", disabled: !embeddingReady, attrs: 'data-import-kb="' + esc(kb.id) + '"' + (embeddingReady ? "" : ' title="向量模型连接不可用"') }) + toggleAction;
+    var retrievalItem = !kb.enabled && !retrievalReady
+      ? '<button type="button" class="kb-header-menu__action" disabled title="' + (!hasSearchableIndex ? "完成索引构建后可启用检索" : "向量模型未通过连通性测试") + '">' + dom.icon(!hasSearchableIndex ? "clock-3" : "circle-alert", 15) + '<span>' + (!hasSearchableIndex ? "等待索引建立" : "模型连接不可用") + '</span></button>'
+      : '<button type="button" class="kb-header-menu__action' + (kb.enabled ? " is-danger" : "") + '" data-toggle-kb="' + esc(kb.id) + '" data-next="' + (kb.enabled ? "false" : "true") + '">' + dom.icon(kb.enabled ? "pause" : "play", 15) + '<span>' + toggleLabel + '</span></button>';
+    var deleteItem = '<button type="button" class="kb-header-menu__action is-danger" data-kb-delete-detail="' + esc(kb.id) + '" aria-label="删除知识库" title="' + (kb.enabled ? "请先关闭检索再删除" : "删除知识库") + '"' + (kb.enabled ? " disabled" : "") + '>' + dom.icon("trash-2", 15) + '<span>删除知识库</span></button>';
+    var moreMenu = '<div class="kb-header-menu" data-kb-header-menu>' +
+      '<button type="button" class="kb-header-menu__trigger" data-kb-header-trigger aria-expanded="false" aria-haspopup="menu" aria-label="更多" title="更多">' + dom.icon("ellipsis", 15) + '</button>' +
+      '<div class="kb-header-menu__popover" role="menu" aria-label="更多">' + retrievalItem +
+      '<div class="kb-header-menu__divider" role="separator"></div>' + deleteItem + "</div></div>";
+    var testTitle = !hasSearchableIndex ? "完成索引构建后可检索测试" : (!embeddingReady ? "向量模型连接不可用" : "检索测试");
+    return dom.button("导入文件", { variant: "primary", icon: "upload", disabled: !embeddingReady, attrs: 'data-import-kb="' + esc(kb.id) + '"' + (embeddingReady ? "" : ' title="向量模型连接不可用"') }) +
+      dom.button("检索测试", { variant: "secondary", icon: "search-check", disabled: !retrievalReady, attrs: 'data-test-kb="' + esc(kb.id) + '"' + (retrievalReady ? "" : ' title="' + testTitle + '"') }) +
+      dom.button("编辑", { variant: "secondary", icon: "pencil", attrs: 'data-kb-edit="' + esc(kb.id) + '"' }) + moreMenu;
   }
 
   function detailRow(label, value) {
@@ -323,13 +327,14 @@
     var availability = knowledgeAvailability(state, kb);
     var embeddingReady = knowledgeEmbeddingReady(state, kb);
     function progressValue(active, normalLabel) { return active ? number(active) + " 个处理中" : normalLabel; }
+    var isEmptyKnowledgeBase = documents.length === 0;
 
     return '<div class="knowledge-pipeline"><div class="knowledge-pipeline__header"><div><h3>知识处理与检索状态</h3></div></div>' +
       '<div class="knowledge-pipeline__stages">' +
-      pipelineStage({ label: "文档解析", value: failed ? number(failed) + " 个失败" : progressValue(parsing, "正常"), icon: "scan-text", tone: failed ? "danger" : parsing ? "info" : "success" }) +
-      pipelineStage({ label: "切片处理", value: progressValue(chunking, "正常"), icon: "blocks", tone: chunking ? "info" : "success" }) +
-      pipelineStage({ label: "向量化", value: !embeddingReady ? "连接不可用" : progressValue(embeddingFiles, "正常"), icon: "box", tone: !embeddingReady ? "danger" : embeddingFiles ? "info" : "success" }) +
-      pipelineStage({ label: "索引", value: progressValue(indexing, "正常"), icon: "database", tone: indexing ? "info" : "success" }) +
+      pipelineStage({ label: "文档解析", value: isEmptyKnowledgeBase ? "待导入" : (failed ? number(failed) + " 个失败" : progressValue(parsing, "正常")), icon: "scan-text", tone: isEmptyKnowledgeBase ? "neutral" : (failed ? "danger" : parsing ? "info" : "success") }) +
+      pipelineStage({ label: "切片处理", value: isEmptyKnowledgeBase ? "待导入" : progressValue(chunking, "正常"), icon: "blocks", tone: isEmptyKnowledgeBase ? "neutral" : (chunking ? "info" : "success") }) +
+      pipelineStage({ label: "向量化", value: !embeddingReady ? "连接不可用" : (isEmptyKnowledgeBase ? "待导入" : progressValue(embeddingFiles, "正常")), icon: "box", tone: !embeddingReady ? "danger" : (isEmptyKnowledgeBase || embeddingFiles ? "info" : "success") }) +
+      pipelineStage({ label: "索引", value: isEmptyKnowledgeBase ? "待构建" : progressValue(indexing, "正常"), icon: "database", tone: isEmptyKnowledgeBase ? "neutral" : (indexing ? "info" : "success") }) +
       pipelineStage({ label: "检索", value: availability.label, icon: "search", tone: availability.key === "available" ? "success" : (availability.key === "unavailable" ? "danger" : "neutral") }) +
       "</div></div>";
   }
@@ -349,14 +354,55 @@
       "</div>" + embeddingError + renderKnowledgePipeline(state, kb) + "</div></section>";
   }
 
-  function renderKnowledgeContentTabs(activeTab) {
+  function renderKnowledgeContentTabs(activeTab, tools) {
     return '<div class="knowledge-content-header"><div class="tabs knowledge-content-tabs" role="tablist" aria-label="知识库内容">' +
       '<button type="button" class="tab' + (activeTab === "documents" ? " is-active" : "") + '" role="tab" aria-selected="' + (activeTab === "documents" ? "true" : "false") + '" aria-controls="knowledge-documents-panel" data-knowledge-content-tab="documents">文件</button>' +
       '<button type="button" class="tab' + (activeTab === "chunks" ? " is-active" : "") + '" role="tab" aria-selected="' + (activeTab === "chunks" ? "true" : "false") + '" aria-controls="knowledge-chunks-panel" data-knowledge-content-tab="chunks">切片</button>' +
-      "</div></div>";
+      '</div>' + (tools ? '<div class="knowledge-content-header__tools">' + tools + "</div>" : "") + "</div>";
   }
 
   var sourceChannelLabels = { upload: "上传文件", library: "文档管理", enterprise: "企业数据" };
+  var kbDocumentPageSize = 10;
+  var kbDocumentPage = 1;
+  var kbDocumentSearch = "";
+  var kbDocumentSearchKbId = null;
+
+  function renderDocumentsPagination(totalItems) {
+    var totalPages = totalItems ? Math.ceil(totalItems / kbDocumentPageSize) : 0;
+    return '<nav class="local-documents-pagination" aria-label="文件分页" data-kb-document-pagination' + (totalPages > 1 ? "" : " hidden") + '>' +
+      '<button type="button" class="local-documents-pagination__button" data-kb-document-page="previous" aria-label="上一页" title="上一页" disabled>' + dom.icon("chevron-left", 15) + '</button>' +
+      '<span class="local-documents-pagination__status" data-kb-document-page-status aria-live="polite">第 1 / ' + totalPages + ' 页</span>' +
+      '<button type="button" class="local-documents-pagination__button" data-kb-document-page="next" aria-label="下一页" title="下一页"' + (totalPages > 1 ? "" : " disabled") + '>' + dom.icon("chevron-right", 15) + "</button></nav>";
+  }
+
+  function applyDocumentsPagination(root) {
+    var rows = Array.prototype.slice.call(root.querySelectorAll("[data-kb-document-row]"));
+    var query = kbDocumentSearch.trim().toLowerCase();
+    var matchedRows = rows.filter(function matches(row) {
+      return !query || String(row.dataset.kbDocumentName || "").indexOf(query) >= 0;
+    });
+    var totalPages = matchedRows.length ? Math.ceil(matchedRows.length / kbDocumentPageSize) : 0;
+    kbDocumentPage = totalPages ? Math.min(Math.max(kbDocumentPage || 1, 1), totalPages) : 0;
+    rows.forEach(function assign(row) {
+      var matchedIndex = matchedRows.indexOf(row);
+      row.hidden = matchedIndex < 0 || Boolean(totalPages && Math.floor(matchedIndex / kbDocumentPageSize) !== kbDocumentPage - 1);
+    });
+    var previous = root.querySelector('[data-kb-document-page="previous"]');
+    var next = root.querySelector('[data-kb-document-page="next"]');
+    var pageStatus = root.querySelector("[data-kb-document-page-status]");
+    var pagination = root.querySelector("[data-kb-document-pagination]");
+    var count = root.querySelector("[data-kb-document-count]");
+    var empty = root.querySelector("[data-kb-document-empty]");
+    if (pagination) pagination.hidden = totalPages <= 1;
+    if (count) count.textContent = query
+      ? "匹配 " + number(matchedRows.length) + " / " + number(rows.length) + " 个文件"
+      : "共 " + number(rows.length) + " 个文件";
+    if (empty) empty.hidden = matchedRows.length > 0;
+    if (previous) previous.disabled = kbDocumentPage <= 1;
+    if (next) next.disabled = kbDocumentPage >= totalPages;
+    if (pageStatus) pageStatus.textContent = totalPages ? "第 " + kbDocumentPage + " / " + totalPages + " 页" : "第 0 / 0 页";
+  }
+
   function documentSourceLabel(item) {
     if (item.sourceChannel && sourceChannelLabels[item.sourceChannel]) return sourceChannelLabels[item.sourceChannel];
     if (item.sourceType === "enterprise_snapshot") return "企业数据";
@@ -364,22 +410,35 @@
   }
 
   function renderDocumentsTab(state, kb) {
+    if (kbDocumentSearchKbId !== kb.id) {
+      kbDocumentSearchKbId = kb.id;
+      kbDocumentSearch = "";
+      kbDocumentPage = 1;
+    }
     var documents = knowledgeDocuments(state, kb.id);
+    var searchTools = '<div class="search-box">' + dom.icon("search", 15) + '<input class="field field--search" type="search" placeholder="搜索文件" aria-label="搜索文件" value="' + esc(kbDocumentSearch) + '" data-kb-document-search></div>';
     var rows = documents.map(function map(item) {
       var lifecycle = documentLifecycle(item);
       var chunks = documentChunks(state, item);
       var chunkCount = item.chunkCount == null ? chunks.length : item.chunkCount;
-      return "<tr>" +
+      var processing = ["parsing", "chunking", "embedding", "indexing"].indexOf(lifecycle.key) >= 0;
+      var canReprocess = Boolean(item.fileVersionId) && !processing;
+      var reprocessTitle = processing ? "文件正在处理中" : !item.fileVersionId ? "当前文件版本不可重新处理" : "重新处理此文件";
+      var reprocessAttrs = ' data-document-reprocess="' + esc(item.id) + '" aria-label="重新处理此文件" title="' + esc(reprocessTitle) + '"' + (canReprocess ? "" : " disabled");
+      return '<tr data-kb-document-row data-kb-document-name="' + esc(String(item.name || "").toLowerCase()) + '">' +
         '<td><button type="button" class="table-primary table-primary--link" data-document-preview="' + esc(item.id) + '"' + '>' + esc(item.name) + "</button></td>" +
         "<td>" + esc(documentSourceLabel(item)) + "</td>" +
         "<td>" + dom.status(lifecycle.label, lifecycleTone(lifecycle.key)) + "</td>" +
         "<td>" + (chunkCount ? number(chunkCount) + " 个" : "—") + "</td>" +
         "<td>" + displayDate(item.updatedAt || item.importedAt) + "</td>" +
-        '<td><div class="knowledge-row-actions"><button type="button" class="table-action" data-document-preview="' + esc(item.id) + '"' + '>详情</button><button type="button" class="table-action table-action--danger" data-document-delete="' + esc(item.id) + '">移除</button><button type="button" class="table-action" data-document-reprocess="' + esc(item.id) + '">重新处理</button></div></td>' +
+        '<td><div class="knowledge-row-actions"><button type="button" class="table-action" data-document-preview="' + esc(item.id) + '"' + '>详情</button><button type="button" class="table-action"' + reprocessAttrs + '>重新处理</button><button type="button" class="table-action table-action--danger" data-document-delete="' + esc(item.id) + '">删除</button></div></td>' +
         "</tr>";
     }).join("");
-    return '<section class="panel knowledge-assets knowledge-files">' + renderKnowledgeContentTabs("documents") + '<div id="knowledge-documents-panel" class="knowledge-assets__panel" role="tabpanel"><div class="table-wrap"><table class="data-table knowledge-files__table"><thead><tr><th>文件</th><th>来源</th><th>文件状态</th><th>切片数</th><th>更新时间</th><th>操作</th></tr></thead><tbody>' +
-      (rows || '<tr><td colspan="6">' + dom.empty("暂无文件", "导入文件后可查看处理状态与切片。", "files") + "</td></tr>") + "</tbody></table></div><div class=\"table-footer\">当前展示 " + documents.length + " 个文件</div></div></section>";
+    if (!documents.length) {
+      return '<section class="panel knowledge-assets knowledge-files">' + renderKnowledgeContentTabs("documents") + '<div id="knowledge-documents-panel" class="knowledge-assets__panel" role="tabpanel">' + dom.empty("暂无文件", "导入文件后可查看处理状态与切片。", "files") + "</div></section>";
+    }
+    return '<section class="panel knowledge-assets knowledge-files">' + renderKnowledgeContentTabs("documents", searchTools) + '<div id="knowledge-documents-panel" class="knowledge-assets__panel" role="tabpanel"><div class="table-wrap"><table class="data-table knowledge-files__table"><thead><tr><th>文件</th><th>来源</th><th>文件状态</th><th>切片数</th><th>更新时间</th><th>操作</th></tr></thead><tbody>' +
+      rows + '</tbody></table></div><div class="knowledge-files__empty" data-kb-document-empty hidden>' + dom.empty("未找到匹配文件", "请调整搜索关键词。", "search-x") + '</div><div class="table-footer knowledge-files__footer"><span data-kb-document-count>共 ' + number(documents.length) + " 个文件</span>" + renderDocumentsPagination(documents.length) + "</div></div></section>";
   }
 
   function renderChunksTab(state, kb, requestedDocumentId) {
@@ -390,19 +449,18 @@
       body = dom.empty("暂无文件", "导入文件后可对照查看源文档与切片。", "files");
     } else {
       var chunks = documentChunks(state, item);
-      var toolbar = '<div class="knowledge-preview-toolbar"><div class="knowledge-preview-toolbar__source"><label for="preview-document-select">源文档</label><select id="preview-document-select" class="select-field" data-preview-document-select="' + esc(kb.id) + '">' + documents.map(function map(documentItem) {
+      var chunkTools = '<select id="preview-document-select" class="select-field" aria-label="源文档" data-preview-document-select="' + esc(kb.id) + '">' + documents.map(function map(documentItem) {
         return '<option value="' + esc(documentItem.id) + '"' + (documentItem.id === item.id ? " selected" : "") + '>' + esc(documentItem.name) + "</option>";
-      }).join("") + '</select></div><div class="knowledge-preview-toolbar__result"><h2>全部切片（' + number(chunks.length) + '）</h2>' + dom.button("新增切片", { variant: "primary", icon: "plus", size: "small", attrs: 'data-chunk-add="' + esc(item.id) + '" data-kb-id="' + esc(kb.id) + '"' }) + "</div></div>";
+      }).join("") + '</select>' + dom.button("新增切片", { variant: "primary", icon: "plus", size: "small", attrs: 'data-chunk-add="' + esc(item.id) + '" data-kb-id="' + esc(kb.id) + '"' });
       body = preview.split({
         className: "knowledge-chunk-preview",
-        toolbar: toolbar,
         sourceHeader: false,
         source: renderDocumentSource(state, item),
         resultHeader: false,
         result: renderChunkCards(state, item)
       });
     }
-    return '<section class="panel knowledge-assets knowledge-chunk-comparison">' + renderKnowledgeContentTabs("chunks") + '<div id="knowledge-chunks-panel" class="knowledge-assets__panel" role="tabpanel">' + body + "</div></section>";
+    return '<section class="panel knowledge-assets knowledge-chunk-comparison">' + renderKnowledgeContentTabs("chunks", item ? chunkTools : "") + '<div id="knowledge-chunks-panel" class="knowledge-assets__panel" role="tabpanel">' + body + "</div></section>";
   }
 
   function renderCreationSteps(activeStep, isLocalDocumentFlow) {
@@ -419,6 +477,18 @@
     return '<ol class="creation-steps' + (isLocalDocumentFlow ? " creation-steps--documents" : "") + '" aria-label="' + (isLocalDocumentFlow ? "上传文档进度" : "新建知识库进度") + '">' + steps.map(function map(step, index) {
       var stepNumber = index + 1;
       var className = stepNumber === activeStep ? " is-active" : (stepNumber < activeStep ? " is-complete" : "");
+      return '<li class="creation-step' + className + '"><span class="creation-step__number">' + stepNumber + '</span><span class="creation-step__icon">' + dom.icon(step[0], 18) + '</span><span class="creation-step__copy"><strong>' + esc(step[1]) + '</strong><small>' + esc(step[2]) + '</small></span>' + (index < steps.length - 1 ? '<span class="creation-step__next" aria-hidden="true">' + dom.icon("chevron-right", 17) + "</span>" : "") + "</li>";
+    }).join("") + "</ol>";
+  }
+
+  function renderReprocessSteps(stage) {
+    var steps = [
+      ["scan-text", "文档解析", "重新提取文档内容"],
+      ["blocks", "文档处理", "配置本次切片参数"]
+    ];
+    return '<ol class="creation-steps creation-steps--reprocess" aria-label="重新处理步骤">' + steps.map(function map(step, index) {
+      var stepNumber = index + 1;
+      var className = stepNumber === stage ? " is-active" : (stepNumber < stage ? " is-complete" : "");
       return '<li class="creation-step' + className + '"><span class="creation-step__number">' + stepNumber + '</span><span class="creation-step__icon">' + dom.icon(step[0], 18) + '</span><span class="creation-step__copy"><strong>' + esc(step[1]) + '</strong><small>' + esc(step[2]) + '</small></span>' + (index < steps.length - 1 ? '<span class="creation-step__next" aria-hidden="true">' + dom.icon("chevron-right", 17) + "</span>" : "") + "</li>";
     }).join("") + "</ol>";
   }
@@ -479,6 +549,19 @@
     });
   }
 
+  function renderExistingImportSteps(activeStep) {
+    var steps = [
+      ["file-up", "导入文件", "选择待处理内容"],
+      ["scan-text", "文档解析", "提取文档内容"],
+      ["blocks", "文档处理", "配置本次切片参数"]
+    ];
+    return '<ol class="creation-steps creation-steps--existing-import" aria-label="知识库导入步骤">' + steps.map(function map(step, index) {
+      var stepNumber = index + 1;
+      var className = stepNumber === activeStep ? " is-active" : (stepNumber < activeStep ? " is-complete" : "");
+      return '<li class="creation-step' + className + '"><span class="creation-step__number">' + stepNumber + '</span><span class="creation-step__icon">' + dom.icon(step[0], 18) + '</span><span class="creation-step__copy"><strong>' + esc(step[1]) + '</strong><small>' + esc(step[2]) + '</small></span>' + (index < steps.length - 1 ? '<span class="creation-step__next" aria-hidden="true">' + dom.icon("chevron-right", 17) + "</span>" : "") + "</li>";
+    }).join("") + "</ol>";
+  }
+
   function renderKnowledgeUpload(state, kb, isOnboarding, isExistingImport, route) {
     var headerOptions = {
       title: kb.isLocalDocumentFlow ? "上传文档" : (isExistingImport ? "导入文件" : "新建知识库"),
@@ -489,14 +572,14 @@
       '<button type="button" class="tab is-active" role="tab" aria-selected="true" data-import-source-tab="assets"><span>文档管理</span><span class="import-source-tab-count" data-import-source-count="assets" hidden>0</span></button>' +
       '<button type="button" class="tab" role="tab" aria-selected="false" data-import-source-tab="enterprise"><span>企业数据</span><span class="import-source-tab-count" data-import-source-count="enterprise" hidden>0</span></button>' +
       '</div><div class="import-source-toolbar__actions"><div class="search-box import-resource-list__search" data-import-resource-search-wrap>' + dom.icon("search", 15) + '<input class="field field--search" type="search" placeholder="搜索文档" aria-label="搜索文档" data-import-resource-search></div></div></div>';
-    var existing = kb.isLocalDocumentFlow ? "" : '<section class="import-source-pane import-resource-pane" data-import-resource-pane><div class="document-directory-browser import-directory-browser" data-import-source-browser><aside class="document-directory-sidebar" aria-label="文档管理文件目录" data-import-local-directory><div data-import-local-directory-list></div></aside><aside class="document-directory-sidebar" aria-label="企业数据文件目录" data-import-enterprise-directory hidden><div data-import-enterprise-directory-list></div></aside><div class="document-directory-content import-resource-list"><div class="document-directory-context" data-import-directory-path></div><div class="table-wrap"><table class="data-table import-resource-table"><colgroup><col class="import-resource-table__col-check"><col class="import-resource-table__col-name"><col class="import-resource-table__col-size"><col class="import-resource-table__col-status"><col class="import-resource-table__col-updated"><col class="import-resource-table__col-action"></colgroup><thead><tr><th class="import-resource-table__check"><span class="sr-only">选择</span></th><th>名称</th><th>大小</th><th class="import-resource-table__status">状态</th><th>更新时间</th><th class="import-resource-table__action-heading"><span class="sr-only">预览</span></th></tr></thead><tbody data-import-resource-rows></tbody></table></div></div></div></section>';
-    var fileDrop = '<label class="file-drop" for="kb-upload-files" data-upload-drop>' + dom.icon("file-up", 30) + '<strong>点击选择文件，或将文件拖入此处</strong><span>支持 PDF、图片、Word、PPT、Excel 和 TXT，可多选</span><span class="btn btn--secondary file-drop__choose">选择文件</span><input id="kb-upload-files" class="sr-only" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt" data-upload-files /></label>';
+    var existing = kb.isLocalDocumentFlow ? "" : '<section class="import-source-pane import-resource-pane" data-import-resource-pane><div class="document-directory-browser import-directory-browser" data-import-source-browser><aside class="document-directory-sidebar" aria-label="文档管理文件目录" data-import-local-directory><div data-import-local-directory-list></div></aside><aside class="document-directory-sidebar" aria-label="企业数据文件目录" data-import-enterprise-directory hidden><div data-import-enterprise-directory-list></div></aside><div class="document-directory-content import-resource-list"><div class="document-directory-context" data-import-directory-path></div><div class="table-wrap"><table class="data-table import-resource-table"><colgroup><col class="import-resource-table__col-check"><col class="import-resource-table__col-name"><col class="import-resource-table__col-size"><col class="import-resource-table__col-updated"><col class="import-resource-table__col-action"></colgroup><thead><tr><th class="import-resource-table__check"><span class="sr-only">选择</span></th><th>名称</th><th>大小</th><th>更新时间</th><th class="import-resource-table__action-heading"><span class="sr-only">预览</span></th></tr></thead><tbody data-import-resource-rows></tbody></table></div></div></div></section>';
+    var fileDrop = '<label class="file-drop" for="kb-upload-files" data-upload-drop>' + dom.icon("file-up", 30) + '<strong>点击选择文件，或将文件拖入此处</strong><span>支持 PDF、Word、PPT、Excel、Markdown、JSON 和 CSV，可多选</span><span class="btn btn--secondary file-drop__choose">选择文件</span><input id="kb-upload-files" class="sr-only" type="file" multiple accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.md,.json,.csv" data-upload-files /></label>';
     var initialFolderId = uploadFolderId(state, route && route.query && route.query.folder || "FOLDER-UNCATEGORIZED");
     var uploadBody = '<div class="local-upload-stack"><div class="upload-folder-picker-inline"><div class="form-field"><label class="form-label">目标位置</label></div><details class="upload-folder-picker upload-folder-picker--standalone" data-upload-folder-picker>' + renderUploadFolderPicker(state, initialFolderId, []) + "</details></div>" + fileDrop + "</div>";
     var upload = '<section class="import-source-pane" data-import-source-pane="upload"' + (kb.isLocalDocumentFlow ? "" : " hidden") + ">" + uploadBody + '<div class="upload-file-list" data-upload-file-list hidden></div></section>';
-    var steps = kb.isLocalDocumentFlow ? renderCreationSteps(1, true) : renderCreationSteps(2, false);
+    var steps = kb.isLocalDocumentFlow ? renderCreationSteps(1, true) : (isExistingImport ? renderExistingImportSteps(1) : renderCreationSteps(2, false));
     return dom.pageHeader(headerOptions) + '<div class="page-content creation-page"><div class="creation-page__top">' + steps + '</div><section class="panel creation-panel"><div class="panel__body creation-panel__body">' + tabs + '<div class="creation-source-workspace">' + existing + upload + '</div>' +
-      '<div class="creation-actions">' + dom.button("取消", { variant: "secondary", attrs: 'data-upload-cancel="' + esc(kb.id) + '"' }) + dom.button("下一步（0）", { variant: "primary", icon: "arrow-right", disabled: true, attrs: 'data-upload-start="' + esc(kb.id) + '" data-onboarding="true" data-existing-import="' + (isExistingImport ? "true" : "false") + '"' }) + '</div></div></section></div>';
+      '<div class="creation-actions">' + dom.button("取消", { variant: "secondary", attrs: 'data-upload-cancel="' + esc(kb.id) + '"' }) + (isOnboarding && !isExistingImport && !kb.isLocalDocumentFlow ? dom.button("上一步", { variant: "secondary", attrs: 'data-upload-back="' + esc(kb.id) + '"' }) : "") + dom.button("下一步（0）", { variant: "primary", disabled: true, attrs: 'data-upload-start="' + esc(kb.id) + '" data-onboarding="true" data-existing-import="' + (isExistingImport ? "true" : "false") + '"' }) + '</div></div></section></div>';
   }
 
   function importStatusLabel(status) {
@@ -643,9 +726,9 @@
     var isReprocess = Boolean(currentBatch && (currentBatch.reprocess === true || (currentBatch.items || []).some(function reprocessed(item) { return item.operation === "reprocess"; })));
     var parseBackAction = isReprocess ? "" : dom.button("上一步", { variant: "secondary", icon: "arrow-left", attrs: 'data-parse-back="' + esc(kb.id) + '"' });
     return dom.pageHeader({
-      title: kb.isLocalDocumentFlow ? "上传文档" : (isExistingImport ? "导入文件" : "新建知识库"),
+      title: isReprocess ? "重新处理文件" : (kb.isLocalDocumentFlow ? "上传文档" : (isExistingImport ? "导入文件" : "新建知识库")),
       back: { label: kb.isLocalDocumentFlow ? "返回文档管理" : "返回知识库", route: importReturnRoute(kb.id, kb.importBatchId) }
-    }) + '<div class="page-content creation-page"><div class="creation-page__top">' + renderCreationSteps(kb.isLocalDocumentFlow ? 2 : 3, kb.isLocalDocumentFlow) + '</div><section class="panel creation-panel"><div class="panel__body creation-panel__body"><div class="creation-panel__scroll">' +
+    }) + '<div class="page-content creation-page"><div class="creation-page__top">' + (isReprocess ? renderReprocessSteps(1) : (kb.isLocalDocumentFlow ? renderCreationSteps(2, true) : (isExistingImport ? renderExistingImportSteps(2) : renderCreationSteps(3, false)))) + '</div><section class="panel creation-panel"><div class="panel__body creation-panel__body"><div class="creation-panel__scroll">' +
       parseConfigFields(kb) + '</div><div class="creation-actions">' + dom.button("取消", { variant: "secondary", attrs: 'data-onboarding-cancel="' + esc(kb.id) + '"' }) + parseBackAction + dom.button(kb.isLocalDocumentFlow ? "开始解析" : "下一步", { variant: "primary", icon: kb.isLocalDocumentFlow ? "scan-text" : "arrow-right", attrs: 'data-parse-next="' + esc(kb.id) + '"' }) + '</div></div></section></div>';
   }
 
@@ -864,6 +947,8 @@
   }
 
   function renderKnowledgeProcessing(state, kb, isExistingImport) {
+    var currentBatch = importBatch(state, kb.importBatchId);
+    var isReprocess = Boolean(currentBatch && (currentBatch.reprocess === true || (currentBatch.items || []).some(function reprocessed(item) { return item.operation === "reprocess"; })));
     var profiles = availableProcessingProfiles(state);
     var existingDraft = onboardingProcessingDrafts[processingDraftKey(kb.id, kb.importBatchId)];
     var savedProfile = kb.processingProfileSnapshot;
@@ -877,9 +962,9 @@
     var processingDraft = selectedProfile && (!existingDraft || existingDraft.profileId !== selectedProfile.id || sourceChanged) ? createProcessingDraft(kb.id, draftProfile, kb.importBatchId, kb.mineruParseConfig) : existingDraft;
     syncProcessingDraftParseAvailability(processingDraft, kb.mineruParseConfig);
     return dom.pageHeader({
-      title: kb.isLocalDocumentFlow ? "上传文档" : (isExistingImport ? "导入文件" : "新建知识库"),
+      title: isReprocess ? "重新处理文件" : (kb.isLocalDocumentFlow ? "上传文档" : (isExistingImport ? "导入文件" : "新建知识库")),
       back: { label: kb.isLocalDocumentFlow ? "返回文档管理" : "返回知识库", route: importReturnRoute(kb.id, kb.importBatchId) }
-    }) + '<div class="page-content creation-page"><div class="creation-page__top">' + renderCreationSteps(4, kb.isLocalDocumentFlow) + '</div><section class="panel creation-panel"><div class="panel__body creation-panel__body"><div class="creation-panel__scroll">' +
+    }) + '<div class="page-content creation-page"><div class="creation-page__top">' + (isReprocess ? renderReprocessSteps(2) : (kb.isLocalDocumentFlow ? renderCreationSteps(4, true) : (isExistingImport ? renderExistingImportSteps(3) : renderCreationSteps(4, false)))) + '</div><section class="panel creation-panel"><div class="panel__body creation-panel__body"><div class="creation-panel__scroll">' +
       '<div class="processing-section-label">' + dom.requiredLabel("切片策略", { tag: "div" }) + '</div><div class="processing-profile-picker">' + processingProfileCards(state, kb, processingDraft) + '</div>' +
       '<div data-processing-draft>' + renderProcessingParameters(processingDraft) + '</div></div>' +
       '<div class="creation-actions"><div class="vector-cost-notice">' + dom.icon("circle-alert", 15) + '<span>完成后将为本次导入内容生成向量并写入索引，产生 Embedding Token 消耗。</span></div>' + dom.button("取消", { variant: "secondary", attrs: 'data-onboarding-cancel="' + esc(kb.id) + '"' }) + dom.button("上一步", { variant: "secondary", icon: "arrow-left", attrs: 'data-processing-back="' + esc(kb.id) + '"' }) + dom.button("确认", { variant: "primary", icon: "check", disabled: !processingDraft, attrs: 'data-processing-finish="' + esc(kb.id) + '" data-existing-import="' + (isExistingImport ? "true" : "false") + '"' }) + '</div></div></section></div>';
@@ -968,13 +1053,24 @@
     mount(root, localImportRoute(route), state);
   }
 
+  function retrievalCloseImpact(kb) {
+    var clients = (OpsDemo.core.store.getState().apiAccess && OpsDemo.core.store.getState().apiAccess.clients) || [];
+    var affected = clients.filter(function filter(item) {
+      return Array.isArray(item.knowledgeBaseIds) && item.knowledgeBaseIds.indexOf(kb.id) >= 0 && item.enabled !== false && item.status !== "disabled";
+    });
+    var impact = affected.length
+      ? "以下 " + affected.length + " 个启用中的 API Key 将停止可用：" + affected.map(function name(item) { return "“" + esc(item.name || item.id) + "”"; }).join("、") + "。"
+      : "当前没有启用中的 API Key 引用该知识库。";
+    return "关闭后，该知识库将停止响应新的检索请求。" + impact + "确认关闭检索？";
+  }
+
   function confirmToggle(kb, enabled) {
     overlay.confirm({
       title: enabled ? "启用检索" : "关闭检索",
       confirmLabel: enabled ? "确认启用" : "确认关闭",
       confirmVariant: enabled ? "primary" : "danger",
       body: '<div class="notice' + (enabled ? '' : ' notice--warning') + '">' + dom.icon(enabled ? "play" : "triangle-alert", 16) + '<div class="notice__content">' +
-        (enabled ? "启用后，该知识库将恢复提供检索服务。确认启用检索？" : "关闭后，该知识库将停止响应新的检索请求。确认关闭检索？") +
+        (enabled ? "启用后，该知识库将恢复提供检索服务。确认启用检索？" : retrievalCloseImpact(kb)) +
         '</div></div>',
       onConfirm: function onConfirm() {
         var result = actions.setKnowledgeBaseEnabled(kb.id, enabled);
@@ -1012,7 +1108,7 @@
     });
   }
 
-  function confirmDeleteKnowledgeBase(kb) {
+  function confirmDeleteKnowledgeBase(kb, onDeleted) {
     if (!kb) return;
     if (kb.enabled) {
       overlay.confirm({
@@ -1041,6 +1137,7 @@
           return false;
         }
         overlay.toast("知识库已删除", kb.name + " 已从列表中移除。", "success");
+        if (typeof onDeleted === "function") onDeleted();
         return true;
       }
     });
@@ -1049,8 +1146,8 @@
   function confirmDeleteDocument(kb, item) {
     if (!kb || !item) return;
     overlay.confirm({
-      title: "移除文件",
-      confirmLabel: "移除",
+      title: "删除文件",
+      confirmLabel: "删除",
       confirmVariant: "danger",
       body: '<p class="knowledge-delete-copy">删除“' + esc(item.name) + '”后，仅移除该文件在当前知识库中的引用、切片和索引，原文件及其他知识库的使用结果继续保留。</p>',
       onConfirm: function onConfirm() {
@@ -1059,7 +1156,7 @@
           overlay.toast("未能删除", "请稍后重试。", "warning");
           return false;
         }
-        overlay.toast("文件已移除", "已移除当前库检索内容，原文件仍保存在文档管理中。", "success");
+        overlay.toast("文件已删除", "已删除当前库检索内容，原文件仍保存在文档管理中。", "success");
         return true;
       }
     });
@@ -1255,12 +1352,6 @@
     root.querySelectorAll("[data-kb-open]").forEach(function bind(button) {
       button.addEventListener("click", function handle() { router.navigate("knowledge/" + button.dataset.kbOpen + "?tab=documents"); });
     });
-    root.querySelectorAll("[data-kb-test]").forEach(function bind(button) {
-      button.addEventListener("click", function handle() {
-        if (button.disabled) return;
-        router.navigate("retrieval-test?knowledgeBaseId=" + encodeURIComponent(button.dataset.kbTest));
-      });
-    });
     root.querySelectorAll("[data-kb-edit]").forEach(function bind(button) {
       button.addEventListener("click", function handle() {
         if (button.disabled) return;
@@ -1333,10 +1424,27 @@
       selection.sourceObjectIds = selection.sourceObjectIds.filter(function available(sourceId) { return !existing.sourceObjectIds.has(sourceId); });
     }
     function enterpriseDirectories(current) {
+      var selected = selectableEnterpriseObjects(current);
       return (current.enterpriseConnections || []).reduce(function directories(result, connection, index) {
         var available = connection.status === "available";
         result.push({ id: connection.id, name: connection.name, parentId: null, icon: "database", available: available, sortOrder: index * 10 });
-        result.push({ id: "ENT-DIR-" + connection.id, name: connection.businessDomain || connection.databaseName || "默认目录", parentId: connection.id, icon: "folder", available: available, sortOrder: 10 });
+        selected.filter(function own(source) { return source.connectionId === connection.id; }).forEach(function each(source) {
+          var databaseOrder = result.filter(function sameLevel(folder) { return folder.parentId === connection.id; }).length;
+          var database = result.find(function exists(folder) {
+            return folder.parentId === connection.id && folder.name === source.databaseName;
+          });
+          if (!database) {
+            database = { id: source.databaseDirectoryId, name: source.databaseName, parentId: connection.id, icon: "database", available: available, sortOrder: 10 + databaseOrder };
+            result.push(database);
+          }
+          var schemaOrder = result.filter(function sameLevel(folder) { return folder.parentId === database.id; }).length;
+          var schema = result.find(function exists(folder) {
+            return folder.parentId === database.id && folder.name === source.schemaName;
+          });
+          if (!schema) {
+            result.push({ id: source.directoryId, name: source.schemaName, parentId: database.id, icon: "folder", available: available, sortOrder: 10 + schemaOrder });
+          }
+        });
         return result;
       }, []);
     }
@@ -1380,21 +1488,22 @@
     }
     function fileVisual(fileName) {
       var extension = ((fileName || "").split(".").pop() || "").toLowerCase();
-      if (["png", "jpg", "jpeg", "webp"].indexOf(extension) >= 0) return { icon: "image", label: extension.toUpperCase() };
       if (["ppt", "pptx"].indexOf(extension) >= 0) return { icon: "presentation", label: extension.toUpperCase() };
-      if (["xls", "xlsx"].indexOf(extension) >= 0) return { icon: "sheet", label: extension.toUpperCase() };
+      if (["xls", "xlsx", "csv"].indexOf(extension) >= 0) return { icon: "sheet", label: extension === "csv" ? "CSV" : extension.toUpperCase() };
+      if (extension === "md") return { icon: "file-text", label: "Markdown" };
+      if (extension === "json") return { icon: "braces", label: "JSON" };
       return { icon: "file-text", label: extension ? extension.toUpperCase() : "FILE" };
     }
     function versionFor(id) {
       return (OpsDemo.core.store.getState().fileVersions || []).find(function match(version) { return version.id === id; });
     }
     function selectedCount() {
-      return selection.versionIds.length + selection.sourceObjectIds.length + selectedFiles.filter(function prepared(entry) { return entry.status === "prepared"; }).length;
+      return selection.versionIds.length + selection.sourceObjectIds.length + selectedFiles.filter(function uploaded(entry) { return entry.status === "uploaded"; }).length;
     }
     function sourceSelectedCount(source) {
       if (source === "assets") return selection.versionIds.length;
       if (source === "enterprise") return selection.sourceObjectIds.length;
-      return selectedFiles.filter(function ready(entry) { return entry.status === "prepared"; }).length;
+      return selectedFiles.filter(function ready(entry) { return entry.status === "uploaded"; }).length;
     }
     function syncSelectionUi() {
       root.querySelectorAll("[data-import-source-count]").forEach(function update(counter) {
@@ -1404,8 +1513,8 @@
       });
       if (uploadStart) {
         var total = selectedCount();
-        uploadStart.innerHTML = dom.icon("arrow-right", 15) + "下一步（" + number(total) + "）";
-        uploadStart.disabled = !total || isUploading || selectedFiles.some(function pending(entry) { return entry.status === "preparing" || entry.status === "error"; });
+        uploadStart.textContent = "下一步（" + number(total) + "）";
+        uploadStart.disabled = !total || isUploading || selectedFiles.some(function pending(entry) { return entry.status === "uploading"; });
         dom.hydrateIcons(uploadStart);
       }
     }
@@ -1436,7 +1545,8 @@
         var enterpriseRows = visibleEnterpriseObjects.map(function map(source) {
           var connection = (current.enterpriseConnections || []).find(function match(item) { return item.id === source.connectionId; });
           var checked = selection.sourceObjectIds.indexOf(source.id) >= 0;
-          var searchableText = [source.fileName || source.name, source.directoryPath, connection && connection.name, source.connectionId].join(" ").toLowerCase();
+          var resourceTypeLabel = source.resourceType === "view" ? "视图" : "表";
+          var searchableText = [source.name, source.resourceName, source.fileName, source.directoryPath, resourceTypeLabel, connection && connection.name, source.connectionId].join(" ").toLowerCase();
           if (query && searchableText.indexOf(query) < 0) return "";
           var inputId = "import-source-" + source.id;
           return '<tr class="import-resource-row' + (checked ? " is-selected" : "") + '"><td class="import-resource-table__check"><input id="' + esc(inputId) + '" type="checkbox" data-import-enterprise-object="' + esc(source.id) + '"' + (checked ? " checked" : "") + '></td><td><label class="table-primary" for="' + esc(inputId) + '">' + esc(source.fileName || source.name) + '</label></td><td>' + esc(source.fileSizeLabel || "—") + '</td><td>' + displayDate(source.updatedAt) + '</td><td class="import-resource-table__action">' + importChoicePreviewButton('data-import-enterprise-preview="' + esc(source.id) + '"') + '</td></tr>';
@@ -1458,14 +1568,11 @@
         var detail = actions.getFileAssetDetail && actions.getFileAssetDetail(asset.id, { fileVersionId: selectedVersionId || undefined });
         var version = detail && detail.version;
         if (!version || (query && (version.name + " " + asset.id).toLowerCase().indexOf(query) < 0)) return "";
-        var processing = detail.processingState;
-        var status = typeof processing === "string" ? processing : processing && processing.status;
-        var processedLabel = detail.parseResult && detail.parseResult.status === "ready" ? "已解析" : status === "parsing" ? "解析中" : status === "failed" ? "异常" : "未处理";
         var checked = selection.versionIds.indexOf(version.id) >= 0;
         var inputId = "import-version-" + version.id;
-        return '<tr class="import-resource-row' + (checked ? " is-selected" : "") + '"><td class="import-resource-table__check"><input id="' + esc(inputId) + '" type="checkbox" data-import-version="' + esc(version.id) + '"' + (checked ? " checked" : "") + '></td><td><label class="table-primary" for="' + esc(inputId) + '">' + esc(version.name || asset.name) + '</label></td><td>' + esc(version.fileSizeLabel || "原文件") + '</td><td class="import-resource-table__status">' + dom.status(processedLabel, "info") + '</td><td>' + displayDate(version.createdAt || asset.createdAt) + '</td><td class="import-resource-table__action">' + importChoicePreviewButton('data-import-file-preview="' + esc(asset.id) + '" data-import-file-version="' + esc(version.id) + '"') + '</td></tr>';
+        return '<tr class="import-resource-row' + (checked ? " is-selected" : "") + '"><td class="import-resource-table__check"><input id="' + esc(inputId) + '" type="checkbox" data-import-version="' + esc(version.id) + '"' + (checked ? " checked" : "") + '></td><td><label class="table-primary" for="' + esc(inputId) + '">' + esc(version.name || asset.name) + '</label></td><td>' + esc(version.fileSizeLabel || "原文件") + '</td><td>' + displayDate(version.createdAt || asset.createdAt) + '</td><td class="import-resource-table__action">' + importChoicePreviewButton('data-import-file-preview="' + esc(asset.id) + '" data-import-file-version="' + esc(version.id) + '"') + '</td></tr>';
       }).join("");
-      container.innerHTML = rows || '<tr><td colspan="6">' + dom.empty("暂无可选文档", query ? "试试其他名称。" : "当前目录没有可添加到该知识库的文件。", "files") + '</td></tr>';
+      container.innerHTML = rows || '<tr><td colspan="5">' + dom.empty("暂无可选文档", query ? "试试其他名称。" : "当前目录没有可添加到该知识库的文件。", "files") + '</td></tr>';
       dom.hydrateIcons(container);
     }
     function showSource(source) {
@@ -1492,32 +1599,46 @@
         var file = entry.file;
         var visual = fileVisual(file.name);
         var size = file.size >= 1024 * 1024 ? (file.size / 1024 / 1024).toFixed(1) + " MB" : Math.max(1, Math.round((file.size || 0) / 1024)) + " KB";
-        var pending = entry.status === "preparing";
-        var failed = entry.status === "error";
-        var statusContent = pending ? dom.icon("loader-circle", 17, "is-spinning") + '<span>读取中</span>' : failed ? dom.icon("circle-alert", 17) + '<span>读取失败</span>' : dom.icon("check", 17) + '<span>待上传</span>';
-        return '<div class="upload-file-row"><span class="upload-file-row__icon">' + dom.icon(visual.icon, 19) + '</span><span class="upload-file-row__name"><strong>' + esc(file.name) + '</strong><small>' + esc(visual.label + " · " + size) + '</small></span><span class="upload-file-row__status' + (pending ? " is-loading" : failed ? " is-error" : "") + '">' + statusContent + '</span><button type="button" class="upload-file-row__remove" data-upload-remove="' + index + '" aria-label="移除 ' + esc(file.name) + '"' + (isUploading ? " disabled" : "") + '>' + dom.icon("trash-2", 16) + '</button></div>';
+        var uploading = entry.status === "uploading";
+        var failed = entry.status === "failed";
+        var statusContent = uploading ? dom.icon("loader-circle", 17, "is-spinning") + '<span>上传中</span>' : failed ? dom.icon("circle-alert", 17) + '<span>上传失败</span>' : dom.icon("check", 17) + '<span>已上传</span>';
+        var reason = failed && entry.errorReason ? '<small class="upload-file-row__reason">' + esc(entry.errorReason) + '</small>' : '';
+        var retry = failed && !isUploading ? '<button type="button" class="upload-file-row__icon-action upload-file-row__retry" data-upload-retry="' + index + '" aria-label="重试上传 ' + esc(file.name) + '" title="重试上传">' + dom.icon("rotate-ccw", 15) + '</button>' : '';
+        return '<div class="upload-file-row"><span class="upload-file-row__icon">' + dom.icon(visual.icon, 19) + '</span><span class="upload-file-row__name"><strong>' + esc(file.name) + '</strong><small>' + esc(visual.label + " · " + size) + '</small>' + reason + '</span><span class="upload-file-row__status' + (uploading ? " is-loading" : failed ? " is-error" : "") + '">' + statusContent + '</span><span class="upload-file-row__actions">' + retry + '<button type="button" class="upload-file-row__icon-action upload-file-row__remove" data-upload-remove="' + index + '" aria-label="移除 ' + esc(file.name) + '"' + (isUploading ? " disabled" : "") + '>' + dom.icon("trash-2", 16) + '</button></span></div>';
       }).join("");
       dom.hydrateIcons(list);
       syncSelectionUi();
     }
+    function startEntryUpload(entry) {
+      entry.status = "uploading";
+      entry.candidate = null;
+      entry.errorReason = null;
+      renderUploadFiles();
+      Promise.resolve(actions.prepareUploadFiles([entry.file])).then(function uploaded(candidates) {
+        entry.candidate = candidates && candidates[0];
+        if (entry.candidate) entry.status = "uploaded";
+        else {
+          entry.status = "failed";
+          entry.errorReason = "文件上传失败，请重试";
+        }
+        if (root.isConnected) renderUploadFiles();
+      }).catch(function failed(error) {
+        entry.status = "failed";
+        entry.errorReason = error && error.message ? error.message : "文件读取失败，请重试";
+        if (root.isConnected) renderUploadFiles();
+      });
+    }
     function updateUploadFiles(files) {
       var sourceFiles = Array.prototype.slice.call(files || []);
-      var accepted = sourceFiles.filter(function filter(file) { return /\.(pdf|png|jpe?g|webp|docx?|pptx?|xlsx?|txt)$/i.test(file.name || ""); });
+      var accepted = sourceFiles.filter(function filter(file) { return /\.(pdf|docx?|pptx?|xlsx?|md|json|csv)$/i.test(file.name || ""); });
       accepted.forEach(function each(file) {
         if (selectedFiles.some(function duplicate(entry) { return entry.file.name === file.name && entry.file.size === file.size && entry.file.lastModified === file.lastModified; })) return;
-        var entry = { file: file, status: "preparing" };
+        var entry = { file: file, status: "uploading", candidate: null, errorReason: null };
         selectedFiles.push(entry);
-        Promise.resolve(actions.prepareUploadFiles([file])).then(function prepared(candidates) {
-          entry.candidate = candidates[0];
-          entry.status = entry.candidate ? "prepared" : "error";
-          if (root.isConnected) renderUploadFiles();
-        }).catch(function failed() {
-          entry.status = "error";
-          if (root.isConnected) renderUploadFiles();
-        });
+        startEntryUpload(entry);
       });
       renderUploadFiles();
-      if (accepted.length < sourceFiles.length) overlay.toast("部分文件未加入", "请选择 PDF、图片、Word、PPT、Excel 或 TXT 文件。", "warning");
+      if (accepted.length < sourceFiles.length) overlay.toast("部分文件未加入", "请选择 PDF、Word、PPT、Excel、Markdown、JSON 或 CSV 文件。", "warning");
     }
     function uploadIdentityConflicts() {
       var current = OpsDemo.core.store.getState();
@@ -1527,7 +1648,7 @@
       }).filter(Boolean);
       var conflicts = [];
       selectedFiles.forEach(function inspect(entry) {
-        var candidate = entry.status === "prepared" && entry.candidate;
+        var candidate = entry.status === "uploaded" && entry.candidate;
         if (!candidate || candidate.identityDecision) return;
         var exact = currentAssets.find(function sameContent(asset) { return asset.version.contentHash === candidate.contentHash; });
         if (exact) {
@@ -1552,10 +1673,12 @@
       var targetChoice = conflict.assets.length > 1 ? '<label class="form-field"><span class="form-label">更新对象</span><select class="select-field" data-import-update-target>' + targetOptions + "</select></label>" : '<p class="table-secondary">当前文档：' + esc(conflict.assets[0].name) + " · " + esc(conflict.assets[0].id) + "</p>";
       overlay.confirm({
         title: "发现同名但内容不同的文档" + (conflicts.length > 1 ? "（" + number(index + 1) + "/" + number(conflicts.length) + "）" : ""),
-        confirmLabel: "更新原文档",
+        confirmLabel: "覆盖更新",
         cancelLabel: "作为新文档",
         cancelAttrs: "data-import-create-new",
-        body: '<div class="knowledge-delete-copy"><p>上传的“' + esc(candidate.name) + '”与文档管理中的同名文档内容不同。</p>' + targetChoice + '<p>更新会保留稳定文档 ID，重新处理受影响知识库的切片、向量与索引，并产生 Embedding Token 消耗；新结果切换前继续使用原有检索结果。作为新文档会创建独立文档 ID，并保留两个同名文档。</p></div>',
+        body: '<div class="knowledge-delete-copy"><p>上传的“' + esc(candidate.name) + '”与文档管理中的同名文档内容不同。</p>' + targetChoice + '<p>' + (route.id === "local-documents"
+          ? "覆盖更新会保留稳定文档 ID，并重新解析当前原文件；已引用该文件的知识库不会自动更新。作为新文档会创建独立文档 ID，并保留两个同名文档。"
+          : "覆盖更新会保留稳定文档 ID，重新处理当前知识库的切片、向量与索引，并产生 Embedding Token 消耗；新结果切换前继续使用原有检索结果。作为新文档会创建独立文档 ID，并保留两个同名文档。") + '</p></div>',
         onConfirm: function updateExisting(overlayRoot) {
           var target = overlayRoot.querySelector("[data-import-update-target]");
           candidate.identityDecision = "update_existing";
@@ -1575,16 +1698,19 @@
     }
     function startSelectedImport() {
       var previousSelectionKey = selectionKey;
+      var fallbackReturnRoute = route.id === "local-documents" && route.query.folder
+        ? "local-documents?folder=" + encodeURIComponent(route.query.folder)
+        : importReturnRoute(route.id);
       isUploading = true;
       syncSelectionUi();
       var batch = actions.startKnowledgeImport(uploadStart.dataset.uploadStart, {
-        files: selectedFiles.map(function file(entry) { return entry.candidate; }),
+        files: selectedFiles.filter(function uploaded(entry) { return entry.status === "uploaded"; }).map(function file(entry) { return entry.candidate; }),
         fileVersionIds: selection.versionIds.slice(),
         sourceObjects: selection.sourceObjectIds.slice(),
         targetFolderId: selection.localFolderId === "all" ? "FOLDER-UNCATEGORIZED" : selection.localFolderId,
         deferred: true,
         reprocess: route.query.reprocess === "1",
-        returnRoute: route.query.returnRoute || importReturnRoute(route.id)
+        returnRoute: route.query.returnRoute || fallbackReturnRoute
       });
       if (!batch) {
         isUploading = false;
@@ -1602,7 +1728,7 @@
       importSelections[nextSelectionKey] = {
         versionIds: selection.versionIds.slice(),
         sourceObjectIds: selection.sourceObjectIds.slice(),
-        files: selectedFiles.slice(),
+        files: selectedFiles.filter(function uploaded(entry) { return entry.status === "uploaded"; }).slice(),
         source: selection.source,
         localFolderId: selection.localFolderId,
         enterpriseDirectoryId: selection.enterpriseDirectoryId,
@@ -1612,7 +1738,7 @@
       if (previousSelectionKey !== nextSelectionKey) delete importSelections[previousSelectionKey];
       var localUpload = batch.processingScope === "local-documents" || !batch.knowledgeBaseId;
       overlay.toast(localUpload ? "文档已登记" : "资料已保存", "请继续设置文档解析方式。", "success");
-      router.navigate(importStepRoute(route.id, "parse", batch.id, !localUpload));
+      router.navigate(importStepRoute(route.id, "parse", batch.id, route.query.flow === "import"));
     }
     if (uploadStart) {
       renderUploadFiles();
@@ -1712,15 +1838,29 @@
     }
     var uploadList = root.querySelector("[data-upload-file-list]");
     if (uploadList) uploadList.addEventListener("click", function handle(event) {
+      var retry = event.target.closest("[data-upload-retry]");
+      if (retry) {
+        if (isUploading) return;
+        var retryEntry = selectedFiles[Number(retry.dataset.uploadRetry)];
+        if (retryEntry) startEntryUpload(retryEntry);
+        return;
+      }
       var remove = event.target.closest("[data-upload-remove]");
       if (!remove || isUploading) return;
       selectedFiles.splice(Number(remove.dataset.uploadRemove), 1);
       renderUploadFiles();
     });
+    var uploadBack = root.querySelector("[data-upload-back]");
+    if (uploadBack) uploadBack.addEventListener("click", function handle() {
+      editKnowledgeBase(findKnowledgeBase(OpsDemo.core.store.getState(), uploadBack.dataset.uploadBack));
+    });
     root.querySelectorAll("[data-upload-cancel]").forEach(function bind(button) {
       button.addEventListener("click", function handle() {
         delete importSelections[selectionKey];
-        router.navigate(importReturnRoute(button.dataset.uploadCancel, route.query.batch));
+        var cancelRoute = route.id === "local-documents" && route.query.folder
+          ? "local-documents?folder=" + encodeURIComponent(route.query.folder)
+          : importReturnRoute(button.dataset.uploadCancel, route.query.batch);
+        router.navigate(cancelRoute);
       });
     });
     root.querySelectorAll("[data-onboarding-cancel]").forEach(function bind(button) {
@@ -2163,6 +2303,14 @@
         if (kb) confirmToggle(kb, button.dataset.next === "true");
       });
     });
+    root.querySelectorAll("[data-kb-delete-detail]").forEach(function bind(button) {
+      button.addEventListener("click", function handle() {
+        if (button.disabled) return;
+        var current = OpsDemo.core.store.getState();
+        var kb = findKnowledgeBase(current, button.dataset.kbDeleteDetail);
+        if (kb) confirmDeleteKnowledgeBase(kb, function onDeleted() { router.navigate("knowledge"); });
+      });
+    });
     root.querySelectorAll("[data-knowledge-content-tab]").forEach(function bind(button) {
       button.addEventListener("click", function handle() {
         if (!route.id || button.getAttribute("aria-selected") === "true") return;
@@ -2178,6 +2326,18 @@
       button.addEventListener("click", function reprocess() {
         var item = findDocument(OpsDemo.core.store.getState(), button.dataset.documentReprocess);
         if (!item || item.knowledgeBaseId !== route.id || !item.fileVersionId) return;
+        overlay.confirm({
+          title: "重新处理文件",
+          confirmLabel: "重新处理",
+          body: '<p class="dialog-copy">将重新解析“' + esc(item.name) + '”并重新生成切片与向量；仅影响当前知识库中的此文件，文档管理原文件和其他知识库引用不受影响。新索引生效前，现有检索结果继续可用。该操作会产生 Embedding Token 消耗。</p>',
+          onConfirm: function onConfirm() {
+            startDocumentReprocess(button, item);
+            return true;
+          }
+        });
+      });
+    });
+    function startDocumentReprocess(button, item) {
         var batch = actions.startKnowledgeImport(route.id, {
           fileVersionIds: [item.fileVersionId],
           deferred: true,
@@ -2189,8 +2349,7 @@
           return;
         }
         router.navigate("knowledge/" + encodeURIComponent(route.id) + "/import?step=parse&batch=" + encodeURIComponent(batch.id) + "&flow=import");
-      });
-    });
+    }
     root.querySelectorAll("[data-document-delete]").forEach(function bind(button) {
       button.addEventListener("click", function handle() {
         if (button.disabled) return;
@@ -2198,6 +2357,43 @@
         confirmDeleteDocument(findKnowledgeBase(current, route.id), findDocument(current, button.dataset.documentDelete));
       });
     });
+    var headerMenu = root.querySelector("[data-kb-header-menu]");
+    if (headerMenu) {
+      var headerTrigger = headerMenu.querySelector("[data-kb-header-trigger]");
+      if (headerTrigger) headerTrigger.addEventListener("click", function handle(event) {
+        event.stopPropagation();
+        var open = !headerMenu.classList.contains("is-open");
+        headerMenu.classList.toggle("is-open", open);
+        headerTrigger.setAttribute("aria-expanded", String(open));
+      });
+      root.addEventListener("click", function handleOutside(event) {
+        if (!headerMenu.classList.contains("is-open") || headerMenu.contains(event.target)) return;
+        headerMenu.classList.remove("is-open");
+        var menuTrigger = headerMenu.querySelector("[data-kb-header-trigger]");
+        if (menuTrigger) menuTrigger.setAttribute("aria-expanded", "false");
+      });
+    }
+    var documentSearch = root.querySelector("[data-kb-document-search]");
+    if (documentSearch) documentSearch.addEventListener("input", function handle() {
+      kbDocumentSearch = documentSearch.value;
+      kbDocumentPage = 1;
+      applyDocumentsPagination(root);
+    });
+    applyDocumentsPagination(root);
+    var documentPagination = root.querySelector("[data-kb-document-pagination]");
+    if (documentPagination) {
+      applyDocumentsPagination(root);
+      documentPagination.addEventListener("click", function handlePage(event) {
+        var button = event.target.closest("[data-kb-document-page]");
+        if (!button || button.disabled) return;
+        var rows = root.querySelectorAll("[data-kb-document-row]").length;
+        var totalPages = rows ? Math.ceil(rows / kbDocumentPageSize) : 0;
+        kbDocumentPage = button.dataset.kbDocumentPage === "next"
+          ? Math.min(kbDocumentPage + 1, totalPages)
+          : Math.max(kbDocumentPage - 1, 1);
+        applyDocumentsPagination(root);
+      });
+    }
     var previewDocumentSelect = root.querySelector("[data-preview-document-select]");
     if (previewDocumentSelect) previewDocumentSelect.addEventListener("change", function handle() {
       router.navigate("knowledge/" + previewDocumentSelect.dataset.previewDocumentSelect + "?tab=chunks&document=" + encodeURIComponent(previewDocumentSelect.value));

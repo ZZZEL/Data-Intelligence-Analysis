@@ -27,12 +27,6 @@
     return state.knowledgeBases.find(function find(item) { return item.id === id; }) || state.knowledgeBases[0];
   }
 
-  function latestCandidateVersion(state, knowledgeBaseId) {
-    return state.knowledgeVersions.find(function find(item) {
-      return item.knowledgeBaseId === knowledgeBaseId && (item.status === "pending_validation" || item.status === "pending_activation" || item.status === "building");
-    });
-  }
-
   function documentsForKnowledgeBase(state, knowledgeBaseId) {
     return state.documents.filter(function filter(item) { return item.knowledgeBaseId === knowledgeBaseId; });
   }
@@ -41,19 +35,13 @@
     return state.importBatches.filter(function filter(item) { return item.knowledgeBaseId === knowledgeBaseId; });
   }
 
-  function versionsForKnowledgeBase(state, knowledgeBaseId) {
-    return state.knowledgeVersions.filter(function filter(item) { return item.knowledgeBaseId === knowledgeBaseId; });
-  }
-
   OpsDemo.core.selectors = {
     enabledKnowledgeBases: enabledKnowledgeBases,
     availableKnowledgeBases: availableKnowledgeBases,
     overviewMetrics: overviewMetrics,
     actionableTodos: actionableTodos,
     findKnowledgeBase: findKnowledgeBase,
-    latestCandidateVersion: latestCandidateVersion,
     documentsForKnowledgeBase: documentsForKnowledgeBase,
     importsForKnowledgeBase: importsForKnowledgeBase,
-    versionsForKnowledgeBase: versionsForKnowledgeBase
   };
 })(window.OpsDemo);

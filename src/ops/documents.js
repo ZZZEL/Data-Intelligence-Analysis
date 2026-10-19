@@ -55,6 +55,28 @@
     var label = stateLabel(status);
     return dom.status(label[0], label[1]);
   }
+  function failureStageLabel(stage) {
+    var labels = {
+      parse: "解析",
+      mineru_parse: "解析",
+      chunk: "切片",
+      chunking: "切片",
+      embedding: "向量化",
+      indexing: "索引"
+    };
+    return labels[String(stage || "").toLowerCase()] || "处理";
+  }
+  function failureInfo(detail) {
+    if (globalStatus(detail) !== "failed") return "";
+    var reason = detail.processingError || detail.parseResult && detail.parseResult.error || "解析失败，请检查文件后重试。";
+    var stage = failureStageLabel(detail.processingFailedStage);
+    return '<div class="file-status-info">' +
+      '<span class="file-status-info__icon" tabindex="0" aria-label="阶段：' + esc(stage) + '，原因：' + esc(reason) + '">' + dom.icon("info", 13) + '</span>' +
+      '<div class="file-status-info__popover" role="tooltip">' +
+      '<span>阶段：' + esc(stage) + '</span>' +
+      '<span>原因：' + esc(reason) + '</span>' +
+      '</div></div>';
+  }
   function localAssets(state) {
     return (state.fileAssets || []).slice().sort(function newest(a, b) {
       return new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0);
@@ -198,8 +220,8 @@
     var name = version.name || asset.name;
     var referenceCell = refs.length ? '<button class="table-action" type="button" data-local-document-references="' + esc(asset.id) + '">' + number(refs.length) + ' 个知识库</button>' : '<span class="table-secondary file-asset-reference-empty">未被引用</span>';
     return '<tr data-local-document-row data-local-document-id="' + esc(asset.id) + '" data-local-document-status="' + esc(status) + '" data-local-document-search="' + esc((name + " " + asset.id).toLowerCase()) + '">' +
-      '<td><button class="table-primary table-primary--link" type="button" data-local-document-preview="' + esc(asset.id) + '">' + esc(name) + '</button>' + (asset.sourceType === "enterprise_snapshot" ? '<div class="table-secondary">企业数据快照</div>' : "") + '</td>' +
-      '<td>' + badge(status) + '</td><td>' + referenceCell + '</td>' +
+      '<td><button class="table-primary table-primary--link" type="button" data-local-document-preview="' + esc(asset.id) + '">' + esc(name) + '</button>' + (asset.sourceType === "enterprise_snapshot" ? '<div class="table-secondary">企业数据</div>' : "") + '</td>' +
+      '<td>' + badge(status) + failureInfo(detail) + '</td><td>' + referenceCell + '</td>' +
       '<td>' + esc(version.fileSizeLabel || "—") + '</td><td>' + dateCell(version.createdAt || asset.createdAt) + '</td>' +
       '<td><div class="knowledge-row-actions"><button class="table-action" type="button" data-local-document-preview="' + esc(asset.id) + '">详情</button><button class="table-action" type="button" data-local-document-move="' + esc(asset.id) + '">移动</button><button class="table-action table-action--danger" type="button" data-local-document-delete="' + esc(asset.id) + '">删除</button></div></td></tr>';
   }
@@ -223,7 +245,7 @@
       title: "文档管理",
       actions: dom.button("上传文档", { variant: "primary", icon: "upload", attrs: "data-local-document-upload" }),
       toolbar: { search: { placeholder: "搜索文档", attrs: "data-local-document-search" }, filters: dom.headerFilter("状态", '<select class="select-field local-documents__status-filter" data-local-document-status-filter aria-label="筛选状态"><option value="all">全部状态</option><option value="uploaded">未处理</option><option value="processing">处理中</option><option value="parsed">已解析</option><option value="failed">异常</option></select>') }
-    }) + '<div class="page-content creation-page local-documents-page"><section class="panel creation-panel local-documents"><div class="document-directory-browser"><aside class="document-directory-sidebar"><div class="document-directory-sidebar__toolbar" aria-label="目录操作">' + folderActions + '</div><div data-local-directory-tree-host>' + renderDirectoryTree(state, folderId) + '</div></aside><div class="document-directory-content"><div class="document-directory-context">' + renderDirectoryPath(state, folderId) + '</div><div class="table-wrap" data-local-document-table-wrap' + (assets.length ? "" : " hidden") + '><table class="data-table knowledge-table local-documents-table file-assets-table"><thead><tr><th>文档</th><th>状态</th><th>知识库引用</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead><tbody data-local-document-table>' + assets.map(function row(asset) { return renderRow(state, asset); }).join("") + '</tbody></table></div><div class="local-documents__empty document-directory-empty" data-local-document-empty' + (assets.length ? " hidden" : "") + '>' + dom.empty("当前文件夹为空", "可上传文档，或将已有文档移动到此文件夹。", "folder-open") + '</div></div></div><div class="table-footer local-documents__footer"><span data-local-document-count>当前目录 ' + number(assets.length) + ' 个文档</span>' + renderPagination(assets.length) + "</div></section></div>";
+    }) + '<div class="page-content creation-page local-documents-page"><section class="panel creation-panel local-documents"><div class="document-directory-browser"><aside class="document-directory-sidebar"><div class="document-directory-sidebar__toolbar" aria-label="目录操作">' + folderActions + '</div><div data-local-directory-tree-host>' + renderDirectoryTree(state, folderId) + '</div></aside><div class="document-directory-content"><div class="document-directory-context">' + renderDirectoryPath(state, folderId) + '</div><div class="table-wrap" data-local-document-table-wrap' + (assets.length ? "" : " hidden") + '><table class="data-table knowledge-table local-documents-table file-assets-table"><thead><tr><th>文档</th><th>状态</th><th>知识库引用</th><th>大小</th><th>更新时间</th><th>操作</th></tr></thead><tbody data-local-document-table>' + assets.map(function row(asset) { return renderRow(state, asset); }).join("") + '</tbody></table></div><div class="local-documents__empty document-directory-empty" data-local-document-empty' + (assets.length ? " hidden" : "") + '>' + dom.empty("当前文件夹为空", "可上传文档，或将已有文档移动到此文件夹。", "folder-open") + '</div></div></div><div class="table-footer local-documents__footer"><span data-local-document-count>当前目录 ' + number(assets.length) + ' 个文档</span>' + renderPagination(assets.length) + "</div></section></div>";
   }
   function openMoveDocument(state, fileId) {
     var detail = details(fileId);
@@ -343,13 +365,16 @@
     var ref = activeReference(detail, route);
     var options = refs.map(function option(item) { var kb = find(state.knowledgeBases, item.knowledgeBaseId); return kb ? '<option value="' + esc(kb.id) + '"' + (ref && ref.id === item.id ? " selected" : "") + '>' + esc(kb.name) + '</option>' : ""; }).filter(Boolean).join("");
     var contextSelect = '<label class="file-asset-select"><span>查看切片</span><select class="select-field" data-local-preview-kb-select aria-label="查看知识库切片"' + (options ? "" : " disabled") + '>' + (options || '<option value="" selected>暂无知识库引用</option>') + '</select></label>';
+    var openKnowledgeAction = ref ? dom.button("前往知识库", { variant: "secondary", icon: "arrow-right", attrs: 'data-local-preview-kb-open="' + esc(ref.knowledgeBaseId) + '"' }) : "";
     var resultTitle = '<h2>知识库引用</h2>';
-    var resultActions = '<div class="local-document-preview__result-actions">' + contextSelect + '</div>';
+    var resultActions = '<div class="local-document-preview__result-actions">' + contextSelect + openKnowledgeAction + '</div>';
     var toolbar = '<div class="knowledge-preview-toolbar"><div class="knowledge-preview-toolbar__source"><h2>原文件</h2></div><div class="knowledge-preview-toolbar__result">' + resultTitle + resultActions + '</div></div>';
     var panel = OpsDemo.ui.preview.split({ className: "knowledge-chunk-preview local-document-preview", toolbar: toolbar, sourceHeader: false, source: renderSource(detail), resultHeader: false, result: '<div data-local-artifact-result>' + renderResult(state, detail, route) + '</div>' });
     var fileName = version.name || asset.name;
-    var metadata = '<section class="file-asset-details" aria-label="文件信息"><dl><dt>文件 ID</dt><dd>' + esc(asset.id) + '</dd><dt>上传时间</dt><dd>' + displayDate(version.createdAt) + '</dd><dt>文件状态</dt><dd data-local-file-status>' + badge(globalStatus(detail)) + '</dd><dt>文件路径</dt><dd class="file-asset-details__path">' + renderFilePath(state, asset, fileName) + '</dd></dl></section>';
-    return dom.pageHeader({ title: version.name || asset.name, back: { label: "返回文档管理", route: "local-documents" }, actions: dom.button("下载原文件", { icon: "download", attrs: 'data-local-preview-download' + (version.sourceFile || version.sourceUrl ? "" : ' title="预置演示数据未内置原始二进制文件"') }) }) + '<div class="page-content preview-page">' + metadata + panel + '</div>';
+    var backRoute = route.query && route.query.folder ? "local-documents?folder=" + encodeURIComponent(route.query.folder) : "local-documents";
+    var deleteAction = dom.button("删除", { variant: "danger", icon: "trash-2", attrs: 'data-local-document-delete-detail="' + esc(asset.id) + '"' });
+    var metadata = '<section class="file-asset-details" aria-label="文件信息"><dl><dt>文件 ID</dt><dd>' + esc(asset.id) + '</dd><dt>更新时间</dt><dd>' + displayDate(version.createdAt || asset.createdAt) + '</dd><dt>文件大小</dt><dd>' + esc(version.fileSizeLabel || "—") + '</dd><dt>文件状态</dt><dd data-local-file-status>' + badge(globalStatus(detail)) + failureInfo(detail) + '</dd><dt>文件路径</dt><dd class="file-asset-details__path">' + renderFilePath(state, asset, fileName) + '</dd></dl></section>';
+    return dom.pageHeader({ title: version.name || asset.name, back: { label: "返回文档管理", route: backRoute }, actions: dom.button("下载原文件", { icon: "download", attrs: 'data-local-preview-download' }) + dom.button("移动", { variant: "secondary", icon: "folder-input", attrs: 'data-local-document-move="' + esc(asset.id) + '"' }) + deleteAction }) + '<div class="page-content preview-page">' + metadata + panel + '</div>';
   }
   function renderReferenceList(state, detail) {
     var refs = detail && detail.references || [];
@@ -367,7 +392,7 @@
     if (route.id === "upload") return OpsDemo.pages.knowledge.renderLocalImport(route, state);
     return route.id ? renderPreview(state, route) : renderList(state, route);
   }
-  function confirmDeleteDocument(detail) {
+  function confirmDeleteDocument(detail, onDeleted) {
     if (!detail) return;
     if ((detail.references || []).length) {
       overlay.open({ title: "文档正在被引用", confirmLabel: "知道了", cancelLabel: false, body: '<p>请先从以下知识库移除引用，再删除原文件。</p>' + renderReferenceList(store.getState(), detail) });
@@ -377,6 +402,7 @@
       var result = actions.deleteLocalDocumentAsset(detail.asset.id);
       if (!result) { overlay.toast("无法删除", "请检查是否存在知识库引用或正在执行的任务。", "warning"); return false; }
       overlay.toast("文档已删除", "原文件及其未被引用的解析记录已移除。", "success");
+      if (typeof onDeleted === "function") onDeleted();
       return true;
     } });
   }
@@ -545,7 +571,7 @@
     });
     root.addEventListener("change", function change(event) {
       if (event.target.matches("[data-local-document-status-filter]")) applyFilters(root, true);
-      if (event.target.matches("[data-local-preview-kb-select]")) router.navigate(routeTo(route.id, { knowledgeBaseId: event.target.value, view: route.query.view }));
+      if (event.target.matches("[data-local-preview-kb-select]")) router.navigate(routeTo(route.id, { knowledgeBaseId: event.target.value, view: route.query.view, folder: route.query.folder }));
     });
     root.addEventListener("dblclick", function renameFolder(event) {
       var nameButton = event.target.closest && event.target.closest("[data-directory-edit]");
@@ -599,13 +625,19 @@
         else collapsedFolderIds.add(data.directoryToggle);
         refreshDirectoryTree(root, store.getState(), currentFolderId, false);
       }
-      if (data.localDocumentPreview) router.navigate(routeTo(data.localDocumentPreview));
+      if (data.localDocumentPreview) router.navigate(routeTo(data.localDocumentPreview, route.query && route.query.folder ? { folder: route.query.folder } : null));
       if (data.localDocumentMove) openMoveDocument(store.getState(), data.localDocumentMove);
+      if (data.localDocumentDeleteDetail) {
+        confirmDeleteDocument(details(data.localDocumentDeleteDetail), function afterDelete() {
+          router.navigate(route.query && route.query.folder ? "local-documents?folder=" + encodeURIComponent(route.query.folder) : "local-documents");
+        });
+      }
       if (data.localDocumentDelete) confirmDeleteDocument(details(data.localDocumentDelete));
       if (data.localDocumentReferences) {
         var listed = details(data.localDocumentReferences);
         overlay.open({ title: "知识库引用", body: renderReferenceList(store.getState(), listed), footer: false });
       }
+      if (data.localPreviewKbOpen) router.navigate("knowledge/" + encodeURIComponent(data.localPreviewKbOpen) + "?tab=documents");
       if (button.matches("[data-local-preview-download]")) downloadAsset(details(route.id, route));
     });
     OpsDemo.ui.preview.bindChunkCards(root);

@@ -12,13 +12,12 @@
     chunkId: "Chunk ID", index: "序号", order: "序号", origin: "生成来源", manualOperation: "人工操作", characterCount: "字符数", status: "状态", statusLabel: "状态说明",
     fileName: "文件名", documentName: "文件名", sectionPath: "章节路径", headingPath: "标题路径", pageNumber: "页码", tableId: "表格 ID", coordinates: "页面坐标", prevChunkId: "上一片", nextChunkId: "下一片", parentChunkId: "父块 ID",
     knowledgeBaseId: "知识库 ID", indexId: "索引 ID", indexRevisionId: "索引版本 ID", indexStatus: "索引状态", vectorStatus: "向量状态", tags: "标签", relations: "关系", relationCount: "关系数", chunkType: "层级类型", hierarchyLevel: "层级", retrievalRole: "检索角色", contextExpansion: "上下文扩展",
-    sourceChunkId: "源切片 ID", sourceDocumentId: "源文档 ID", chunkSetId: "切片集 ID", fileId: "文件 ID", fileVersionId: "文件版本 ID", documentId: "知识库文档 ID", parseResultId: "解析结果 ID", embeddingRecordId: "向量记录 ID", embeddingModelId: "向量模型 ID", embeddingModelAlias: "向量模型", embeddingDimension: "向量维度", vectorDimension: "向量维度", modelId: "模型 ID", modelConfigKey: "模型配置标识", contentHash: "内容指纹", inputHash: "向量输入指纹", createdAt: "创建时间", updatedAt: "更新时间", contentType: "内容类型"
+    sourceChunkId: "源切片 ID", sourceDocumentId: "源文档 ID", chunkSetId: "切片集 ID", fileId: "文件 ID", fileVersionId: "文件版本 ID", documentId: "文档 ID", parseResultId: "解析结果 ID", embeddingRecordId: "向量记录 ID", embeddingModelId: "向量模型 ID", embeddingModelAlias: "向量模型", embeddingDimension: "向量维度", vectorDimension: "向量维度", modelId: "模型 ID", modelConfigKey: "模型配置标识", contentHash: "内容指纹", inputHash: "向量输入指纹", createdAt: "创建时间", updatedAt: "更新时间", contentType: "内容类型", sourceFile: "文件名"
   };
 
   var identificationKeys = ["contentType"];
   var documentLevelKeys = ["origin", "manualOperation", "status", "statusLabel"];
-  var locationKeys = ["fileName", "documentName", "sectionPath", "headingPath", "pageNumber", "prevChunkId", "nextChunkId", "parentChunkId"];
-  var retrievalKeys = [];
+  var locationKeys = ["sectionPath", "headingPath", "pageNumber", "parentChunkId"];
 
   function split(options) {
     var opts = options || {};
@@ -58,6 +57,7 @@
     var consumed = {};
     var groups = [
       { key: "identification", title: "识别信息", empty: "暂无识别信息", fields: [] },
+      { key: "ownership", title: "归属", empty: "", fields: [] },
       { key: "location", title: "来源定位", empty: "暂无原文定位信息", fields: [] }
     ];
     function add(group, key, value, display) {
@@ -77,8 +77,11 @@
     add(groups[0], "index", chunk.index == null ? (chunk.order == null ? index + 1 : chunk.order) : chunk.index);
     add(groups[0], "characterCount", characterCount);
     addKeys(groups[0], identificationKeys);
-    addKeys(groups[1], locationKeys);
-    addKeys(groups[2], retrievalKeys);
+    var fileName = values.fileName || values.documentName || values.sourceFile;
+    consumed.fileName = true; consumed.documentName = true; consumed.sourceFile = true;
+    add(groups[1], "fileName", fileName);
+    addKeys(groups[1], ["documentId", "knowledgeBaseId"]);
+    addKeys(groups[2], locationKeys);
     // 界面只展示白名单字段；其余元数据保留在系统与复制载荷之外的链路中。
     return groups;
   }
@@ -95,9 +98,9 @@
   function renderMetadataPopover(chunk, index, characterCount, popoverId, titleId) {
     var groups = chunkMetadataGroups(chunk, index, characterCount);
     var payload = stableJson(metadataPayload(groups));
-    var fields = groups.reduce(function flatten(result, group) { return result.concat(group.fields); }, []);
-    var body = fields.length
-      ? '<dl>' + fields.map(renderMetadataField).join("") + "</dl>"
+    var runs = groups.filter(function nonEmpty(group) { return group.fields.length > 0; });
+    var body = runs.length
+      ? runs.map(function renderRun(group) { return "<dl>" + group.fields.map(renderMetadataField).join("") + "</dl>"; }).join('<div class="chunk-metadata-popover__divider" role="separator"></div>')
       : '<p class="chunk-metadata-popover__empty">暂无切片信息</p>';
     return '<section class="chunk-metadata-popover" id="' + dom.escape(popoverId) + '" role="dialog" aria-modal="false" aria-labelledby="' + dom.escape(titleId) + '" hidden data-chunk-metadata-popover>' +
       '<header class="chunk-metadata-popover__header"><strong id="' + dom.escape(titleId) + '">切片信息</strong><div class="chunk-metadata-popover__header-actions"><span class="chunk-metadata-popover__feedback" data-chunk-copy-feedback role="status" aria-live="polite"></span><button class="chunk-metadata-popover__copy chunk-metadata-popover__copy--all" type="button" data-chunk-copy-all aria-label="复制全部信息" title="复制全部信息">' + dom.icon("copy", 14) + '</button><button type="button" class="chunk-metadata-popover__close" data-chunk-metadata-close aria-label="关闭切片信息">' + dom.icon("x", 15) + "</button></div></header>" +

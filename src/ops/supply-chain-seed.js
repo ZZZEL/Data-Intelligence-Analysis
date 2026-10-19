@@ -19,8 +19,6 @@
     "documentCounts": {
       "total": 10,
       "searchable": 10,
-      "firstImportProcessing": 0,
-      "pendingActivation": 0,
       "updatingWithPreviousVersionAvailable": 0
     },
     "openImportIssueCount": 0,
@@ -2646,8 +2644,6 @@
     "indexSizeGb": 0.08,
     "buildDurationMinutes": 6,
     "ingestionProfileId": "ING-01",
-    "canRollbackFrom": true,
-    "canActivate": false
   },
   "importBatch": {
     "id": "IMP-SCM-2024-V1",
@@ -2780,6 +2776,7 @@
     "name": "供应链培训与风险检索",
     "createdAt": "2026-09-07T14:54:00+08:00",
     "question": "供应商风险评估应覆盖哪些维度，并如何结合供应链韧性建设？",
+    "expectedAnswer": "供应商风险评估应覆盖财务、运营、合规、地缘、商业和可持续六类风险；供应链韧性建设应从事后应急转向事前设计，结合多源采购、安全库存、应急产能和数字化控制塔，并将考核结果用于订单倾斜、整改、暂停新订单和退出机制。",
     "knowledgeBaseId": "KB-SCM-2024-V1",
     "knowledgeVersionId": "KV-SCM-2024-V1",
     "comparison": {
@@ -2796,7 +2793,9 @@
         "locator": "第一章 / 评估框架与权重",
         "excerpt": "评估维度包括财务、运营、合规、地缘、商业和可持续六类风险。",
         "fusionScore": 0.94,
-        "rerankScore": 0.96
+        "rerankScore": 0.96,
+        "relevanceMark": "relevant",
+        "relevanceMarkLabel": "相关"
       },
       {
         "documentId": "SCM-DOC-05",
@@ -2805,7 +2804,9 @@
         "locator": "第二部分 / 八大关键趋势",
         "excerpt": "企业的韧性建设从事后应急走向事前设计，多源采购、安全库存、应急产能和数字化控制塔成为关键组合。",
         "fusionScore": 0.9,
-        "rerankScore": 0.93
+        "rerankScore": 0.93,
+        "relevanceMark": "relevant",
+        "relevanceMarkLabel": "相关"
       },
       {
         "documentId": "SCM-DOC-02",
@@ -2814,7 +2815,9 @@
         "locator": "第四章 / 供应商评估与考核",
         "excerpt": "供应商考核结果用于订单倾斜、整改、暂停新订单和退出机制。",
         "fusionScore": 0.86,
-        "rerankScore": 0.9
+        "rerankScore": 0.9,
+        "relevanceMark": "relevant",
+        "relevanceMarkLabel": "相关"
       }
     ],
     "fixtureAvailable": true,

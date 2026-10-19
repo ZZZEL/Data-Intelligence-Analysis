@@ -90,8 +90,10 @@ const knowledgeSource = fs.readFileSync(path.join(demoRoot, "src/ops/knowledge.j
 assert.match(knowledgeSource, /existingKnowledgeImportSources[\s\S]*selectableLocalAssets[\s\S]*selectableEnterpriseObjects[\s\S]*pruneExistingSelections/, "知识库选文件应同时过滤本地文档与企业数据中的已入库文件");
 
 const enterpriseSources = actions.listEnterpriseSourceObjects();
-assert.ok(enterpriseSources.every((source) => source.directoryId === `ENT-DIR-${source.connectionId}`), "企业数据必须使用独立于本地文档的目录 ID");
-assert.equal(new Set(enterpriseSources.map((source) => source.directoryId)).size, state.enterpriseConnections.length);
+assert.ok(enterpriseSources.every((source) => source.directoryId.startsWith("ENT-SCH-") && source.databaseDirectoryId.startsWith("ENT-DB-")), "企业数据必须按 Schema 使用独立于本地文档的目录 ID");
+assert.equal(new Set(enterpriseSources.map((source) => source.databaseDirectoryId)).size, state.enterpriseConnections.length, "每个已连接数据库都应有独立数据库目录");
+assert.ok(new Set(enterpriseSources.map((source) => source.directoryId)).size > state.enterpriseConnections.length, "同一数据库下应继续细分出多个 Schema 目录");
+assert.ok(enterpriseSources.every((source) => ["table", "view"].includes(source.resourceType)), "企业数据导入应下沉到表 / 视图资源");
 
 const documentStyles = fs.readFileSync(path.join(demoRoot, "assets/css/ops/documents.css"), "utf8");
 assert.match(documentStyles, /\.document-directory-sidebar\[hidden\]\s*\{\s*display:\s*none;/, "非当前数据源的目录不得占用 Grid 布局");

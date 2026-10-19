@@ -6,6 +6,7 @@
   var router = OpsDemo.core.router;
   var actions = OpsDemo.core.actions;
   var cleanupRetrievalSettingsPage = null;
+  var retrievalMetricsCollapsed = false;
 
   function esc(value) {
     return dom.escape(value);
@@ -355,46 +356,54 @@
     return Boolean(test.generationSnapshot && test.generationSnapshot.enabled === true);
   }
 
-  function percentage(numerator, denominator, hasRun) {
-    if (!hasRun) return "—";
-    if (!denominator) return "0%";
-    return Math.round((Number(numerator || 0) / Number(denominator)) * 100) + "%";
+  function percentMetric(value, hasRun) {
+    if (!hasRun || value == null || !Number.isFinite(Number(value))) return "—";
+    return (Number(value) * 100).toFixed(1) + "%";
   }
 
-  function retrievalResultSummary(test, comparison, hasRun) {
-    var evidence = test.evidence || [];
-    var evidenceRelevant = evidence.filter(function filter(item) { return item.relevanceMark === "relevant"; }).length;
-    var evidenceIrrelevant = evidence.filter(function filter(item) { return item.relevanceMark === "irrelevant"; }).length;
-    var returnedCount = Number(comparison.returnedCount != null ? comparison.returnedCount : evidence.length);
-    var effectiveCount = Number(comparison.expectedEvidenceHit != null ? comparison.expectedEvidenceHit : evidenceRelevant);
-    var expectedTotal = Number(comparison.expectedEvidenceTotal || 0);
-    var irrelevantCount = Number(comparison.irrelevantCount != null ? comparison.irrelevantCount : evidenceIrrelevant);
-    var reviewedCount = effectiveCount + irrelevantCount;
-    var value = function value(content) { return hasRun ? content : "—"; };
-    return '<div class="retrieval-result-summary" aria-label="本次检索摘要">' +
-      '<div title="本次检索实际返回的切片总量"><span>返回切片数</span><strong>' + value(number(returnedCount)) + "</strong></div>" +
-      '<div title="本次结果中被标记为相关的证据切片数"><span>有效证据数</span><strong>' + value(number(effectiveCount)) + "</strong></div>" +
-      '<div title="已命中的预期证据占全部预期证据的比例"><span>证据覆盖度</span><strong>' + percentage(effectiveCount, expectedTotal, hasRun) + "</strong></div>" +
-      '<div title="已判断切片中相关证据所占的比例"><span>结果相关性</span><strong>' + percentage(effectiveCount, reviewedCount, hasRun) + "</strong></div></div>";
+  function scoreMetric(value, hasRun) {
+    if (!hasRun || value == null || !Number.isFinite(Number(value))) return "—";
+    return Number(value).toFixed(3);
   }
 
-  function answerQualitySummary(test, hasRun) {
-    var metrics = hasRun && test.answerMetrics || null;
-    var generated = Boolean(hasRun && test.answerGenerated && metrics);
-    var percent = function percent(value) {
-      return generated && value != null ? (Number(value) * 100).toFixed(1) + "%" : "—";
-    };
-    var latency = generated && metrics.generationLatencyMs != null ? number(metrics.generationLatencyMs) + " ms" : "—";
-    return '<div class="retrieval-answer-quality"><div class="retrieval-quality-heading"><strong>回答质量</strong></div>' +
-      '<div class="retrieval-result-summary retrieval-result-summary--quality" aria-label="回答质量指标">' +
-      '<div title="回答中的事实是否得到检索证据支持"><span>忠实度</span><small>Faithfulness</small><strong>' + percent(metrics && metrics.faithfulness) + '</strong></div>' +
-      '<div title="生成回答是否直接回应测试问题"><span>答案相关性</span><small>Answer relevance</small><strong>' + percent(metrics && metrics.answerRelevance) + '</strong></div>' +
-      '<div title="回答中的关键结论是否附带引用"><span>引用覆盖率</span><small>Citation coverage</small><strong>' + percent(metrics && metrics.citationCoverage) + '</strong></div>' +
-      '<div title="静态 Demo 的确定性模拟生成耗时"><span>生成时延</span><small>Generation latency</small><strong>' + latency + '</strong></div></div></div>';
+  function metricRow(title, subtitle, value, tooltip) {
+    return '<div class="retrieval-metric-row" title="' + esc(tooltip) + '"><span>' + esc(title) + '</span><small>' + esc(subtitle) + '</small><strong>' + esc(value) + "</strong></div>";
   }
 
   function qualityDashboard(test, comparison, hasRun, generationEnabled) {
-    return '<div class="retrieval-quality-dashboard' + (generationEnabled ? "" : " is-retrieval-only") + '"><section class="retrieval-quality-group"><div class="retrieval-quality-heading"><strong>检索质量</strong></div>' + retrievalResultSummary(test, comparison, hasRun) + '</section><section class="retrieval-quality-group" data-answer-quality' + (generationEnabled ? "" : " hidden") + '>' + answerQualitySummary(test, hasRun) + '</section></div>';
+    var metrics = comparison && comparison.metrics || {};
+    var k = Math.max(1, Math.floor(Number(comparison && comparison.topK) || 10));
+    var answerReady = hasRun && generationEnabled;
+    var answerMetrics = answerReady && test.answerMetrics || null;
+    var performanceMetrics = answerReady && test.performanceMetrics || null;
+    var hasPerformance = Boolean(performanceMetrics && performanceMetrics.responseLatencyP99Ms != null && Number.isFinite(Number(performanceMetrics.responseLatencyP99Ms)));
+    var latency = hasPerformance ? number(performanceMetrics.responseLatencyP99Ms) + " ms" : "—";
+    var metricCount = 4 + (answerMetrics ? 3 : 0) + (hasPerformance ? 1 : 0);
+    var collapseLabel = retrievalMetricsCollapsed ? "展开" : "收起";
+    var retrievalRows =
+      metricRow("召回率", "Recall@" + k, percentMetric(metrics.recallAtK, hasRun), "Top-K 中命中的相关文档占测试集全部相关文档的比例。") +
+      metricRow("精确率", "Precision@" + k, percentMetric(metrics.precisionAtK, hasRun), "Top-K 结果中被标注为相关文档的占比。") +
+      metricRow("平均倒数排名", "MRR", scoreMetric(metrics.mrr, hasRun), "第一条相关文档排名越靠前，得分越高。") +
+      metricRow("归一化折损累计增益", "NDCG@" + k, scoreMetric(metrics.ndcgAtK, hasRun), "按位置折损加权的相关度累计值，再除以理想排序值。");
+    var answerRows = answerMetrics
+      ? '<div class="retrieval-metric-group retrieval-metric-group--secondary"><small>答案质量</small>' +
+        metricRow("忠实度", "Faithfulness", percentMetric(answerMetrics.faithfulness, answerReady), "答案中的事实是否被本次检索上下文支撑。") +
+        metricRow("答案正确性", "Answer correctness", percentMetric(answerMetrics.answerCorrectness, answerReady), "最终回答与测试集标准答案的一致程度。") +
+        metricRow("答案相关性", "Answer relevance", percentMetric(answerMetrics.answerRelevance, answerReady), "答案是否正面回应测试问题；切题不代表一定正确。") +
+        "</div>"
+      : "";
+    var performanceRows = hasPerformance
+      ? '<div class="retrieval-metric-group retrieval-metric-group--tertiary"><small>性能指标</small>' +
+        metricRow("响应时延", "Response latency P99", latency, "静态 Demo 以 100 次确定性请求模拟从发起请求到答案返回的耗时，并取 P99。") +
+        "</div>"
+      : "";
+    return '<section class="retrieval-metrics-card' + (retrievalMetricsCollapsed ? " is-collapsed" : "") + '" aria-label="测试指标">' +
+      '<header><div class="retrieval-metrics-card__heading"><strong>测试指标</strong><small>' + metricCount + " 项</small></div>" +
+      '<button type="button" class="retrieval-metrics-collapse" data-metrics-collapse aria-expanded="' + (retrievalMetricsCollapsed ? "false" : "true") + '" aria-controls="retrieval-metrics-body"><span>' + collapseLabel + "</span>" + dom.icon("chevron-down", 13) + "</button></header>" +
+      '<div class="retrieval-metrics-body" id="retrieval-metrics-body">' +
+      '<div class="retrieval-metric-group"><small>检索质量</small>' + retrievalRows + "</div>" +
+      answerRows + performanceRows +
+      "</div></section>";
   }
 
   function generatedAnswerMessage(test) {
@@ -413,15 +422,23 @@
     if (!test.evidence || !test.evidence.length) {
       return '<div class="notice">' + dom.icon("shield-x", 17) + '<div class="notice__content"><div class="notice__title">无可返回证据</div>' + esc(test.emptyReasonLabel || "当前身份和过滤条件下未命中可访问内容。") + "</div></div>";
     }
-    var rows = test.evidence.map(function map(item) {
+    var rows = test.evidence.map(function map(item, index) {
       var snapshot = test.runtimeSnapshot || {};
+      var rank = Number(item.rank || index + 1);
+      var rankLabel = "#" + String(rank).padStart(2, "0");
       var scoreSource = item.scoreSource || snapshot.scoreSource || (snapshot.operator && snapshot.operator.rerankEnabled === false ? "fusion" : "rerank");
       var rawScore = item.retrievalScore != null ? item.retrievalScore : scoreSource === "rerank" ? item.rerankScore : item.fusionScore;
       var score = Number(rawScore);
       var scoreLabel = scoreSource === "rerank" ? "重排分" : "融合分";
-      var scoreHtml = Number.isFinite(score) ? '<span class="evidence-item__score" title="本次用于排序和过滤的' + scoreLabel + '"><span>相关度</span><strong>' + score.toFixed(2) + '</strong><small>' + scoreLabel + '</small></span>' : "";
-      return '<article class="evidence-item" id="retrieval-evidence-' + esc(item.rank) + '" tabindex="-1"><div class="evidence-item__header"><div class="evidence-item__rank">' + esc(item.rank) + '</div><div class="evidence-item__title">' + esc(item.documentName) + '</div><div class="evidence-item__locator">' + esc(item.locator) + "</div></div>" +
-        '<p class="evidence-item__excerpt">' + esc(item.excerpt) + '</p><div class="evidence-item__quality">' + scoreHtml + dom.status(item.relevanceMarkLabel, item.relevanceMark === "relevant" ? "success" : "neutral", true) + "</div></article>";
+      var scoreHtml = '<span class="evidence-item__score" title="相似度：本次用于排序和过滤的' + esc(scoreLabel) + '"><strong>' + (Number.isFinite(score) ? score.toFixed(2) : "—") + '</strong><small>相似度</small></span>';
+      var documentName = item.documentName || "未知文件";
+      var locator = item.locator
+        ? '<div class="evidence-item__locator" title="章节：' + esc(item.locator) + '">' + esc(item.locator) + "</div>"
+        : "";
+      return '<article class="evidence-item" id="retrieval-evidence-' + esc(rank) + '" tabindex="-1">' +
+        '<div class="evidence-item__header"><div class="evidence-item__title"><span class="evidence-item__rank">' + esc(rankLabel) + '</span><span class="evidence-item__document" title="文件：' + esc(documentName) + '">' + esc(documentName) + "</span></div>" + scoreHtml + "</div>" +
+        locator +
+        '<p class="evidence-item__excerpt">' + esc(item.excerpt || "") + "</p></article>";
     }).join("");
     return rows;
   }
@@ -512,10 +529,6 @@
       answerFields.setAttribute("aria-disabled", answerEnabled ? "false" : "true");
     }
     if (answerModel) answerModel.disabled = true;
-    var answerQuality = root.querySelector("[data-answer-quality]");
-    if (answerQuality) answerQuality.hidden = !answerEnabled;
-    var qualityDashboard = root.querySelector(".retrieval-quality-dashboard");
-    if (qualityDashboard) qualityDashboard.classList.toggle("is-retrieval-only", !answerEnabled);
   }
 
   function retrievalTestLocation(knowledgeBaseId, options) {
@@ -557,7 +570,7 @@
     var comparison = hasRun ? test.comparison || (test.comparisons || [])[0] : null;
     if (!comparison) comparison = { returnedCount: 0, expectedEvidenceHit: 0, expectedEvidenceTotal: 0, irrelevantCount: 0 };
     var generationEnabled = Boolean(hasRun && isAnswerGenerationEnabled(test));
-    var qualitySummary = '<div class="retrieval-chat__quality" aria-live="polite">' + qualityDashboard(test, comparison, hasRun, generationEnabled) + "</div>";
+    var qualitySummary = '<div class="retrieval-chat__quality' + (retrievalMetricsCollapsed ? " is-collapsed" : "") + '" aria-live="polite">' + qualityDashboard(test, comparison, hasRun, generationEnabled) + "</div>";
     var chatBody = "";
     if (!runnable) {
       chatBody = '<div class="retrieval-chat-blocked"><div class="notice notice--danger">' + dom.icon("circle-off", 17) + '<div class="notice__content"><div class="notice__title">暂时无法检索</div>' + esc(blockedReason) + "。</div></div></div>";
@@ -567,7 +580,7 @@
         '<article class="retrieval-message retrieval-message--result" tabindex="-1" data-retrieval-result><div class="retrieval-message__avatar">' + dom.icon("search-check", 16) + '</div><div class="retrieval-message__content"><div class="retrieval-message__label">检索证据</div><p>' + esc((test.evidence || []).length ? "本次回答使用了以下证据片段。" : "本次未返回符合要求的证据。") + '</p>' +
         '<div class="retrieval-evidence-list">' + evidenceRows(test, comparison) + '</div></div></article>';
     } else {
-      chatBody = '<div class="retrieval-chat-empty">' + dom.icon("message-square-text", 22) + '<strong>开始一次完整 RAG 测试</strong><span>发送问题后，将依次展示生成回答、引用证据、检索质量与回答质量。</span></div>';
+      chatBody = '<div class="retrieval-chat-empty">' + dom.icon("message-square-text", 22) + '<strong>开始一次完整 RAG 测试</strong><span>发送问题后，将依次展示生成回答、引用证据、性能、检索与答案质量指标。</span></div>';
     }
     var rerankReady = !operator.rerankEnabled || readyRerankerModels(state).length > 0;
     return dom.pageHeader({ title: "检索测试" }) +
@@ -710,6 +723,17 @@
       });
       syncKnowledgeBaseSelection();
     }
+    var metricsToggle = root.querySelector("[data-metrics-collapse]");
+    if (metricsToggle) metricsToggle.addEventListener("click", function toggleMetrics() {
+      retrievalMetricsCollapsed = !retrievalMetricsCollapsed;
+      var card = metricsToggle.closest(".retrieval-metrics-card");
+      var label = metricsToggle.querySelector("span");
+      metricsToggle.setAttribute("aria-expanded", retrievalMetricsCollapsed ? "false" : "true");
+      if (label) label.textContent = retrievalMetricsCollapsed ? "展开" : "收起";
+      if (card) card.classList.toggle("is-collapsed", retrievalMetricsCollapsed);
+      var shell = metricsToggle.closest(".retrieval-chat__quality");
+      if (shell) shell.classList.toggle("is-collapsed", retrievalMetricsCollapsed);
+    });
     var toggle = root.querySelector("[data-test-rerank-toggle]");
     if (toggle) toggle.addEventListener("click", function handle() {
       var next = toggle.getAttribute("aria-checked") !== "true";

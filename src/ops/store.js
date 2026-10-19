@@ -55,8 +55,7 @@
         id: OpsDemo.utils.id("CR"),
         occurredAt: new Date().toISOString(),
         actor: current.meta.currentUser.displayName,
-        result: "成功",
-        canCreateRollbackDraft: false
+        result: "成功"
       }, change));
     }, { type: "change-log", silentRoute: true });
   }

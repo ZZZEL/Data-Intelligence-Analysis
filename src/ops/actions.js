@@ -69,8 +69,7 @@
     state.configurationRecords.unshift(Object.assign({
       id: OpsDemo.utils.id("CR"),
       occurredAt: nowIso(),
-      actor: actor(state),
-      canCreateRollbackDraft: false
+      actor: actor(state)
     }, change));
   }
 
@@ -614,7 +613,7 @@
         enabledStateLabel: "检索已关闭",
         retrievalStatus: "disabled",
         retrievalStatusLabel: "已关闭",
-        documentCounts: { total: 0, searchable: 0, firstImportProcessing: 0, pendingActivation: 0, updatingWithPreviousVersionAvailable: 0 },
+        documentCounts: { total: 0, searchable: 0, updatingWithPreviousVersionAvailable: 0 },
         openImportIssueCount: 0,
         currentIngestionProfileId: null,
         currentIngestionProfileName: "待选择",
@@ -845,11 +844,10 @@
           });
           if (!isLocal) {
             knowledgeBase.documentCounts.total += createdCount;
-            knowledgeBase.documentCounts.pendingActivation += createdCount;
             knowledgeBase.contentUpdatedAt = nowIso();
           }
           if (createdCount && !isLocal) {
-            var candidate = createCandidateVersion(state, knowledgeBase, createdCount, { sourceType: "import_batch", sourceBatchIds: [batch.id] });
+            var candidate = createIndexVersion(state, knowledgeBase, createdCount, { sourceType: "import_batch", sourceBatchIds: [batch.id] });
             batch.candidateKnowledgeVersionId = candidate.id;
             makeKnowledgeVersionEffective(state, knowledgeBase, candidate);
           }
@@ -949,6 +947,9 @@
       pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       xls: "application/vnd.ms-excel",
       xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      md: "text/markdown",
+      json: "application/json",
+      csv: "text/csv",
       txt: "text/plain"
     }[extension] || "application/octet-stream";
   }
@@ -1291,43 +1292,38 @@
     };
   }
 
-  function createCandidateVersion(state, knowledgeBase, addedCount, options) {
+  function createIndexVersion(state, knowledgeBase, addedCount, options) {
     var candidateOptions = options || {};
     var active = find(state.knowledgeVersions, knowledgeBase.currentKnowledgeVersionId);
-    var candidate = candidateOptions.forceNew ? null : state.knowledgeVersions.find(function each(item) {
-      return item.knowledgeBaseId === knowledgeBase.id && (item.status === "building" || item.status === "pending_validation" || item.status === "pending_activation");
+    var version = candidateOptions.forceNew ? null : state.knowledgeVersions.find(function each(item) {
+      return item.knowledgeBaseId === knowledgeBase.id && item.status === "building";
     });
-    if (!candidate) {
-      candidate = {
+    if (!version) {
+      version = {
         id: OpsDemo.utils.id("KV"),
         knowledgeBaseId: knowledgeBase.id,
         createdAt: nowIso(),
         sourceType: candidateOptions.sourceType || "ingestion_profile_change",
         sourceBatchIds: Array.from(new Set(candidateOptions.sourceBatchIds || [])),
-        status: "pending_validation",
-        statusLabel: "索引待验证",
+        status: "building",
+        statusLabel: "索引构建中",
         progress: 100,
         documentCount: knowledgeBase.documentCounts.total,
         chunkCount: (active ? active.chunkCount : 0) + addedCount * 72,
         indexSizeGb: Number(((active ? active.indexSizeGb : 0) + addedCount * 0.014).toFixed(2)),
         buildDurationMinutes: 3,
-        ingestionProfileId: candidateOptions.ingestionProfileId || knowledgeBase.currentIngestionProfileId,
-        canRollbackFrom: false,
-        canActivate: false
+        ingestionProfileId: candidateOptions.ingestionProfileId || knowledgeBase.currentIngestionProfileId
       };
-      state.knowledgeVersions.unshift(candidate);
+      state.knowledgeVersions.unshift(version);
     } else {
-      candidate.status = "pending_validation";
-      candidate.statusLabel = "索引待验证";
-      candidate.progress = 100;
-      candidate.documentCount = knowledgeBase.documentCounts.total;
-      candidate.chunkCount += addedCount * 72;
-      candidate.indexSizeGb = Number((candidate.indexSizeGb + addedCount * 0.014).toFixed(2));
-      candidate.canActivate = false;
-      if (candidateOptions.sourceType === "import_batch") candidate.sourceType = "import_batch";
-      candidate.sourceBatchIds = Array.from(new Set((candidate.sourceBatchIds || []).concat(candidateOptions.sourceBatchIds || [])));
+      version.progress = 100;
+      version.documentCount = knowledgeBase.documentCounts.total;
+      version.chunkCount += addedCount * 72;
+      version.indexSizeGb = Number((version.indexSizeGb + addedCount * 0.014).toFixed(2));
+      if (candidateOptions.sourceType === "import_batch") version.sourceType = "import_batch";
+      version.sourceBatchIds = Array.from(new Set((version.sourceBatchIds || []).concat(candidateOptions.sourceBatchIds || [])));
     }
-    return candidate;
+    return version;
   }
 
   function makeKnowledgeVersionEffective(state, knowledgeBase, version) {
@@ -1336,18 +1332,13 @@
       if (item.knowledgeBaseId === knowledgeBase.id && item.id !== version.id && item.status === "effective") {
         item.status = "historical";
         item.statusLabel = "已归档索引";
-        item.canRollbackFrom = true;
       }
     });
     version.status = "effective";
     version.statusLabel = "索引可用";
     version.progress = 100;
-    version.canActivate = false;
-    version.canRollbackFrom = true;
     knowledgeBase.currentKnowledgeVersionId = version.id;
     knowledgeBase.documentCounts.searchable = version.documentCount;
-    knowledgeBase.documentCounts.pendingActivation = 0;
-    knowledgeBase.documentCounts.firstImportProcessing = 0;
     knowledgeBase.retrievalStatus = knowledgeBase.enabled ? "available" : "disabled";
     knowledgeBase.retrievalStatusLabel = knowledgeBase.enabled ? "可检索" : "已关闭";
     knowledgeBase.hint = knowledgeBase.enabled ? "新导入文件已完成索引并可检索" : "新导入文件已完成索引，启用知识库后可检索";
@@ -1507,11 +1498,10 @@
       });
       state.importBatches.unshift(batch);
       knowledgeBase.documentCounts.total += createdCount;
-      knowledgeBase.documentCounts.pendingActivation += createdCount;
       knowledgeBase.contentUpdatedAt = nowIso();
       knowledgeBase.updatedAt = knowledgeBase.contentUpdatedAt;
       if (createdCount) {
-        var candidate = createCandidateVersion(state, knowledgeBase, createdCount, { sourceType: "import_batch", sourceBatchIds: [batch.id] });
+        var candidate = createIndexVersion(state, knowledgeBase, createdCount, { sourceType: "import_batch", sourceBatchIds: [batch.id] });
         batch.candidateKnowledgeVersionId = candidate.id;
         makeKnowledgeVersionEffective(state, knowledgeBase, candidate);
         batch.items.filter(function filter(item) { return item.operation === "create"; }).forEach(function markIndexed(item) { item.statusLabel = "处理完成"; });
@@ -1711,8 +1701,6 @@
       if (knowledgeBase && knowledgeBase.documentCounts) {
         if (documentItem.countsTowardDocumentTotal !== false) knowledgeBase.documentCounts.total = Math.max(0, Number(knowledgeBase.documentCounts.total || 0) - 1);
         if (documentItem.searchable) knowledgeBase.documentCounts.searchable = Math.max(0, Number(knowledgeBase.documentCounts.searchable || 0) - 1);
-        if (documentItem.status === "indexing") knowledgeBase.documentCounts.pendingActivation = Math.max(0, Number(knowledgeBase.documentCounts.pendingActivation || 0) - 1);
-        if (["parsing", "chunking", "embedding"].indexOf(documentItem.status) >= 0) knowledgeBase.documentCounts.firstImportProcessing = Math.max(0, Number(knowledgeBase.documentCounts.firstImportProcessing || 0) - 1);
         knowledgeBase.updatedAt = nowIso();
         knowledgeBase.contentUpdatedAt = knowledgeBase.updatedAt;
         knowledgeBase.hint = "文件已删除，检索索引将移除其内容与引用";
@@ -1749,8 +1737,6 @@
         if (!knowledgeBase || !knowledgeBase.documentCounts) return;
         if (documentItem.countsTowardDocumentTotal !== false) knowledgeBase.documentCounts.total = Math.max(0, Number(knowledgeBase.documentCounts.total || 0) - 1);
         if (documentItem.searchable) knowledgeBase.documentCounts.searchable = Math.max(0, Number(knowledgeBase.documentCounts.searchable || 0) - 1);
-        if (documentItem.status === "indexing") knowledgeBase.documentCounts.pendingActivation = Math.max(0, Number(knowledgeBase.documentCounts.pendingActivation || 0) - 1);
-        if (["parsing", "chunking", "embedding"].indexOf(documentItem.status) >= 0) knowledgeBase.documentCounts.firstImportProcessing = Math.max(0, Number(knowledgeBase.documentCounts.firstImportProcessing || 0) - 1);
         knowledgeBase.updatedAt = removedAt;
         knowledgeBase.contentUpdatedAt = removedAt;
         knowledgeBase.hint = "文档已删除，检索索引将移除其内容与引用";
@@ -1821,14 +1807,11 @@
         status: "indexing"
       }));
       knowledgeBase.documentCounts.total += 1;
-      knowledgeBase.documentCounts.pendingActivation += 1;
-      knowledgeBase.documentCounts.pendingActivation += processingItems.length;
-      knowledgeBase.documentCounts.firstImportProcessing = Math.max(0, knowledgeBase.documentCounts.firstImportProcessing - processingItems.length);
       knowledgeBase.openImportIssueCount = Math.max(0, knowledgeBase.openImportIssueCount - 1);
       knowledgeBase.hint = "重试成功，1 个新文件待建立并验证索引";
       knowledgeBase.contentUpdatedAt = nowIso();
       knowledgeBase.updatedAt = knowledgeBase.contentUpdatedAt;
-      var candidate = createCandidateVersion(state, knowledgeBase, 1, { sourceType: "import_batch", sourceBatchIds: [batch.id] });
+      var candidate = createIndexVersion(state, knowledgeBase, 1, { sourceType: "import_batch", sourceBatchIds: [batch.id] });
       batch.candidateKnowledgeVersionId = candidate.id;
       batch.resultingKnowledgeVersionId = null;
       makeKnowledgeVersionEffective(state, knowledgeBase, candidate);
@@ -1867,7 +1850,7 @@
         knowledgeBase.openImportIssueCount = Math.max(0, knowledgeBase.openImportIssueCount - 1);
         knowledgeBase.updatedAt = nowIso();
         if (!batch.failureCount) {
-          var candidate = createCandidateVersion(state, knowledgeBase, 0, { sourceType: "import_batch", sourceBatchIds: [batch.id] });
+          var candidate = createIndexVersion(state, knowledgeBase, 0, { sourceType: "import_batch", sourceBatchIds: [batch.id] });
           batch.candidateKnowledgeVersionId = candidate.id;
           batch.resultingKnowledgeVersionId = null;
           makeKnowledgeVersionEffective(state, knowledgeBase, candidate);
@@ -1877,87 +1860,6 @@
       var todo = find(state.overview.pendingItems, "TODO-001");
       if (todo && batch.failureCount === 0) todo.resolved = true;
       return item;
-    });
-  }
-
-  function validateKnowledgeVersion(knowledgeBaseId, versionId) {
-    return commit("knowledge-version-validated", function mutate(state) {
-      var version = find(state.knowledgeVersions, versionId);
-      var knowledgeBase = find(state.knowledgeBases, knowledgeBaseId);
-      if (!version || version.knowledgeBaseId !== knowledgeBaseId || version.status !== "pending_validation") return null;
-      var before = version.statusLabel;
-      version.status = "pending_activation";
-      version.statusLabel = "索引验证通过 · 待进入检索";
-      version.progress = 100;
-      version.canActivate = true;
-      record(state, {
-        objectType: "knowledge_version",
-        objectId: version.id,
-        objectName: version.id,
-        action: "validated",
-        actionLabel: "检索验证通过",
-        before: { status: before },
-        after: { status: version.statusLabel },
-        impact: "当前可检索内容未变化；可确认让本次索引更新生效。"
-      });
-      if (knowledgeBase) {
-        knowledgeBase.hint = "索引验证完成，等待进入检索范围";
-        knowledgeBase.updatedAt = nowIso();
-      }
-      return version;
-    });
-  }
-
-  function activateKnowledgeVersion(knowledgeBaseId, versionId) {
-    return commit("knowledge-version-activated", function mutate(state) {
-      var knowledgeBase = find(state.knowledgeBases, knowledgeBaseId);
-      var version = find(state.knowledgeVersions, versionId);
-      if (!knowledgeBase || !version || version.knowledgeBaseId !== knowledgeBaseId || !version.canActivate) return null;
-      var previousId = makeKnowledgeVersionEffective(state, knowledgeBase, version);
-      record(state, {
-        objectType: "knowledge_version",
-        objectId: version.id,
-        objectName: knowledgeBase.name + " · " + version.id,
-        action: "activated",
-        actionLabel: "索引更新生效",
-        before: { knowledgeVersionId: previousId },
-        after: { knowledgeVersionId: version.id },
-        impact: "新检索请求使用最新索引；原索引仅作技术追溯保留。",
-        canCreateRollbackDraft: true
-      });
-      return version;
-    });
-  }
-
-  function rollbackKnowledgeVersion(knowledgeBaseId, versionId) {
-    return commit("knowledge-version-rollback-draft", function mutate(state) {
-      var knowledgeBase = find(state.knowledgeBases, knowledgeBaseId);
-      var historical = find(state.knowledgeVersions, versionId);
-      if (!knowledgeBase || !historical || historical.knowledgeBaseId !== knowledgeBaseId || historical.status !== "historical") return null;
-      var draft = Object.assign({}, OpsDemo.utils.clone(historical), {
-        id: OpsDemo.utils.id("KV-RESTORE"),
-        createdAt: nowIso(),
-        sourceType: "restore",
-        sourceBatchIds: [],
-        status: "pending_validation",
-        statusLabel: "回退索引待验证",
-        basedOnVersionId: historical.id,
-        canActivate: false,
-        canRollbackFrom: false
-      });
-      state.knowledgeVersions.unshift(draft);
-      knowledgeBase.updatedAt = nowIso();
-      record(state, {
-        objectType: "knowledge_version",
-        objectId: draft.id,
-        objectName: knowledgeBase.name + " · 索引回退",
-        action: "rollback_draft_created",
-        actionLabel: "创建索引回退",
-        before: { current: knowledgeBase.currentKnowledgeVersionId },
-        after: { basedOn: historical.id, draft: draft.id },
-        impact: "当前可检索内容未改变；回退索引仍需检索验证后才能生效。"
-      });
-      return draft;
     });
   }
 
@@ -2373,15 +2275,79 @@
     return 160 + Math.ceil(String(question || "").length * 1.5) + (evidence || []).length * 38 + Math.ceil(String(answer || "").length * 0.45);
   }
 
-  function answerQualityMetrics(question, evidence, answerResult, config) {
+  function retrievalQualityMetrics(returnedEvidence, fixtureEvidence, topK) {
+    var results = returnedEvidence || [];
+    var candidates = fixtureEvidence || [];
+    var k = Math.max(1, Math.floor(Number(topK) || 1));
+    var totalRelevant = candidates.filter(function filter(item) { return item && item.relevanceMark === "relevant"; }).length;
+    var relevantCount = results.filter(function filter(item) { return item && item.relevanceMark === "relevant"; }).length;
+    var firstRelevant = results.findIndex(function find(item) { return item && item.relevanceMark === "relevant"; });
+    var dcg = results.reduce(function reduce(total, item, index) {
+      var gain = item && item.relevanceMark === "relevant" ? 1 : 0;
+      return total + (gain ? 1 / Math.log2(index + 2) : 0);
+    }, 0);
+    var idealCount = Math.min(k, totalRelevant);
+    var idcg = 0;
+    for (var rank = 1; rank <= idealCount; rank += 1) idcg += 1 / Math.log2(rank + 1);
+    return {
+      recallAtK: totalRelevant ? roundedAnswerMetric(relevantCount / totalRelevant) : null,
+      precisionAtK: results.length ? roundedAnswerMetric(relevantCount / Math.min(results.length, k)) : null,
+      mrr: firstRelevant >= 0 ? roundedAnswerMetric(1 / (firstRelevant + 1)) : 0,
+      ndcgAtK: idcg ? roundedAnswerMetric(dcg / idcg) : null
+    };
+  }
+
+  function responsePerformanceMetrics(question, evidence, answer) {
+    var base = simulatedGenerationLatency(question, evidence, answer);
+    var sampleCount = 100;
+    var samples = [];
+    var seed = String(question || "").length + (evidence || []).length * 17 + String(answer || "").length;
+    for (var index = 0; index < sampleCount; index += 1) {
+      var jitterSeed = (seed + index * 37) % 97;
+      samples.push(base + jitterSeed * 2 + (index % 11));
+    }
+    samples.sort(function sort(left, right) { return left - right; });
+    var p99Index = Math.min(sampleCount - 1, Math.ceil(sampleCount * 0.99) - 1);
+    return {
+      responseLatencyP99Ms: samples[p99Index],
+      sampleCount: sampleCount,
+      simulated: true
+    };
+  }
+
+  function answerSimilarity(left, right) {
+    var normalize = function normalize(value) {
+      return String(value || "").toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "");
+    };
+    var leftText = normalize(left);
+    var rightText = normalize(right);
+    if (!leftText || !rightText) return 0;
+    if (leftText === rightText) return 1;
+    var bigrams = function bigrams(value) {
+      var result = [];
+      for (var index = 0; index < value.length - 1; index += 1) result.push(value.slice(index, index + 2));
+      return result;
+    };
+    var leftGrams = bigrams(leftText);
+    var rightGrams = bigrams(rightText);
+    var rightPool = rightGrams.slice();
+    var intersection = leftGrams.filter(function filter(gram) {
+      var matched = rightPool.indexOf(gram);
+      if (matched < 0) return false;
+      rightPool.splice(matched, 1);
+      return true;
+    }).length;
+    return intersection / (leftGrams.length + rightGrams.length - intersection);
+  }
+
+  function answerQualityMetrics(question, evidence, answerResult, expectedAnswer) {
     var sources = evidence || [];
-    var scores = sources.map(function mapScore(item) { return Number(item.retrievalScore); }).filter(Number.isFinite);
+    var scores = sources.map(function mapScore(item) { return Number(item && item.retrievalScore); }).filter(Number.isFinite);
     var averageScore = scores.length ? scores.reduce(function sum(total, value) { return total + value; }, 0) / scores.length : 0;
     return {
       faithfulness: sources.length ? 1 : null,
-      answerRelevance: sources.length ? roundedAnswerMetric(averageScore) : 0,
-      citationCoverage: sources.length ? (config.citationsEnabled && answerResult.citations.length ? 1 : 0) : null,
-      generationLatencyMs: simulatedGenerationLatency(question, sources.slice(0, 3), answerResult.text)
+      answerCorrectness: roundedAnswerMetric(answerSimilarity(answerResult.text, expectedAnswer)),
+      answerRelevance: sources.length ? roundedAnswerMetric(averageScore) : 0
     };
   }
 
@@ -2643,7 +2609,7 @@
         test.answerGenerated = true;
         test.generatedAnswer = answerResult.text;
         test.answerCitations = answerResult.citations;
-        test.answerMetrics = answerQualityMetrics(test.question, evidenceForRun, answerResult, answerGeneration);
+        test.answerMetrics = answerQualityMetrics(test.question, evidenceForRun, answerResult, test.expectedAnswer);
         test.generationSnapshot = {
           enabled: true,
           model: answerGeneration.model,
@@ -2667,9 +2633,14 @@
         expectedEvidenceHit: relevantCount,
         expectedEvidenceTotal: expectedTotal,
         irrelevantCount: irrelevantCount,
+        topK: operator.finalTopK,
+        metrics: retrievalQualityMetrics(evidenceForRun, test.fixtureEvidence, operator.finalTopK),
         validationState: "validated",
         lastRunAt: runAt
       };
+      test.performanceMetrics = generateAnswer
+        ? responsePerformanceMetrics(test.question, evidenceForRun, answerResult.text)
+        : null;
       test.comparisons = [Object.assign({ settingsKey: settingsKey }, test.comparison)];
       test.evidence = evidenceForRun;
       test.runtimeSnapshot = {
@@ -2860,6 +2831,29 @@
     return (catalogs[engine] || []).slice();
   }
 
+  function enterpriseTargetDatabases(input) {
+    var values = Array.isArray(input && input.databaseNames) && input.databaseNames.length
+      ? input.databaseNames
+      : [input && input.databaseName];
+    return Array.from(new Set(values.map(function map(value) {
+      return String(value || "").trim();
+    }).filter(Boolean)));
+  }
+
+  function normalizeEnterpriseUpdatePolicy(input, current) {
+    var source = input && (input.updatePolicy || input) || current && current.updatePolicy || {};
+    var frequency = ["manual", "hourly", "daily", "weekly"].indexOf(source.updateFrequency) >= 0 ? source.updateFrequency : "daily";
+    var strategy = ["full_snapshot", "incremental_snapshot"].indexOf(source.updateStrategy) >= 0 ? source.updateStrategy : "full_snapshot";
+    return { updateFrequency: frequency, updateStrategy: strategy };
+  }
+
+  function enterpriseNextSyncAt(policy, timestamp) {
+    var normalized = normalizeEnterpriseUpdatePolicy({ updatePolicy: policy });
+    var durations = { hourly: 3600000, daily: 86400000, weekly: 604800000 };
+    if (normalized.updateFrequency === "manual" || !durations[normalized.updateFrequency]) return null;
+    return new Date(new Date(timestamp).getTime() + durations[normalized.updateFrequency]).toISOString();
+  }
+
   function enterpriseConnectionTestResult(payload) {
     var input = payload || {};
     var engine = String(input.databaseEngine || "").trim();
@@ -2883,7 +2877,7 @@
       statusLabel: "连接正常",
       testedAt: testedAt,
       databases: databases,
-      message: "连接正常，已获取 " + databases.length + " 个可访问数据库。"
+      message: "连接正常访问到 " + databases.length + " 个数据库"
     };
   }
 
@@ -2892,8 +2886,9 @@
   }
 
   function saveEnterpriseConnection(payload) {
+    // Demo flow allows required fields to be saved directly; preflight below still
+    // rejects unreachable or incomplete database configurations.
     var input = payload || {};
-    if (!input.tested) return null;
     var existingState = store.getState();
     var existing = input.id ? find(existingState.enterpriseConnections || [], input.id) : null;
     var passwordConfigured = String(input.password == null ? "" : input.password).length > 0 || Boolean(existing && existing.passwordConfigured);
@@ -2908,14 +2903,15 @@
       var databaseEngine = String(input.databaseEngine || "").trim();
       var host = String(input.host || "").trim();
       var port = Number(input.port);
-      var databaseName = String(input.databaseName || "").trim();
+      var databaseNames = enterpriseTargetDatabases(input);
+      if (!databaseNames.length && current) databaseNames = enterpriseTargetDatabases(current);
       var username = String(input.username || "").trim();
-      if (!name || !host || !databaseName || !username || !passwordConfigured) return null;
-      if (preflight.databases.indexOf(databaseName) < 0) return null;
+      if (!name || !host || !databaseNames.length || !username || !passwordConfigured) return null;
+      if (databaseNames.some(function unavailable(databaseName) { return preflight.databases.indexOf(databaseName) < 0; })) return null;
       if (list.some(function some(item) { return item !== current && String(item.name || "").toLowerCase() === name.toLowerCase(); })) return null;
       var timestamp = preflight.testedAt;
       var engineLabel = enterpriseDatabaseEngineLabel(databaseEngine);
-      var endpoint = host + ":" + port + "/" + databaseName;
+      var endpoint = host + ":" + port + "/" + databaseNames.join(",");
       var connection = current || {
         id: OpsDemo.utils.id("CONNECTION"),
         runtimeBinding: { id: "connection-managed-" + (list.length + 1), version: "v0.1" },
@@ -2931,13 +2927,15 @@
       connection.implementationType = engineLabel + " / 只读";
       connection.host = host;
       connection.port = port;
-      connection.databaseName = databaseName;
+      connection.databaseNames = databaseNames.slice();
+      connection.databaseName = databaseNames[0];
       connection.endpoint = endpoint;
       connection.username = username;
       connection.passwordConfigured = true;
       connection.status = preflight.status;
       connection.statusLabel = preflight.statusLabel;
-      connection.businessDomain = databaseName;
+      connection.businessDomain = databaseNames[0];
+      connection.updatePolicy = normalizeEnterpriseUpdatePolicy(input, current);
       connection.owner = "数据库管理员";
       connection.access = "read-only";
       connection.limits = {
@@ -2950,6 +2948,9 @@
       connection.lastCheck = { at: timestamp, result: "passed", message: preflight.message, sideEffectFree: true };
       connection.updatedAt = timestamp;
       if (!current) list.unshift(connection);
+      if (OpsDemo.core.processing && typeof OpsDemo.core.processing.ensureEnterpriseResource === "function") {
+        OpsDemo.core.processing.ensureEnterpriseResource(state, connection);
+      }
       record(state, {
         objectType: "enterprise_connection",
         objectId: connection.id,
@@ -2957,7 +2958,7 @@
         action: current ? "updated" : "created",
         actionLabel: current ? "编辑数据库连接" : "登记数据库连接",
         before: before,
-        after: { endpoint: connection.endpoint, username: connection.username, status: connection.status },
+        after: { endpoint: connection.endpoint, databaseNames: connection.databaseNames.slice(), updatePolicy: Object.assign({}, connection.updatePolicy), username: connection.username, status: connection.status },
         impact: "数据库连接已保存，可在后续导入数据时选择 Schema、表和视图。"
       });
       return connection;
@@ -2997,11 +2998,171 @@
     });
   }
 
+  function enterpriseResourceHashes(resources) {
+    return (resources || []).reduce(function map(result, resource) {
+      result[resource.stableObjectKey] = resource.contentHash;
+      return result;
+    }, {});
+  }
+
+  function documentUsesEnterpriseResource(documentItem, resource) {
+    var metadata = documentItem && documentItem.sourceMetadata || {};
+    return metadata.sourceObjectId === resource.id || metadata.stableObjectKey === resource.stableObjectKey;
+  }
+
+  function enterpriseResourceReferences(state, resource) {
+    return (state.documents || []).filter(function match(documentItem) {
+      return documentItem.knowledgeBaseId && documentUsesEnterpriseResource(documentItem, resource);
+    });
+  }
+
+  function scheduleEnterpriseReferenceSync(resources) {
+    if (!resources.length) return;
+    window.setTimeout(function syncResources() {
+      resources.forEach(function syncResource(resource) {
+        var current = store.getState();
+        var reference = enterpriseResourceReferences(current, resource)[0];
+        if (!reference) return;
+        var knowledgeBase = find(current.knowledgeBases, reference.knowledgeBaseId);
+        if (!knowledgeBase) return;
+        var batch = OpsDemo.core.actions.startKnowledgeImport(knowledgeBase.id, { sourceObjects: [resource.id] });
+        if (!batch || batch.status === "completed") return;
+        var item = batch.items.find(function match(candidate) {
+          return candidate.fileId && candidate.operation !== "skip" && candidate.status !== "skipped";
+        });
+        if (!item) return;
+        if (item.operation === "replace") OpsDemo.core.actions.confirmDocumentReplacement(batch.id, item.id);
+        OpsDemo.core.actions.startImportParsing(batch.id, {
+          mineruParseConfig: reference.mineruParseConfig || knowledgeBase.mineruParseConfig
+        });
+        OpsDemo.core.actions.completeImportProcessing(batch.id, {
+          ingestionProfileId: reference.processingProfileSnapshot && reference.processingProfileSnapshot.sourceProfileId || knowledgeBase.currentIngestionProfileId,
+          processingParameters: OpsDemo.core.processing.parametersSnapshot(reference.processingProfileSnapshot) || knowledgeBase.processingParametersSnapshot || {}
+        });
+      });
+    }, 0);
+  }
+
+  function settleEnterpriseSync(id, resources, timestamp) {
+    if (!resources.length) return;
+    window.setTimeout(function settle() {
+      commit("enterprise-sync-settled", function mutate(state) {
+        var connection = find(state.enterpriseConnections, id);
+        if (!connection || connection.syncStatus !== "running") return null;
+        var synchronized = resources.every(function check(resource) {
+          return enterpriseResourceReferences(state, resource).every(function current(reference) {
+            return reference.contentHash === resource.contentHash;
+          });
+        });
+        connection.syncStatus = "idle";
+        connection.lastSyncResult = synchronized ? "updated" : "failed";
+        connection.lastSyncAt = synchronized ? timestamp : connection.lastSyncAt;
+        record(state, {
+          objectType: "enterprise_connection",
+          objectId: connection.id,
+          objectName: connection.name,
+          action: synchronized ? "sync_completed" : "sync_failed",
+          actionLabel: synchronized ? "企业数据同步完成" : "企业数据同步失败",
+          before: { syncStatus: "running" },
+          after: { syncStatus: connection.syncStatus, lastSyncResult: connection.lastSyncResult },
+          impact: synchronized ? "企业数据内容已更新，相关知识库索引已切换到新版本。" : "企业数据同步失败，知识库继续使用上一个可用索引。"
+        });
+        return connection;
+      });
+    }, 3200);
+  }
+
+  function refreshEnterpriseConnection(id) {
+    var existing = find(store.getState().enterpriseConnections, id);
+    if (!existing || existing.status !== "available") return null;
+    var timestamp = nowIso();
+    var beforeHashes = enterpriseResourceHashes((store.getState().enterpriseResources || []).filter(function own(resource) {
+      return resource.connectionId === id;
+    }));
+    var changedResources = [];
+    var referencedChanges = [];
+    var refreshed = commit("enterprise-connection-refreshed", function mutate(state) {
+      var connection = find(state.enterpriseConnections, id);
+      if (!connection || connection.status !== "available") return null;
+      var resources = OpsDemo.core.processing && typeof OpsDemo.core.processing.refreshEnterpriseResources === "function"
+        ? OpsDemo.core.processing.refreshEnterpriseResources(state, connection, timestamp)
+        : [];
+      changedResources = resources.filter(function changed(resource) {
+        return beforeHashes[resource.stableObjectKey] !== resource.contentHash;
+      });
+      referencedChanges = changedResources.filter(function referenced(resource) {
+        return enterpriseResourceReferences(state, resource).length > 0;
+      });
+      connection.updatePolicy = normalizeEnterpriseUpdatePolicy(connection, connection);
+      connection.lastSyncAt = timestamp;
+      connection.nextSyncAt = enterpriseNextSyncAt(connection.updatePolicy, timestamp);
+      connection.lastSyncResult = changedResources.length ? "updated" : "unchanged";
+      connection.syncStatus = referencedChanges.length ? "running" : "idle";
+      connection.updatedAt = timestamp;
+      record(state, {
+        objectType: "enterprise_connection",
+        objectId: connection.id,
+        objectName: connection.name,
+        action: "refreshed",
+        actionLabel: "同步企业数据",
+        before: { lastSyncAt: existing.lastSyncAt || null },
+        after: {
+          lastSyncAt: timestamp,
+          nextSyncAt: connection.nextSyncAt,
+          resourceCount: resources.length,
+          changedResourceCount: changedResources.length,
+          knowledgeReferenceCount: referencedChanges.length,
+          updatePolicy: Object.assign({}, connection.updatePolicy)
+        },
+        impact: changedResources.length
+          ? "企业数据内容已读取；被知识库引用的资源会自动生成新版本并更新索引。"
+          : "企业数据内容未变化，知识库索引保持不变。"
+      });
+      return connection;
+    });
+    if (refreshed) {
+      scheduleEnterpriseReferenceSync(referencedChanges);
+      settleEnterpriseSync(id, referencedChanges, timestamp);
+    }
+    return refreshed;
+  }
+
+  function enterpriseConnectionCleanupScope(id) {
+    var state = store.getState();
+    var resources = (state.enterpriseResources || []).filter(function match(item) { return item.connectionId === id; });
+    var resourceIds = resources.map(function map(item) { return item.id; });
+    var versions = (state.fileVersions || []).filter(function match(item) {
+      return resourceIds.indexOf(item.sourceObjectId) >= 0 || item.sourceMetadata && item.sourceMetadata.connectionId === id;
+    });
+    var fileIds = Array.from(new Set(versions.map(function map(item) { return item.fileId; }).filter(Boolean)));
+    var documents = (state.documents || []).filter(function match(item) {
+      return fileIds.indexOf(item.fileId) >= 0 || resourceIds.indexOf(item.sourceObjectId) >= 0;
+    });
+    return { resources: resources, versions: versions, fileIds: fileIds, documents: documents };
+  }
+
+  function cleanupEnterpriseConnectionContent(connection) {
+    var scope = enterpriseConnectionCleanupScope(connection.id);
+    var runtimeActions = OpsDemo.core.actions;
+    scope.documents.forEach(function removeDocument(documentItem) {
+      if (runtimeActions && typeof runtimeActions.deleteDocument === "function") runtimeActions.deleteDocument(documentItem.id);
+    });
+    Array.from(new Set(scope.fileIds)).forEach(function removeFile(fileId) {
+      if (runtimeActions && typeof runtimeActions.deleteLocalDocumentAsset === "function") runtimeActions.deleteLocalDocumentAsset(fileId);
+    });
+    return { documentCount: scope.documents.length, fileIdCount: scope.fileIds.length };
+  }
+
   function deleteEnterpriseConnection(id) {
+    var existing = find(store.getState().enterpriseConnections, id);
+    if (!existing || existing.protected) return null;
+    var cleanup = cleanupEnterpriseConnectionContent(existing);
     return commit("enterprise-connection-deleted", function mutate(state) {
       var connection = find(state.enterpriseConnections, id);
       if (!connection || connection.protected) return null;
       state.enterpriseConnections.splice(state.enterpriseConnections.indexOf(connection), 1);
+      state.enterpriseResources = (state.enterpriseResources || []).filter(function keep(item) { return item.connectionId !== id; });
+      connection.deletedEnterpriseDocumentCount = cleanup.documentCount;
       record(state, {
         objectType: "enterprise_connection",
         objectId: connection.id,
@@ -3010,401 +3171,10 @@
         actionLabel: "删除数据库连接",
         before: { endpoint: connection.endpoint },
         after: null,
-        impact: "数据库连接及其保存的账号信息已删除。"
+        impact: "连接、账号配置、企业数据资源及已入库的解析结果、切片与索引已清除。"
       });
       return connection;
     });
-  }
-
-  var EXTERNAL_SOURCE_NAME_MAP = {
-    "ustr.gov": "美国贸易代表办公室",
-    "cbp.gov": "美国海关和边境保护局",
-    "wto.org": "世界贸易组织",
-    "stats.gov.cn": "国家统计局",
-    "apple.com.cn": "Apple 中国"
-  };
-
-  function externalInformationState(state) {
-    var external = state.externalInformation || (state.externalInformation = {});
-    external.sources = external.sources || [];
-    external.tags = external.tags || [];
-    return external;
-  }
-
-  function normalizeExternalSourceUrl(value) {
-    var cleaned = String(value || "").trim()
-      .replace(/^[\s\u2022*-]+/, "")
-      .replace(/^["'<]+|[>"',;]+$/g, "");
-    var schemeMatch = cleaned.match(/^([a-z][a-z0-9+.-]*):\/\//i);
-    if (schemeMatch && !/^https?$/i.test(schemeMatch[1])) return "";
-    var candidate = schemeMatch ? cleaned : "http" + "://" + cleaned.replace(/^\/\//, "");
-    var parsed;
-    try {
-      parsed = new URL(candidate);
-    } catch (error) {
-      return "";
-    }
-    if (parsed.username || parsed.password) return "";
-    var normalized = String(parsed.hostname || "").toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
-    var labels = normalized.split(".");
-    if (!normalized || normalized.length > 253 || labels.length < 2 || labels.some(function invalid(label) {
-      return !label || label.length > 63 || !/^[a-z0-9-]+$/i.test(label) || /^-|-$/.test(label);
-    })) return "";
-    if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(normalized)) return "";
-    return normalized;
-  }
-
-  function externalSourceDisplayUrl(value) {
-    var normalized = normalizeExternalSourceUrl(value);
-    return normalized ? "www." + normalized : "";
-  }
-
-  function inferExternalSourceName(url) {
-    var normalized = normalizeExternalSourceUrl(url);
-    if (EXTERNAL_SOURCE_NAME_MAP[normalized]) return EXTERNAL_SOURCE_NAME_MAP[normalized];
-    var labels = normalized.split(".");
-    var commonSecondLevel = { com: true, net: true, org: true, gov: true, edu: true, co: true };
-    var nameIndex = labels.length - 2;
-    if (labels.length > 2 && commonSecondLevel[labels[nameIndex]]) nameIndex -= 1;
-    var identity = labels[nameIndex] || labels[0] || normalized;
-    return identity.split(/[-_]/).filter(Boolean).map(function map(part) {
-      return part.length <= 3 ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1);
-    }).join(" ") || normalized;
-  }
-
-  function normalizedExternalTagName(value) {
-    return String(value || "").replace(/\s+/g, " ").trim();
-  }
-
-  function findExternalTagByName(external, name) {
-    var normalized = normalizedExternalTagName(name).toLowerCase();
-    return external.tags.find(function findTag(tag) {
-      return String(tag.name || "").toLowerCase() === normalized;
-    }) || null;
-  }
-
-  function ensureExternalTag(external, name) {
-    var displayName = normalizedExternalTagName(name);
-    if (!displayName) return null;
-    var existing = findExternalTagByName(external, displayName);
-    if (existing) return existing;
-    var tag = { id: OpsDemo.utils.id("TAG"), name: displayName, createdAt: nowIso() };
-    external.tags.push(tag);
-    return tag;
-  }
-
-  function uniqueIds(items) {
-    return (items || []).filter(function filter(id, index, list) {
-      return id && list.indexOf(id) === index;
-    });
-  }
-
-  function resolveExternalTagIds(external, ids, names, createMissing) {
-    var knownIds = uniqueIds(ids).filter(function filter(id) { return Boolean(find(external.tags, id)); });
-    (names || []).forEach(function each(name) {
-      var tag = createMissing ? ensureExternalTag(external, name) : findExternalTagByName(external, name);
-      if (tag && knownIds.indexOf(tag.id) < 0) knownIds.push(tag.id);
-    });
-    return knownIds;
-  }
-
-  function externalSourcePreview(state, text) {
-    var external = externalInformationState(state);
-    var existing = {};
-    external.sources.forEach(function each(source) {
-      var canonical = normalizeExternalSourceUrl(source.url);
-      if (canonical) existing[canonical] = source;
-    });
-    var seen = {};
-    var items = String(text || "").split(/\r?\n/).map(function map(line) { return line.trim(); }).filter(Boolean).map(function map(line) {
-      var url = normalizeExternalSourceUrl(line);
-      if (!url) return { input: line, url: "", name: "", status: "invalid", message: "网址格式无效" };
-      if (seen[url]) return { input: line, url: externalSourceDisplayUrl(url), canonicalUrl: url, name: inferExternalSourceName(url), status: "duplicate", message: "本次粘贴中重复" };
-      seen[url] = true;
-      if (existing[url]) return {
-        input: line,
-        url: externalSourceDisplayUrl(url),
-        canonicalUrl: url,
-        name: existing[url].name,
-        status: "duplicate",
-        message: existing[url].enabled ? "已存在（启用中）" : "已存在（已停用）",
-        existingId: existing[url].id
-      };
-      return { input: line, url: externalSourceDisplayUrl(url), canonicalUrl: url, name: inferExternalSourceName(url), status: "ready", message: "可添加" };
-    });
-    return {
-      items: items,
-      readyCount: items.filter(function filter(item) { return item.status === "ready"; }).length,
-      duplicateCount: items.filter(function filter(item) { return item.status === "duplicate"; }).length,
-      invalidCount: items.filter(function filter(item) { return item.status === "invalid"; }).length
-    };
-  }
-
-  function previewExternalSourceUrls(text) {
-    return externalSourcePreview(store.getState(), text);
-  }
-
-  function importExternalSources(text, payload) {
-    var input = payload || {};
-    var sourceNames = input.names || {};
-    var sourceTagIds = input.tagIdsByUrl || {};
-    var includedUrls = Array.isArray(input.includeUrls) ? uniqueIds(input.includeUrls.map(normalizeExternalSourceUrl).filter(Boolean)) : null;
-    var preview = externalSourcePreview(store.getState(), text);
-    var readyItems = preview.items.filter(function filter(item) {
-      return item.status === "ready" && (!includedUrls || includedUrls.indexOf(item.canonicalUrl) >= 0);
-    });
-    if (!readyItems.length) {
-      return {
-        created: [],
-        duplicateCount: preview.duplicateCount,
-        invalidCount: preview.invalidCount,
-        items: preview.items
-      };
-    }
-    return commit("external-sources-imported", function mutate(state) {
-      var external = externalInformationState(state);
-      var created = [];
-      readyItems.forEach(function each(item) {
-        var recognizedName = String(sourceNames[item.canonicalUrl] || item.name).trim();
-        var tagIds = resolveExternalTagIds(external, sourceTagIds[item.canonicalUrl] || [], [], false);
-        var source = {
-          id: OpsDemo.utils.id("SOURCE"),
-          name: recognizedName,
-          url: item.url,
-          canonicalUrl: item.canonicalUrl,
-          tagIds: tagIds,
-          enabled: true,
-          updatedAt: nowIso()
-        };
-        external.sources.unshift(source);
-        created.push(source);
-        record(state, {
-          objectType: "external_source",
-          objectId: source.id,
-          objectName: source.name,
-          action: "created",
-          actionLabel: "添加外部信源",
-          before: null,
-          after: { url: source.url, tagIds: source.tagIds.slice(), enabled: true },
-          impact: "信源已登记并默认启用。"
-        });
-      });
-      return {
-        created: created,
-        duplicateCount: preview.duplicateCount,
-        invalidCount: preview.invalidCount,
-        items: preview.items
-      };
-    });
-  }
-
-  function saveExternalSource(payload) {
-    var input = payload || {};
-    var external = externalInformationState(store.getState());
-    var current = input.id ? find(external.sources, input.id) : null;
-    if (input.id && !current) return null;
-    var url = normalizeExternalSourceUrl(input.url);
-    var name = String(input.name || inferExternalSourceName(url)).trim();
-    if (!name || !url) return null;
-    if (external.sources.some(function some(item) {
-      return item !== current && normalizeExternalSourceUrl(item.url) === url;
-    })) return null;
-    return commit("external-source-saved", function mutate(state) {
-      var currentExternal = externalInformationState(state);
-      var source = current || { id: OpsDemo.utils.id("SOURCE"), enabled: true, tagIds: [] };
-      var before = current ? { name: current.name, url: current.url, tagIds: (current.tagIds || []).slice(), enabled: current.enabled } : null;
-      source.name = name;
-      source.url = externalSourceDisplayUrl(url);
-      source.canonicalUrl = url;
-      if (input.tagIds != null || input.tagNames != null) {
-        source.tagIds = resolveExternalTagIds(currentExternal, input.tagIds || [], input.tagNames || [], true);
-      } else {
-        source.tagIds = source.tagIds || [];
-      }
-      source.updatedAt = nowIso();
-      if (!current) currentExternal.sources.unshift(source);
-      record(state, {
-        objectType: "external_source",
-        objectId: source.id,
-        objectName: source.name,
-        action: current ? "updated" : "created",
-        actionLabel: current ? "编辑外部信源" : "新增外部信源",
-        before: before,
-        after: { url: source.url, tagIds: source.tagIds.slice(), enabled: source.enabled },
-        impact: current ? "信源名称、网址或标签已更新。" : "信源已登记并默认启用。"
-      });
-      return source;
-    });
-  }
-
-  function updateExternalSourceTags(ids, payload) {
-    var input = payload || {};
-    var external = externalInformationState(store.getState());
-    var sourceIds = uniqueIds(ids);
-    var sources = sourceIds.map(function map(id) { return find(external.sources, id); }).filter(Boolean);
-    var mode = input.mode || "add";
-    if (["add", "remove", "replace"].indexOf(mode) < 0) return [];
-    var tagNames = (input.tagNames || []).map(normalizedExternalTagName).filter(Boolean);
-    var validTagIds = uniqueIds(input.tagIds || []).filter(function filter(id) { return Boolean(find(external.tags, id)); });
-    if (!sources.length || sources.length !== sourceIds.length) return [];
-    if (mode === "remove") {
-      validTagIds = resolveExternalTagIds(external, validTagIds, tagNames, false);
-      if (!validTagIds.length) return [];
-    }
-    if (mode === "add" && !validTagIds.length && !tagNames.length) return [];
-    return commit("external-source-tags-updated", function mutate(state) {
-      var currentExternal = externalInformationState(state);
-      var currentSources = sourceIds.map(function map(id) { return find(currentExternal.sources, id); }).filter(Boolean);
-      var tagIds = resolveExternalTagIds(currentExternal, validTagIds, tagNames, mode !== "remove");
-      currentSources.forEach(function each(source) {
-        var before = (source.tagIds || []).slice();
-        if (mode === "replace") source.tagIds = tagIds.slice();
-        if (mode === "add") source.tagIds = uniqueIds(before.concat(tagIds));
-        if (mode === "remove") source.tagIds = before.filter(function filter(id) { return tagIds.indexOf(id) < 0; });
-        source.updatedAt = nowIso();
-        record(state, {
-          objectType: "external_source",
-          objectId: source.id,
-          objectName: source.name,
-          action: "tags_updated",
-          actionLabel: mode === "remove" ? "移除标签" : mode === "replace" ? "设置标签" : "添加标签",
-          before: { tagIds: before },
-          after: { tagIds: source.tagIds.slice() },
-          impact: "信源标签已更新。"
-        });
-      });
-      return currentSources;
-    });
-  }
-
-  function createExternalTag(name) {
-    var external = externalInformationState(store.getState());
-    var displayName = normalizedExternalTagName(name);
-    if (!displayName || findExternalTagByName(external, displayName)) return null;
-    return commit("external-tag-created", function mutate(state) {
-      var currentExternal = externalInformationState(state);
-      var tag = { id: OpsDemo.utils.id("TAG"), name: displayName, createdAt: nowIso() };
-      currentExternal.tags.push(tag);
-      record(state, {
-        objectType: "external_tag",
-        objectId: tag.id,
-        objectName: tag.name,
-        action: "created",
-        actionLabel: "新增标签",
-        before: null,
-        after: { name: tag.name },
-        impact: "标签已创建，可用于信源标记。"
-      });
-      return tag;
-    }, { silentRender: true });
-  }
-
-  function renameExternalTag(id, name) {
-    var external = externalInformationState(store.getState());
-    var tag = find(external.tags, id);
-    var nextName = normalizedExternalTagName(name);
-    if (!tag || !nextName || external.tags.some(function some(item) { return item !== tag && String(item.name || "").toLowerCase() === nextName.toLowerCase(); })) return null;
-    return commit("external-tag-renamed", function mutate(state) {
-      var before = tag.name;
-      tag.name = nextName;
-      record(state, {
-        objectType: "external_tag",
-        objectId: tag.id,
-        objectName: tag.name,
-        action: "renamed",
-        actionLabel: "重命名标签",
-        before: { name: before },
-        after: { name: nextName },
-        impact: "所有信源上的标签名称已同步更新。"
-      });
-      return tag;
-    }, { silentRender: true });
-  }
-
-  function deleteExternalTag(id) {
-    var external = externalInformationState(store.getState());
-    var tag = find(external.tags, id);
-    if (!tag) return null;
-    return commit("external-tag-deleted", function mutate(state) {
-      var usageCount = 0;
-      external.sources.forEach(function each(source) {
-        var before = (source.tagIds || []).length;
-        source.tagIds = (source.tagIds || []).filter(function filter(tagId) { return tagId !== tag.id; });
-        if (source.tagIds.length !== before) {
-          usageCount += 1;
-          source.updatedAt = nowIso();
-        }
-      });
-      external.tags.splice(external.tags.indexOf(tag), 1);
-      record(state, {
-        objectType: "external_tag",
-        objectId: tag.id,
-        objectName: tag.name,
-        action: "deleted",
-        actionLabel: "删除标签",
-        before: { usageCount: usageCount },
-        after: null,
-        impact: "标签已从相关信源移除，信源本身未删除。"
-      });
-      return tag;
-    }, { silentRender: true });
-  }
-
-  function setExternalSourcesEnabled(ids, enabled) {
-    var external = externalInformationState(store.getState());
-    var sourceIds = uniqueIds(ids);
-    var sources = sourceIds.map(function map(id) { return find(external.sources, id); }).filter(Boolean);
-    if (!sources.length || sources.length !== sourceIds.length) return [];
-    return commit("external-sources-toggled", function mutate(state) {
-      var nextEnabled = Boolean(enabled);
-      sources.forEach(function each(source) {
-        var before = source.enabled;
-        source.enabled = nextEnabled;
-        source.updatedAt = nowIso();
-        record(state, {
-          objectType: "external_source",
-          objectId: source.id,
-          objectName: source.name,
-          action: nextEnabled ? "enabled" : "disabled",
-          actionLabel: nextEnabled ? "启用外部信源" : "停用外部信源",
-          before: { enabled: before },
-          after: { enabled: nextEnabled },
-          impact: nextEnabled ? "该信源可用于外部检索。" : "该信源不再用于外部检索。"
-        });
-      });
-      return sources;
-    });
-  }
-
-  function setExternalSourceEnabled(id, enabled) {
-    return setExternalSourcesEnabled([id], enabled)[0] || null;
-  }
-
-  function deleteExternalSources(ids) {
-    var external = externalInformationState(store.getState());
-    var sourceIds = uniqueIds(ids);
-    var sources = sourceIds.map(function map(id) { return find(external.sources, id); }).filter(Boolean);
-    if (!sources.length || sources.length !== sourceIds.length || sources.some(function some(source) { return source.enabled; })) return [];
-    return commit("external-sources-deleted", function mutate(state) {
-      sources.forEach(function each(source) {
-        external.sources.splice(external.sources.indexOf(source), 1);
-        record(state, {
-          objectType: "external_source",
-          objectId: source.id,
-          objectName: source.name,
-          action: "deleted",
-          actionLabel: "删除外部信源",
-          before: { url: source.url, tagIds: (source.tagIds || []).slice(), enabled: false },
-          after: null,
-          impact: "信源已从外部检索范围移除。"
-        });
-      });
-      return sources;
-    });
-  }
-
-  function deleteExternalSource(id) {
-    return deleteExternalSources([id])[0] || null;
   }
 
   function externalSearchServiceState(state) {
@@ -3459,6 +3229,8 @@
   }
 
   function saveExternalSearchService(payload) {
+    // Demo flow permits saving once required fields are complete. The silent
+    // preflight still rejects invalid endpoints, mappings, and credentials.
     var input = payload || {};
     var external = externalSearchServiceState(store.getState());
     var current = input.id ? find(external.services, input.id) : null;
@@ -3467,9 +3239,10 @@
     var endpoint = normalizeSearchServiceEndpoint(input.endpoint);
     var authType = String(input.authType || "api_key");
     var mapping = normalizeSearchServiceMapping(input.mapping, serviceType);
-    var credentialConfigured = authType === "none" || Boolean(input.credential || input.credentialConfigured || current && current.credentialConfigured);
+    var credentialConfigured = Boolean(input.credential || current && current.authType === authType && current.credentialConfigured);
+    var preflight = testExternalSearchServiceDraft(Object.assign({}, input, { credentialConfigured: credentialConfigured }));
     if (input.id && !current) return null;
-    if (!input.tested || !name || !endpoint || ["elasticsearch", "opensearch", "custom"].indexOf(serviceType) < 0 || !credentialConfigured) return null;
+    if (!preflight.passed || !name || !endpoint || ["elasticsearch", "opensearch", "custom"].indexOf(serviceType) < 0) return null;
     if (serviceType === "custom" && (!String(input.path || "").trim().startsWith("/") || !mapping.resultPath)) return null;
     if (serviceType !== "custom" && !String(input.indexName || "").trim()) return null;
     if (authType === "basic" && !String(input.username || current && current.username || "").trim()) return null;
@@ -3493,7 +3266,7 @@
       service.mapping = mapping;
       service.status = "available";
       service.statusLabel = "检索正常";
-      service.lastCheck = { at: nowIso(), result: "passed", message: "自动测试通过，连接正常且返回格式可识别。", sideEffectFree: true };
+      service.lastCheck = { at: nowIso(), result: "passed", message: preflight.message, sideEffectFree: true };
       service.updatedAt = nowIso();
       if (!current) currentExternal.services.unshift(service);
       record(state, { objectType: "external_search_service", objectId: service.id, objectName: service.name, action: current ? "updated" : "created", actionLabel: current ? "编辑检索服务" : "接入检索服务", before: before, after: { serviceType: service.serviceType, endpoint: service.endpoint, indexName: service.indexName, path: service.path, mapping: Object.assign({}, service.mapping) }, impact: "该服务可通过统一检索协议供分析应用调用。" });
@@ -3525,18 +3298,6 @@
       record(state, { objectType: "external_search_service", objectId: service.id, objectName: service.name, action: "deleted", actionLabel: "删除检索服务", before: { serviceType: service.serviceType, endpoint: service.endpoint }, after: null, impact: "分析应用不再调用该检索服务。" });
       return service;
     });
-  }
-
-  function createRollbackDraft(recordId) {
-    var state = store.getState();
-    var sourceRecord = find(state.configurationRecords, recordId) || state.configurationRecords.find(function each(item) { return item.objectId === recordId; });
-    if (!sourceRecord) return null;
-    if (sourceRecord.objectType === "knowledge_version") {
-      var restoreVersionId = sourceRecord.before && sourceRecord.before.knowledgeVersionId ? sourceRecord.before.knowledgeVersionId : sourceRecord.objectId;
-      var version = find(state.knowledgeVersions, restoreVersionId);
-      return version ? rollbackKnowledgeVersion(version.knowledgeBaseId, version.id) : null;
-    }
-    return null;
   }
 
   store.registerInitializer(function initializeApiAccessClients(state) {
@@ -3578,9 +3339,6 @@
     deleteLocalDocumentAsset: deleteLocalDocumentAsset,
     retryImportItem: retryImportItem,
     removeImportItem: removeImportItem,
-    validateKnowledgeVersion: validateKnowledgeVersion,
-    activateKnowledgeVersion: activateKnowledgeVersion,
-    rollbackKnowledgeVersion: rollbackKnowledgeVersion,
     saveRagModel: saveRagModel,
     updateRagModel: updateRagModel,
     testRagModelDraft: testRagModelDraft,
@@ -3603,9 +3361,13 @@
     revokeApiClient: deleteApiKey,
     enterpriseDatabaseEngineLabel: enterpriseDatabaseEngineLabel,
     enterpriseDefaultPort: enterpriseDefaultPort,
+    enterpriseDatabaseCatalog: enterpriseDatabaseCatalog,
+    enterpriseTargetDatabases: enterpriseTargetDatabases,
+    normalizeEnterpriseUpdatePolicy: normalizeEnterpriseUpdatePolicy,
     testEnterpriseConnectionDraft: testEnterpriseConnectionDraft,
     saveEnterpriseConnection: saveEnterpriseConnection,
     testEnterpriseConnection: testEnterpriseConnection,
+    refreshEnterpriseConnection: refreshEnterpriseConnection,
     deleteEnterpriseConnection: deleteEnterpriseConnection,
     externalSearchServiceTypeLabel: externalSearchServiceTypeLabel,
     externalSearchServiceMappingDefaults: externalSearchServiceMappingDefaults,
@@ -3613,7 +3375,6 @@
     saveExternalSearchService: saveExternalSearchService,
     testExternalSearchService: testExternalSearchService,
     deleteExternalSearchService: deleteExternalSearchService,
-    createRollbackDraft: createRollbackDraft,
     recalculateOverview: recalculateOverview
   };
 })(window.OpsDemo);

@@ -299,8 +299,6 @@
         documentCounts: {
           total: 128,
           searchable: 126,
-          firstImportProcessing: 1,
-          pendingActivation: 1,
           updatingWithPreviousVersionAvailable: 1,
         },
         openImportIssueCount: 1,
@@ -342,8 +340,6 @@
         documentCounts: {
           total: 64,
           searchable: 64,
-          firstImportProcessing: 0,
-          pendingActivation: 0,
           updatingWithPreviousVersionAvailable: 0,
         },
         openImportIssueCount: 0,
@@ -384,8 +380,6 @@
         documentCounts: {
           total: 37,
           searchable: 37,
-          firstImportProcessing: 0,
-          pendingActivation: 0,
           updatingWithPreviousVersionAvailable: 0,
         },
         openImportIssueCount: 0,
@@ -783,8 +777,6 @@
         indexSizeGb: 1.84,
         buildDurationMinutes: 38,
         ingestionProfileId: "ING-01",
-        canRollbackFrom: true,
-        canActivate: false,
       },
       {
         id: "KV-20260825-01",
@@ -800,8 +792,6 @@
         indexSizeGb: 1.88,
         buildDurationMinutes: null,
         ingestionProfileId: "ING-01",
-        canRollbackFrom: false,
-        canActivate: false,
       },
       {
         id: "KV-20260814-01",
@@ -816,8 +806,6 @@
         indexSizeGb: 1.79,
         buildDurationMinutes: 35,
         ingestionProfileId: "ING-01",
-        canRollbackFrom: true,
-        canActivate: false,
       },
       {
         id: "KV-20260820-01",
@@ -832,8 +820,6 @@
         indexSizeGb: 0.92,
         buildDurationMinutes: 24,
         ingestionProfileId: "ING-01",
-        canRollbackFrom: true,
-        canActivate: false,
       },
       {
         id: "KV-20260801-01",
@@ -848,8 +834,6 @@
         indexSizeGb: 0.84,
         buildDurationMinutes: 22,
         ingestionProfileId: "ING-01",
-        canRollbackFrom: true,
-        canActivate: false,
       },
       {
         id: "KV-20260728-01",
@@ -864,8 +848,6 @@
         indexSizeGb: 0.78,
         buildDurationMinutes: 42,
         ingestionProfileId: "ING-02",
-        canRollbackFrom: true,
-        canActivate: false,
       },
       {
         id: "KV-20260402-01",
@@ -880,8 +862,6 @@
         indexSizeGb: 0.66,
         buildDurationMinutes: 39,
         ingestionProfileId: "ING-02",
-        canRollbackFrom: true,
-        canActivate: false,
       },
     ],
 
@@ -1620,7 +1600,6 @@
           indexEngine: "OpenSearch",
           usedByKnowledgeBaseIds: [],
           editable: false,
-          canCreateRollbackDraft: true,
         },
       ],
       retrievalSettings: {
@@ -1656,6 +1635,7 @@
           name: "海岳电子交付升级机制检索测试",
           createdAt: "2026-08-25T14:16:00+08:00",
           question: "海岳电子 Q3 交付风险是否已触发合同升级机制？",
+          expectedAnswer: "已触发：供应商连续两个周期未达到承诺交付率，应启动升级审查、专项整改，并重点关注两项未闭环的交付保障事项。",
           knowledgeBaseId: "KB-001",
           knowledgeVersionId: "KV-20260821-02",
           runtimeSnapshot: {
@@ -1752,6 +1732,7 @@
           name: "东盟原产地材料检索测试",
           createdAt: "2026-08-25T13:24:00+08:00",
           question: "东盟原产地规则更新后，出口申报需要补充哪些证明材料？",
+          expectedAnswer: "需补充原产地证书、生产工序说明、主要原材料来源记录；涉及第三地转运时，还应提供全程运输单据及未进入当地贸易或消费的证明。",
           knowledgeBaseId: "KB-002",
           knowledgeVersionId: "KV-20260820-01",
           runtimeSnapshot: {
@@ -2047,7 +2028,6 @@
         before: { finalTopK: 8, relevanceThreshold: 0.6, relevanceLevel: "balanced" },
         after: { finalTopK: 10, relevanceThreshold: 0.6, relevanceLevel: "balanced" },
         impact: "后续 Query 检索使用新设置；知识库内容与索引不变。",
-        canCreateRollbackDraft: false,
       },
       {
         id: "CR-008",
@@ -2061,7 +2041,6 @@
         before: { knowledgeVersionId: "KV-20260814-01" },
         after: { knowledgeVersionId: "KV-20260821-02" },
         impact: "126 个文件的新索引开始提供检索；原索引仅作技术追溯保留。",
-        canCreateRollbackDraft: true,
       },
       {
         id: "CR-009",
@@ -2075,7 +2054,6 @@
         before: { rerankEnabled: false, finalTopK: 10 },
         after: { rerankEnabled: true, finalTopK: 10 },
         impact: "后续 Query 检索启用 Rerank；不重新解析、切片或生成向量。",
-        canCreateRollbackDraft: false,
       },
     ],
 
@@ -2194,6 +2172,12 @@
       if (sourceStage) sourceStage.value = "5 库";
     }
   }
+
+  (TEMPLATE.chunks || []).forEach(function markContentType(item) {
+    item.metadata = item.metadata || {};
+    if (!item.metadata.contentType) item.metadata.contentType = "text";
+    if (item.metadata.pageNumber == null) item.metadata.pageNumber = Math.ceil(Number(item.index || 1) / 2);
+  });
 
   TEMPLATE.documents.forEach(function markLocalUpload(item) {
     item.localAssetId = item.localAssetId || item.id;

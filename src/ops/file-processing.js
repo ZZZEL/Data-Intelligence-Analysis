@@ -15,7 +15,7 @@
     { id: "FOLDER-SUPPLIER", name: "供应商与合同", parentId: null, sortOrder: 20, system: true },
     { id: "FOLDER-POLICY", name: "贸易政策", parentId: null, sortOrder: 30, system: true },
     { id: "FOLDER-PROCUREMENT", name: "采购与运营", parentId: null, sortOrder: 40, system: true },
-    { id: "FOLDER-ENTERPRISE", name: "企业数据快照", parentId: null, sortOrder: 50, system: true },
+    { id: "FOLDER-ENTERPRISE", name: "企业数据", parentId: null, sortOrder: 50, system: true },
     { id: "FOLDER-UNCATEGORIZED", name: "未分类", parentId: null, sortOrder: 90, system: true }
   ];
   function now() { return new Date().toISOString(); }
@@ -52,12 +52,13 @@
     return result;
   }
   function record(state, action, object, impact) {
-    state.configurationRecords.unshift({ id: id("CR"), occurredAt: now(), actor: state.meta.currentUser.displayName, objectType: "file_processing", objectId: object.id, objectName: object.name || object.id, action: action, actionLabel: impact, impact: impact, canCreateRollbackDraft: false });
+    state.configurationRecords.unshift({ id: id("CR"), occurredAt: now(), actor: state.meta.currentUser.displayName, objectType: "file_processing", objectId: object.id, objectName: object.name || object.id, action: action, actionLabel: impact, impact: impact });
   }
   function withMetadata(chunks, version, parseId, setId) {
     return chunks.map(function each(chunk, index) {
-      return Object.assign({}, chunk, { index: index + 1, characterCount: String(chunk.content || "").length, metadata: Object.assign({}, chunk.metadata || {}, {
-        fileId: version.fileId, fileVersionId: version.id, parseResultId: parseId, chunkSetId: setId,
+      return Object.assign({}, chunk, { index: index + 1, characterCount: String(chunk.content || "").length, createdAt: chunk.createdAt || now(), metadata: Object.assign({}, chunk.metadata || {}, {
+        fileId: version.fileId, fileVersionId: version.id, parseResultId: parseId, chunkSetId: setId, sourceFile: version.name,
+        contentType: chunk.metadata && chunk.metadata.contentType || "text",
         sectionPath: chunk.metadata && chunk.metadata.sectionPath || "正文", prevChunkId: index ? chunks[index - 1].id : null, nextChunkId: index + 1 < chunks.length ? chunks[index + 1].id : null
       }) });
     });
@@ -71,7 +72,9 @@
           fileId: version.fileId,
           fileVersionId: version.id,
           parseResultId: parseId,
-          chunkSetId: setId
+          chunkSetId: setId,
+          sourceFile: version.name,
+          contentType: parent.metadata && parent.metadata.contentType || "text"
         })
       });
     });
@@ -235,6 +238,7 @@
 
   // One-time migration preserves existing document URLs and fixture identities.
   function initialize(state) {
+    initializeEnterpriseResources(state);
     if (state.fileAssets) {
       ensureDocumentFolders(state);
       return;
@@ -265,7 +269,7 @@
       if (parse.status === "ready" && version.id === asset.latestVersionId) asset.currentParseResultId = parse.id;
       var profile = doc.processingProfileSnapshot || kb && kb.processingProfileSnapshot || find(state.rag.ingestionProfiles, kb && kb.currentIngestionProfileId) || state.rag.ingestionProfiles[0];
       var setId = "CHUNKSET-" + doc.id;
-      var chunks = withMetadata(sampleChunks.map(function copy(chunk) { return { id: chunk.id, index: chunk.index, content: chunk.content || chunk.text || "", origin: chunk.origin || "import", metadata: clone(chunk.metadata || {}) }; }), version, parse.id, setId);
+      var chunks = withMetadata(sampleChunks.map(function copy(chunk) { return { id: chunk.id, index: chunk.index, content: chunk.content || chunk.text || "", origin: chunk.origin || "import", createdAt: chunk.createdAt, metadata: clone(chunk.metadata || {}) }; }), version, parse.id, setId);
       var parentChunks = withParentMetadata(processing.buildParentHierarchy(chunks, profile && profile.chunking, { id: fileId, knowledgeBaseId: null }), version, parse.id, setId);
       var set = { id: setId, fileId: fileId, fileVersionId: version.id, parseResultId: parse.id, configSnapshot: clone(profile), configKey: stable({ chunking: profile && profile.chunking, indexContent: profile && profile.indexContent }), chunks: chunks, parentChunks: parentChunks, status: chunks.length || doc.searchable ? "ready" : "queued", lifecycleStatus: "active", createdAt: doc.importedAt, error: null, fixture: true };
       state.chunkSets.push(set);
@@ -283,6 +287,106 @@
         }
       });
     });
+    if (!find(state.fileAssets, "FILE-DEMO-FAILED-PARSE")) {
+      var failedAsset = {
+        id: "FILE-DEMO-FAILED-PARSE",
+        name: "解析失败演示文件.pdf",
+        documentType: "演示文件",
+        sourceType: "local_upload",
+        folderId: "FOLDER-UNCATEGORIZED",
+        createdAt: "2026-09-08T09:30:00+08:00",
+        updatedAt: "2026-09-08T09:32:00+08:00",
+        latestVersionId: "FILEVER-DEMO-FAILED-PARSE"
+      };
+      var failedVersion = {
+        id: "FILEVER-DEMO-FAILED-PARSE",
+        fileId: failedAsset.id,
+        versionNumber: 1,
+        name: failedAsset.name,
+        mimeType: "application/pdf",
+        fileSizeBytes: 1572864,
+        fileSizeLabel: "1.5 MB",
+        contentHash: "fixture:demo-failed-parse",
+        hashKind: "fixture",
+        lastModified: 1787308800000,
+        sourceFile: null,
+        sourceUrl: "",
+        sourcePreview: "",
+        sourceMetadata: null,
+        createdAt: failedAsset.createdAt,
+        sourceType: "local_upload",
+        pageCount: 1
+      };
+      var failedParse = {
+        id: "PARSE-DEMO-FAILED-PARSE",
+        fileId: failedAsset.id,
+        fileVersionId: failedVersion.id,
+        configSnapshot: processing.normalizeParseConfig(),
+        configKey: "demo-failed-parse",
+        status: "failed",
+        content: "",
+        createdAt: failedAsset.createdAt,
+        error: "MinerU 解析服务响应超时",
+        fixture: true
+      };
+      state.fileAssets.unshift(failedAsset);
+      state.fileVersions.unshift(failedVersion);
+      state.parseResults.unshift(failedParse);
+      failedAsset.currentParseResultId = failedParse.id;
+      state.importBatches.unshift({
+        id: "IMP-DEMO-FAILED-PARSE",
+        knowledgeBaseId: null,
+        processingScope: "local-documents",
+        sourceType: "manual_upload",
+        createdAt: failedAsset.createdAt,
+        completedAt: failedAsset.updatedAt,
+        generation: 1,
+        previewRevision: 0,
+        ingestionProfileId: "ING-01",
+        mineruParseConfig: processing.normalizeParseConfig(),
+        processingProfileSnapshot: null,
+        processingParametersSnapshot: null,
+        inputCount: 1,
+        successCount: 0,
+        processingCount: 0,
+        failureCount: 1,
+        skippedCount: 0,
+        pendingReplacementCount: 0,
+        completionRequested: true,
+        status: "failed",
+        statusLabel: "处理失败",
+        failedStage: "parse",
+        error: "MinerU 解析服务响应超时",
+        items: [{
+          id: "IMP-ITEM-DEMO-FAILED-PARSE",
+          fileId: failedAsset.id,
+          fileVersionId: failedVersion.id,
+          parseResultId: failedParse.id,
+          chunkSetId: null,
+          fileName: failedAsset.name,
+          name: failedAsset.name,
+          fileSizeBytes: failedVersion.fileSizeBytes,
+          contentHash: failedVersion.contentHash,
+          type: failedVersion.mimeType,
+          sourcePreview: "",
+          documentId: null,
+          existingDocumentId: null,
+          operation: "create",
+          duplicateReason: null,
+          status: "failed_demo",
+          statusLabel: "MinerU 解析失败（演示）",
+          error: "MinerU 解析服务响应超时",
+          failedStep: "parse",
+          reasonCode: "MINERU_TIMEOUT",
+          reason: "MinerU 解析服务响应超时",
+          countsTowardDocumentTotal: false,
+          parseResultId: failedParse.id,
+          chunkSetId: null,
+          pipeline: [],
+          availableActions: ["retry", "remove"]
+        }]
+      });
+    }
     ensureDocumentFolders(state);
     refreshChunkSetLifecycle(state);
   }
@@ -298,36 +402,250 @@
     }));
   }
 
-  function listEnterpriseSourceObjects() {
-    return (store.getState().enterpriseConnections || []).map(function source(connection, index) {
-      var names = ["订单与库存数据快照", "供应商绩效数据快照", "物流在途数据快照"];
-      var contents = ["物料,可用库存(吨),在途数量(吨)\n电解铜,180,320\n铝锭,90,160", "供应商,准时交付率(%),统计期\n海岳电子,96.8,2026-08", "物料,运输节点,预计到达\n电解铜,在途,2026-09-08"];
-      var content = contents[index] || "字段,内容\n来源," + connection.name;
-      var bytes = utf8Size(content);
-      var name = names[index] || connection.name + "资料快照";
-      return {
-        id: "SOURCE-" + connection.id,
-        name: name,
-        fileName: name + ".csv",
-        description: connection.description,
-        connectionId: connection.id,
-        directoryId: "ENT-DIR-" + connection.id,
-        directoryName: connection.businessDomain || connection.name,
-        directoryPath: (connection.databaseName || connection.name) + "/" + (connection.businessDomain || "默认目录"),
-        sourceType: "enterprise_snapshot",
-        type: "text/csv",
-        rowCount: index === 0 ? 2 : 1,
-        fileSizeBytes: bytes,
-        fileSizeLabel: fileSize(bytes),
-        updatedAt: connection.updatedAt,
-        // The knowledge-base import picker lists an already materialized snapshot;
-        // connection health belongs to the enterprise data section, not this file list.
-        available: true,
-        content: content,
-        fixture: true
-      };
+  var ENTERPRISE_RESOURCE_CATALOG = {
+    supply_chain: [
+      { schemaName: "public", resourceName: "orders", resourceType: "table", label: "订单表", businessDomain: "订单与库存", rowCount: 2, content: "订单号,物料,数量,下单时间\nSO-2026-001,电解铜,12,2026-08-12\nSO-2026-002,铝锭,8,2026-08-18" },
+      { schemaName: "public", resourceName: "inventory", resourceType: "table", label: "库存表", businessDomain: "订单与库存", rowCount: 2, content: "物料,可用库存(吨),在途数量(吨)\n电解铜,180,320\n铝锭,90,160" },
+      { schemaName: "public", resourceName: "delivery_records", resourceType: "table", label: "交付记录表", businessDomain: "订单与库存", rowCount: 1, content: "订单号,交付状态,预计到达\nSO-2026-001,部分交付,2026-09-08" },
+      { schemaName: "analytics", resourceName: "v_recent_delayed_orders", resourceType: "view", label: "近期延迟订单视图", businessDomain: "订单与库存", rowCount: 1, content: "订单号,延迟天数,原因\nSO-2026-002,3,海运延误" }
+    ],
+    procurement_contract: [
+      { schemaName: "public", resourceName: "contracts", resourceType: "table", label: "合同表", businessDomain: "合同分析", rowCount: 1, content: "合同编号,供应商,签订日期\nCON-2026-088,海岳电子,2026-08-02" },
+      { schemaName: "public", resourceName: "contract_payments", resourceType: "table", label: "合同付款表", businessDomain: "合同分析", rowCount: 1, content: "合同编号,付款阶段,金额(万元)\nCON-2026-088,第二期,128" },
+      { schemaName: "risk", resourceName: "v_contract_exposure", resourceType: "view", label: "合同风险敞口视图", businessDomain: "合同分析", rowCount: 1, content: "合同编号,风险等级,敞口(万元)\nCON-2026-088,中,260" }
+    ],
+    contract_analytics: [
+      { schemaName: "public", resourceName: "contract_parties", resourceType: "table", label: "合同主体表", businessDomain: "合同分析", rowCount: 1, content: "主体ID,主体名称,角色\nCP-001,海岳电子,供应商" },
+      { schemaName: "public", resourceName: "contract_execution", resourceType: "table", label: "合同执行表", businessDomain: "合同分析", rowCount: 1, content: "合同编号,履约状态,完成率(%)\nCON-2026-088,履行中,68" },
+      { schemaName: "finance", resourceName: "v_contract_payment_risk", resourceType: "view", label: "合同付款风险视图", businessDomain: "合同分析", rowCount: 1, content: "合同编号,逾期金额(万元),账期\nCON-2026-088,42,60天" }
+    ],
+    procurement_analytics: [
+      { schemaName: "public", resourceName: "supplier_metrics", resourceType: "table", label: "供应商绩效表", businessDomain: "供应商绩效", rowCount: 1, content: "供应商,准时交付率(%),统计期\n海岳电子,96.8,2026-08" },
+      { schemaName: "public", resourceName: "purchase_orders", resourceType: "table", label: "采购订单表", businessDomain: "供应商绩效", rowCount: 1, content: "订单号,供应商,采购金额(万元)\nPO-2026-091,海岳电子,320" },
+      { schemaName: "analytics", resourceName: "v_supplier_risk", resourceType: "view", label: "供应商风险视图", businessDomain: "供应商绩效", rowCount: 1, content: "供应商,风险等级,主要原因\n海岳电子,低,交付稳定" }
+    ],
+    logistics_ops: [
+      { schemaName: "public", resourceName: "shipment_tracks", resourceType: "table", label: "运输轨迹表", businessDomain: "物流在途", rowCount: 1, content: "运单号,当前位置,更新时间\nSH-2026-771,上海港,2026-09-07" },
+      { schemaName: "public", resourceName: "transport_nodes", resourceType: "table", label: "运输节点表", businessDomain: "物流在途", rowCount: 1, content: "节点代码,节点名称,类型\nCNSHA,上海港,起运港" },
+      { schemaName: "reporting", resourceName: "v_in_transit_orders", resourceType: "view", label: "在途订单视图", businessDomain: "物流在途", rowCount: 1, content: "物料,运输节点,预计到达\n电解铜,在途,2026-09-08" }
+    ]
+  };
+
+  function enterpriseTargetDatabases(connection) {
+    var values = Array.isArray(connection && connection.databaseNames) && connection.databaseNames.length
+      ? connection.databaseNames
+      : [connection && connection.databaseName];
+    return Array.from(new Set(values.map(function map(value) {
+      return String(value || "").trim();
+    }).filter(Boolean)));
+  }
+
+  function stableEnterpriseSourceId(stableObjectKey) {
+    var hash = 2166136261;
+    for (var index = 0; index < stableObjectKey.length; index += 1) {
+      hash ^= stableObjectKey.charCodeAt(index);
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    return "SOURCE-" + hash.toString(16).toUpperCase().padStart(8, "0");
+  }
+
+  function enterpriseDirectoryId(kind, connectionId, databaseName, schemaName) {
+    return "ENT-" + kind + "-" + stableEnterpriseSourceId([connectionId, databaseName, schemaName || ""].join("/"));
+  }
+
+  function enterpriseResourceCatalog(connection, databaseName) {
+    var definitions = ENTERPRISE_RESOURCE_CATALOG[String(databaseName || "").trim()] || [
+      {
+        schemaName: "public", resourceName: String(databaseName || "enterprise") + "_records", resourceType: "table",
+        label: String(databaseName || "企业数据") + "记录表", businessDomain: String(databaseName || "默认目录"),
+        rowCount: 1, content: "字段,内容\n来源数据库," + String(databaseName || "enterprise") + "\n资源,table"
+      },
+      {
+        schemaName: "analytics", resourceName: "v_" + String(databaseName || "enterprise") + "_summary", resourceType: "view",
+        label: String(databaseName || "企业数据") + "汇总视图", businessDomain: String(databaseName || "默认目录"),
+        rowCount: 1, content: "指标,数值\nresource_count,2\nsource," + String(databaseName || "enterprise")
+      }
+    ];
+    return definitions.map(function clone(definition) {
+      return Object.assign({}, definition, {
+        schemaName: String(definition.schemaName || "public").trim() || "public",
+        resourceName: String(definition.resourceName || "").trim(),
+        resourceType: definition.resourceType === "view" ? "view" : "table"
+      });
+    }).filter(function valid(definition) {
+      return Boolean(definition.resourceName);
     });
   }
+
+  function enterpriseStableObjectKey(connection, databaseName, definition) {
+    return [
+      encodeURIComponent(String(connection.databaseEngine || "").trim().toLowerCase()),
+      encodeURIComponent(String(connection.host || "").trim().toLowerCase()),
+      encodeURIComponent(Number(connection.port) || 0),
+      encodeURIComponent(String(databaseName || "").trim()),
+      encodeURIComponent(String(definition.schemaName || "public").trim()),
+      encodeURIComponent(String(definition.resourceType || "table").trim()),
+      encodeURIComponent(String(definition.resourceName || "").trim())
+    ].join("/");
+  }
+
+  function enterpriseFileToken(value) {
+    return String(value || "").trim()
+      .replace(/[\\/:*?"<>|\s（）()]+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_|_$/g, "");
+  }
+
+  function enterpriseResourceFileName(definition, databaseName) {
+    return [definition.label, databaseName, definition.schemaName, definition.resourceName]
+      .map(enterpriseFileToken)
+      .filter(Boolean)
+      .join("_") + ".csv";
+  }
+
+  function enterpriseResourceName(definition) {
+    return definition.label + "（" + (definition.resourceType === "view" ? "视图" : "表") + "）";
+  }
+
+  function ensureEnterpriseResourceForObject(state, connection, databaseName, definition) {
+    state.enterpriseResources = state.enterpriseResources || [];
+    var stableObjectKey = enterpriseStableObjectKey(connection, databaseName, definition);
+    var resource = state.enterpriseResources.find(function match(item) {
+      return item.stableObjectKey === stableObjectKey;
+    });
+    if (!resource) {
+      var createdAt = connection.updatedAt || now();
+      resource = {
+        id: stableEnterpriseSourceId(stableObjectKey),
+        stableObjectKey: stableObjectKey,
+        objectType: definition.resourceType,
+        name: enterpriseResourceName(definition),
+        resourceName: definition.resourceName,
+        fileName: enterpriseResourceFileName(definition, databaseName),
+        businessDomain: definition.businessDomain || databaseName || "默认目录",
+        databaseName: databaseName,
+        schemaName: definition.schemaName || "public",
+        content: definition.content,
+        contentHash: "fixture:" + textKey(definition.content),
+        rowCount: definition.rowCount,
+        status: "ready",
+        createdAt: createdAt,
+        snapshotAt: createdAt,
+        updatedAt: createdAt
+      };
+      state.enterpriseResources.push(resource);
+    }
+    resource.connectionId = connection.id;
+    return resource;
+  }
+
+  function ensureEnterpriseResource(state, connection) {
+    if (!state || !connection) return [];
+    return enterpriseTargetDatabases(connection).reduce(function collect(result, databaseName) {
+      enterpriseResourceCatalog(connection, databaseName).forEach(function ensure(definition) {
+        result.push(ensureEnterpriseResourceForObject(state, connection, databaseName, definition));
+      });
+      return result;
+    }, []);
+  }
+
+  function initializeEnterpriseResources(state) {
+    (state.enterpriseConnections || []).forEach(function each(connection) {
+      ensureEnterpriseResource(state, connection);
+    });
+  }
+
+  function enterpriseResourceDefinitions(connection) {
+    return enterpriseTargetDatabases(connection).reduce(function collect(result, databaseName) {
+      enterpriseResourceCatalog(connection, databaseName).forEach(function append(definition) {
+        result.push({ databaseName: databaseName, definition: definition });
+      });
+      return result;
+    }, []);
+  }
+
+  function refreshEnterpriseResources(state, connection, timestamp) {
+    if (!state || !connection) return [];
+    var policy = Object.assign(
+      { updateFrequency: "daily", updateStrategy: "full_snapshot" },
+      connection.updatePolicy
+    );
+    return enterpriseResourceDefinitions(connection).map(function refresh(item) {
+      var stableObjectKey = enterpriseStableObjectKey(connection, item.databaseName, item.definition);
+      var resource = (state.enterpriseResources || []).find(function match(candidate) {
+        return candidate.stableObjectKey === stableObjectKey;
+      }) || ensureEnterpriseResourceForObject(state, connection, item.databaseName, item.definition);
+      var content = item.definition.content;
+      if (policy.updateStrategy === "incremental_snapshot") {
+        var rows = resource.content.split(/\r?\n/).filter(Boolean);
+        var incrementalRow = "增量记录," + timestamp;
+        var replaced = false;
+        rows = rows.map(function map(row) {
+          if (/^增量记录,/.test(row)) {
+            replaced = true;
+            return incrementalRow;
+          }
+          return row;
+        });
+        if (!replaced) rows.push(incrementalRow);
+        content = rows.join("\n");
+      }
+      resource.content = content;
+      resource.contentHash = "fixture:" + textKey(content);
+      resource.rowCount = Math.max(0, content.split(/\r?\n/).filter(Boolean).length - 1);
+      resource.status = "ready";
+      resource.snapshotAt = timestamp;
+      resource.updatedAt = timestamp;
+      return resource;
+    });
+  }
+
+  function listEnterpriseSourceObjects() {
+    var state = store.getState();
+    return (state.enterpriseConnections || []).reduce(function collect(result, connection) {
+      enterpriseResourceDefinitions(connection).forEach(function each(item) {
+        var databaseName = item.databaseName;
+        var definition = item.definition;
+        var stableObjectKey = enterpriseStableObjectKey(connection, databaseName, definition);
+        var resource = (state.enterpriseResources || []).find(function match(candidate) {
+          return candidate.stableObjectKey === stableObjectKey;
+        }) || ensureEnterpriseResourceForObject(state, connection, databaseName, definition);
+        var bytes = utf8Size(resource.content);
+        var databaseDirectoryId = enterpriseDirectoryId("DB", connection.id, databaseName);
+        var schemaDirectoryId = enterpriseDirectoryId("SCH", connection.id, databaseName, definition.schemaName);
+        result.push({
+          id: resource.id,
+          stableObjectKey: resource.stableObjectKey,
+          name: resource.name,
+          resourceName: resource.resourceName,
+          resourceType: resource.objectType,
+          fileName: resource.fileName,
+          description: connection.description,
+          connectionId: connection.id,
+          databaseName: databaseName,
+          schemaName: definition.schemaName,
+          databaseDirectoryId: databaseDirectoryId,
+          directoryId: schemaDirectoryId,
+          directoryName: definition.schemaName,
+          directoryPath: databaseName + "/" + definition.schemaName,
+          sourceType: "enterprise_snapshot",
+          type: "text/csv",
+          rowCount: resource.rowCount,
+          fileSizeBytes: bytes,
+          fileSizeLabel: fileSize(bytes),
+          updatedAt: resource.updatedAt,
+          snapshotAt: resource.snapshotAt || resource.updatedAt,
+          contentHash: "fixture:" + textKey(resource.content),
+          updatePolicy: Object.assign({ updateFrequency: "daily", updateStrategy: "full_snapshot" }, connection.updatePolicy),
+          available: resource.status === "ready",
+          content: resource.content,
+          fixture: true
+        });
+      });
+      return result;
+    }, []);
+  }
+
   function createVersion(state, candidate, preferredFileId, forceNewDocument) {
     // Product surfaces one current document. Internal versions remain processing
     // snapshots so a candidate can be built and published atomically.
@@ -353,16 +671,21 @@
     var isNewAsset = !asset;
     if (!asset) {
       var requestedFolder = find(state.documentFolders, candidate.targetFolderId);
-      asset = { id: resolvedFileId || id("FILE"), name: candidate.name, documentType: candidate.sourceObjectId ? "数据快照" : "文档", sourceType: candidate.sourceObjectId ? "enterprise_snapshot" : "local_upload", folderId: candidate.sourceObjectId ? "FOLDER-ENTERPRISE" : requestedFolder ? requestedFolder.id : "FOLDER-UNCATEGORIZED", createdAt: now(), updatedAt: now(), latestVersionId: null };
+      asset = { id: resolvedFileId || id("FILE"), name: candidate.name, documentType: candidate.sourceObjectId ? "企业数据" : "文档", sourceType: candidate.sourceObjectId ? "enterprise_snapshot" : "local_upload", folderId: candidate.sourceObjectId ? "FOLDER-ENTERPRISE" : requestedFolder ? requestedFolder.id : "FOLDER-UNCATEGORIZED", createdAt: now(), updatedAt: now(), latestVersionId: null };
       state.fileAssets.unshift(asset);
     }
     var version = { id: id("FILEVER"), fileId: asset.id, name: candidate.name, contentHash: candidate.contentHash, hashKind: String(candidate.contentHash).startsWith("sha256:") ? "sha256" : "fixture", mimeType: candidate.type, fileSizeBytes: candidate.size, fileSizeLabel: fileSize(candidate.size), lastModified: candidate.lastModified || 0, sourceFile: candidate.sourceFile || null, sourceUrl: candidate.sourceUrl || "", sourcePreview: candidate.sourcePreview || "", sourceType: asset.sourceType, sourceObjectId: candidate.sourceObjectId || null, sourceUpdatedAt: candidate.sourceUpdatedAt || null, createdAt: now(), pageCount: 1 };
     version.versionNumber = state.fileVersions.filter(function own(v) { return v.fileId === asset.id; }).length + 1;
     version.sourceMetadata = candidate.sourceObjectId ? {
       sourceObjectId: candidate.sourceObjectId,
+      stableObjectKey: candidate.stableObjectKey || null,
       connectionId: candidate.connectionId || null,
       directoryId: candidate.sourceDirectoryId || candidate.connectionId || null,
       directoryPath: candidate.sourceDirectoryPath || null,
+      databaseName: candidate.databaseName || null,
+      schemaName: candidate.schemaName || null,
+      resourceName: candidate.resourceName || null,
+      resourceType: candidate.resourceType || null,
       fileName: candidate.name,
       snapshotAt: candidate.sourceUpdatedAt || version.createdAt
     } : null;
@@ -409,6 +732,11 @@
         connectionId: source.connectionId,
         sourceDirectoryId: source.directoryId,
         sourceDirectoryPath: source.directoryPath,
+        databaseName: source.databaseName,
+        schemaName: source.schemaName,
+        resourceName: source.resourceName,
+        resourceType: source.resourceType,
+        stableObjectKey: source.stableObjectKey,
         targetFolderId: "FOLDER-ENTERPRISE"
       });
     });
@@ -864,7 +1192,7 @@
       }
     });
     var previous = find(state.knowledgeVersions, kb.currentKnowledgeVersionId); if (previous) previous.status = "historical";
-    var index = { id: id("KV"), knowledgeBaseId: kb.id, status: "effective", statusLabel: "索引可用", progress: 100, documentCount: kb.documentCounts.total, chunkCount: state.chunks.filter(function own(chunk) { return chunk.knowledgeBaseId === kb.id; }).length, createdAt: now(), sourceType: "import_batch", sourceBatchIds: [batch.id], canRollbackFrom: true };
+    var index = { id: id("KV"), knowledgeBaseId: kb.id, status: "effective", statusLabel: "索引可用", progress: 100, documentCount: kb.documentCounts.total, chunkCount: state.chunks.filter(function own(chunk) { return chunk.knowledgeBaseId === kb.id; }).length, createdAt: now(), sourceType: "import_batch", sourceBatchIds: [batch.id] };
     state.knowledgeVersions.unshift(index); kb.currentKnowledgeVersionId = index.id; batch.resultingKnowledgeVersionId = index.id; kb.contentUpdatedAt = now(); kb.updatedAt = now(); kb.retrievalStatus = kb.enabled ? "available" : "disabled"; kb.retrievalStatusLabel = kb.enabled ? "可检索" : "已关闭";
   }
 
@@ -890,7 +1218,17 @@
       var activeParse = activeItem && find(state.parseResults, activeItem.parseResultId);
       stage = activeBatch && activeBatch.status === "failed" && activeBatch.failedStage === "parse" ? "failed" : activeParse && activeParse.status === "ready" ? "parsed" : activeBatch ? "parsing" : parse && parse.status === "failed" ? "failed" : parse && parse.status === "ready" ? "parsed" : "uploaded";
     }
-    return { asset: asset, version: version, parseResult: parse || null, chunkSet: set || null, references: references, processingState: stage, versions: state.fileVersions.filter(function match(v) { return v.fileId === fileId; }) };
+    var activeBatch = (state.importBatches || []).find(function processing(batch) {
+      return batchRetainsSnapshots(batch) && (batch.items || []).some(function own(item) { return !item.deleted && item.fileId === fileId; });
+    });
+    var activeItem = activeBatch && activeBatch.items.find(function own(item) { return !item.deleted && item.fileId === fileId; });
+    var processingError = stage === "failed"
+      ? activeBatch && activeBatch.error || activeItem && activeItem.error || parse && parse.error || null
+      : null;
+    var processingFailedStage = stage === "failed"
+      ? activeBatch && activeBatch.failedStage || activeItem && (activeItem.failedStep || activeItem.failedStage) || "parse"
+      : null;
+    return { asset: asset, version: version, parseResult: parse || null, chunkSet: set || null, references: references, processingState: stage, processingError: processingError, processingFailedStage: processingFailedStage, versions: state.fileVersions.filter(function match(v) { return v.fileId === fileId; }) };
   }
   function getImportPreview(batchId, options) {
     var state = store.getState(); var batch = find(state.importBatches, batchId); if (!batch) return null;
@@ -1128,6 +1466,9 @@
     });
     return result;
   }
+
+  OpsDemo.core.processing.ensureEnterpriseResource = ensureEnterpriseResource;
+  OpsDemo.core.processing.refreshEnterpriseResources = refreshEnterpriseResources;
 
   Object.assign(actions, {
     prepareUploadFiles: prepareUploadFiles,

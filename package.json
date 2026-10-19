@@ -4,7 +4,7 @@
   "private": true,
   "description": "数据智能分析工具统一 Demo 项目",
   "scripts": {
-    "serve": "python3 -m http.server 8780 --bind 127.0.0.1 --directory .",
+    "serve": "python3 serve.py",
     "test": "node tests/project-check.mjs",
     "test:client": "node tests/client/static-check.mjs && node tests/client/flow-check.mjs && node tests/client/response-state-check.mjs",
     "test:ops": "node tests/ops/static-check.mjs && node tests/ops/document-folders-check.mjs && node tests/ops/api-access-check.mjs && node tests/ops/closed-loop-check.mjs && node tests/ops/rag-lifecycle-check.mjs"

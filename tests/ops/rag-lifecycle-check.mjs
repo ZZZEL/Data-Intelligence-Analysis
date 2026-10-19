@@ -491,43 +491,104 @@ assert.ok(state.processingJobs.filter((job) => job.batchId === resurrectionBatch
 
 const sources = actions.listEnterpriseSourceObjects();
 assert.ok(sources.length > 0, "企业数据选择器应提供可追踪的演示快照对象");
-assert.ok(sources.every((source) => source.directoryId === `ENT-DIR-${source.connectionId}` && source.directoryPath.includes("/") && source.fileName.endsWith(".csv")), "企业快照应在连接下使用独立业务文件目录");
+assert.ok(sources.every((source) => source.directoryId.startsWith("ENT-SCH-") && source.databaseDirectoryId.startsWith("ENT-DB-") && source.directoryPath.split("/").length === 2 && source.fileName.endsWith(".csv") && ["table", "view"].includes(source.resourceType)), "企业快照应归入数据库 / Schema 目录并明确到表或视图");
 const enterpriseBatch = actions.startKnowledgeImport(failureKb.id, { sourceObjects: [sources[0].id] });
 assert.ok(enterpriseBatch, "企业资料与文件共用入库处理批次");
 const enterpriseVersion = state.fileVersions.find((version) => version.id === enterpriseBatch.items[0].fileVersionId);
 const enterpriseAsset = state.fileAssets.find((item) => item.id === enterpriseVersion.fileId);
 assert.equal(enterpriseAsset.sourceType, "enterprise_snapshot", "统一选择体验必须保留企业快照来源类型");
 assert.ok(enterpriseVersion.sourceMetadata || enterpriseAsset.sourceMetadata, "企业资料应保留连接/数据表/快照等来源信息");
+assert.equal(enterpriseVersion.sourceMetadata.stableObjectKey, sources[0].stableObjectKey, "企业快照入库后应持久化稳定业务 key");
 assert.equal(enterpriseVersion.sourceMetadata.directoryPath, sources[0].directoryPath, "企业快照入库后应保留来源文件目录");
 assert.equal(enterpriseVersion.sourceMetadata.fileName, sources[0].fileName, "企业快照入库后应保留目录中的文件名");
+assert.equal(enterpriseVersion.sourceMetadata.databaseName, sources[0].databaseName, "企业快照入库后应保留来源数据库");
+assert.equal(enterpriseVersion.sourceMetadata.schemaName, sources[0].schemaName, "企业快照入库后应保留来源 Schema");
+assert.equal(enterpriseVersion.sourceMetadata.resourceName, sources[0].resourceName, "企业快照入库后应保留来源表 / 视图名");
+assert.equal(enterpriseVersion.sourceMetadata.resourceType, sources[0].resourceType, "企业快照入库后应保留资源类型");
 await processBatch(enterpriseBatch);
 assert.equal(referenceFor(enterpriseBatch).sourceChannel, "enterprise", "企业数据导入应记录企业数据来源");
 const enterpriseVersionCount = state.fileVersions.filter((version) => version.fileId === enterpriseAsset.id).length;
 const enterpriseConnection = state.enterpriseConnections.find((connection) => connection.id === sources[0].connectionId);
 enterpriseConnection.updatedAt = new Date(Date.now() + 60000).toISOString();
-const refreshedSource = actions.listEnterpriseSourceObjects().find((sourceObject) => sourceObject.id === sources[0].id);
-assert.notEqual(refreshedSource.updatedAt, sources[0].updatedAt, "测试前提：仅来源更新时间发生变化");
-const unchangedEnterpriseBatch = actions.startKnowledgeImport(failureKb.id, { sourceObjects: [refreshedSource.id] });
+const connectionRefreshedSource = actions.listEnterpriseSourceObjects().find((sourceObject) => sourceObject.id === sources[0].id);
+assert.equal(connectionRefreshedSource.updatedAt, sources[0].updatedAt, "仅连接配置更新时间变化不得改变企业快照时间");
+assert.ok(state.enterpriseResources.some((resource) => resource.id === sources[0].id && resource.stableObjectKey === sources[0].stableObjectKey && ["table", "view"].includes(resource.objectType)), "企业表 / 视图快照应持久化稳定业务身份");
+const unchangedEnterpriseBatch = actions.startKnowledgeImport(failureKb.id, { sourceObjects: [connectionRefreshedSource.id] });
 assert.equal(unchangedEnterpriseBatch.items[0].fileId, enterpriseAsset.id, "企业来源按稳定 source_object_key 复用 document_id");
-assert.equal(unchangedEnterpriseBatch.items[0].fileVersionId, enterpriseVersion.id, "updatedAt 不参与内容 hash，正文未变时复用当前快照");
+assert.equal(unchangedEnterpriseBatch.items[0].fileVersionId, enterpriseVersion.id, "连接更新时间不参与内容 hash，正文未变时复用当前快照");
 assert.equal(unchangedEnterpriseBatch.skippedCount, 1, "企业正文未变化时跳过解析、切块与索引");
-assert.equal(state.fileVersions.filter((version) => version.fileId === enterpriseAsset.id).length, enterpriseVersionCount, "时间戳变化不能制造伪版本");
-assert.ok(state.enterpriseConnections.length > 1, "企业来源内容更新测试至少需要两个演示连接");
+assert.equal(state.fileVersions.filter((version) => version.fileId === enterpriseAsset.id).length, enterpriseVersionCount, "连接更新时间变化不能制造伪版本");
+assert.ok(state.enterpriseConnections.length > 1, "企业来源顺序稳定性测试至少需要两个演示连接");
 const sourceConnectionIndex = state.enterpriseConnections.findIndex((connection) => connection.id === sources[0].connectionId);
 const swapIndex = sourceConnectionIndex === 0 ? 1 : 0;
 [state.enterpriseConnections[sourceConnectionIndex], state.enterpriseConnections[swapIndex]] = [state.enterpriseConnections[swapIndex], state.enterpriseConnections[sourceConnectionIndex]];
+const reorderedSource = actions.listEnterpriseSourceObjects().find((sourceObject) => sourceObject.id === sources[0].id);
+assert.equal(reorderedSource.stableObjectKey, sources[0].stableObjectKey, "连接重排不得改变企业快照稳定身份");
+assert.equal(reorderedSource.content, sources[0].content, "连接重排不得改变未更新快照的内容");
+[state.enterpriseConnections[sourceConnectionIndex], state.enterpriseConnections[swapIndex]] = [state.enterpriseConnections[swapIndex], state.enterpriseConnections[sourceConnectionIndex]];
+
+const unchangedConnectionSync = actions.refreshEnterpriseConnection(enterpriseConnection.id);
+assert.equal(unchangedConnectionSync.lastSyncResult, "unchanged", "内容 hash 未变化时同步结果应为无更新");
+assert.equal(unchangedConnectionSync.syncStatus, "idle", "内容 hash 未变化时不应触发知识库索引重建");
+assert.equal(state.fileVersions.filter((version) => version.fileId === enterpriseAsset.id).length, enterpriseVersionCount, "无内容变化不得制造企业数据新版本");
+
+enterpriseConnection.updatePolicy = { updateFrequency: "hourly", updateStrategy: "incremental_snapshot" };
+const autoSyncConnection = actions.refreshEnterpriseConnection(enterpriseConnection.id);
+assert.equal(autoSyncConnection.syncStatus, "running", "被知识库引用的企业资源内容变化时应自动进入同步中");
+await sleep(3500);
+const autoSyncResource = state.enterpriseResources.find((resource) => resource.id === sources[0].id);
+const autoSyncReference = state.documents.find((document) => document.fileId === enterpriseAsset.id && document.knowledgeBaseId === failureKb.id);
+assert.ok(autoSyncResource.content.includes("增量记录,"), "自动同步应按增量策略读取到新内容");
+assert.equal(enterpriseConnection.syncStatus, "idle", "自动同步完成后应回到正常状态");
+assert.equal(enterpriseConnection.lastSyncResult, "updated", "自动同步完成后应记录已更新");
+assert.notEqual(autoSyncReference.fileVersionId, enterpriseVersion.id, "企业数据内容变化应自动生成新内容版本");
+assert.equal(autoSyncReference.contentHash, autoSyncResource.contentHash, "知识库当前引用应切换到企业数据新版本");
+assert.equal(autoSyncReference.sourceMetadata.stableObjectKey, sources[0].stableObjectKey, "自动更新不得改变企业资源稳定身份");
+
+const changedResource = state.enterpriseResources.find((resource) => resource.id === sources[0].id);
+changedResource.content += "\n电解铜,更新后库存,170";
+changedResource.updatedAt = new Date(Date.now() + 120000).toISOString();
 const changedSource = actions.listEnterpriseSourceObjects().find((sourceObject) => sourceObject.id === sources[0].id);
 assert.ok(changedSource && changedSource.content !== sources[0].content, "演示来源内容变化应保持 source_object_key 不变");
 const changedEnterpriseBatch = actions.startKnowledgeImport(failureKb.id, { sourceObjects: [changedSource.id], deferred: true });
 assert.equal(changedEnterpriseBatch.items[0].operation, "replace", "source_object_key 相同但内容变化时应进入当前文档更新");
 assert.equal(changedEnterpriseBatch.items[0].fileId, enterpriseAsset.id, "企业来源内容更新不得创建第二个文档身份");
 const enterpriseReference = referenceFor(enterpriseBatch);
-assert.equal(enterpriseReference.fileVersionId, enterpriseVersion.id, "候选处理完成前应继续使用企业来源的当前内容");
+const versionBeforeManualUpdate = enterpriseReference.fileVersionId;
+assert.equal(enterpriseReference.fileVersionId, autoSyncReference.fileVersionId, "候选处理完成前应继续使用企业来源的当前内容");
 assert.ok(actions.confirmDocumentReplacement(changedEnterpriseBatch.id, changedEnterpriseBatch.items[0].id));
 await processBatch(changedEnterpriseBatch);
 assert.equal(changedEnterpriseBatch.items[0].documentId, enterpriseReference.id, "企业来源更新应沿用当前知识库引用");
-assert.notEqual(enterpriseReference.fileVersionId, enterpriseVersion.id, "企业来源更新成功后才切换当前内容");
+assert.notEqual(enterpriseReference.fileVersionId, versionBeforeManualUpdate, "企业来源更新成功后才切换当前内容");
 [state.enterpriseConnections[sourceConnectionIndex], state.enterpriseConnections[swapIndex]] = [state.enterpriseConnections[swapIndex], state.enterpriseConnections[sourceConnectionIndex]];
+
+const cascadeConnection = actions.saveEnterpriseConnection({
+  name: "删除级联验证连接",
+  databaseEngine: "postgresql",
+  host: "cascade-demo.internal",
+  port: 5432,
+  databaseName: "contract_analytics",
+  username: "cascade_ro",
+  password: "cascade-secret",
+  tested: false,
+});
+assert.ok(cascadeConnection, "删除级联验证应先创建企业连接");
+const cascadeSource = actions.listEnterpriseSourceObjects().find((sourceObject) => sourceObject.connectionId === cascadeConnection.id);
+assert.ok(cascadeSource, "删除级联验证应生成企业表 / 视图快照");
+const cascadeCountBefore = failureKb.documentCounts.total;
+const cascadeBatch = actions.startKnowledgeImport(failureKb.id, { sourceObjects: [cascadeSource.id] });
+await processBatch(cascadeBatch);
+const cascadeDocument = referenceFor(cascadeBatch);
+const cascadeAsset = state.fileAssets.find((assetItem) => assetItem.id === cascadeDocument.fileId);
+assert.ok(cascadeDocument && cascadeAsset, "删除级联验证应先形成知识库引用和企业文件");
+assert.equal(failureKb.documentCounts.total, cascadeCountBefore + 1, "企业快照入库后应计入知识库");
+assert.equal(actions.deleteEnterpriseConnection(cascadeConnection.id), cascadeConnection, "删除企业连接应成功");
+assert.equal(state.documents.includes(cascadeDocument), false, "删除连接应移除知识库中的企业数据文档引用");
+assert.equal(state.fileAssets.includes(cascadeAsset), false, "删除连接应移除企业数据文件资产");
+assert.equal(state.fileVersions.some((version) => version.fileId === cascadeAsset.id), false, "删除连接应移除企业数据文件版本");
+assert.equal(state.chunks.some((chunk) => chunk.documentId === cascadeDocument.id), false, "删除连接应移除企业数据切片");
+assert.equal(state.enterpriseResources.some((resource) => resource.id === cascadeSource.id), false, "删除连接应移除企业数据快照资源");
+assert.equal(failureKb.documentCounts.total, cascadeCountBefore, "删除连接后知识库文档总数应回落");
 
 console.log("✓ 分阶段失败与重试、独立预览、取消、任务代际隔离及企业快照来源");
 

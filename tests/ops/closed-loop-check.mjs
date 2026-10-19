@@ -54,11 +54,10 @@ assert.doesNotMatch(knowledgeListHtml, /page-header__toolbar|data-kb-status|检�
 assert.equal(state.knowledgeBases[0].id, "KB-SCM-2024-V1", "供应链演示知识库应排在知识库列表第一位");
 assert.ok(knowledgeListHtml.indexOf("KB-SCM-2024-V1") < knowledgeListHtml.indexOf("KB-001"), "供应链演示知识库在页面中应先于原有知识库展示");
 assert.match(knowledgeListHtml, /data-kb-open="KB-SCM-2024-V1"[^>]*>全球供应链管理知识库<\/[^>]+>/, "供应链演示知识库名称应可点击进入详情");
-assert.match(knowledgeListHtml, /data-kb-open="KB-001"[^>]*>详情<[\s\S]*data-kb-edit="KB-001"[^>]*>编辑<[\s\S]*data-kb-test="KB-001"[^>]*>测试<[\s\S]*data-kb-delete="KB-001"/, "知识库列表操作应按详情、编辑、测试、删除排列");
+assert.match(knowledgeListHtml, /data-kb-open="KB-001"[^>]*>详情<[\s\S]*data-kb-edit="KB-001"[^>]*>编辑<[\s\S]*data-kb-delete="KB-001"/, "知识库列表操作应按详情、编辑、删除排列");
+assert.match(knowledgeListHtml, /data-kb-open="KB-001"[^>]*>详情</, "列表应保留明确的详情文字入口");
 assert.match(knowledgeListHtml, /data-kb-open="KB-001"[^>]*>供应商合规与合同库<\/[^>]+>/, "知识库名称本身应可点击进入详情");
-const closedKnowledgeTestAction = knowledgeListHtml.match(/<button[^>]*data-kb-test="KB-003"[^>]*>/)?.[0];
-assert.ok(closedKnowledgeTestAction, "关闭检索的知识库应保留测试入口");
-assert.doesNotMatch(closedKnowledgeTestAction, /disabled/, "测试入口不应受知识库检索开关限制");
+assert.doesNotMatch(knowledgeListHtml, /data-kb-test/, "知识库列表不应保留测试快捷操作，测试入口收敛到检索测试工作区、知识库详情与检索配置");
 const enabledKnowledgeDeleteAction = knowledgeListHtml.match(/<button[^>]*data-kb-delete="KB-001"[^>]*>/)?.[0];
 assert.match(enabledKnowledgeDeleteAction || "", /disabled[^>]*title="请先关闭检索再删除"|title="请先关闭检索再删除"[^>]*disabled/, "检索已启用时应禁止删除并说明前置操作");
 const closedKnowledgeDeleteAction = knowledgeListHtml.match(/<button[^>]*data-kb-delete="KB-003"[^>]*>/)?.[0];
@@ -83,7 +82,7 @@ assert.doesNotMatch(localDocumentsHtml, /data-local-folder-rename|data-document-
 assert.ok(localDocumentsHtml.indexOf("document-directory-sidebar__toolbar") < localDocumentsHtml.indexOf("data-local-directory-tree-host"), "当前目录操作应位于左侧目录树上方");
 assert.match(localDocumentsHtml, /document-directory-context[^>]*>[\s\S]*document-directory-breadcrumb/, "右侧目录标题应使用层级路径");
 assert.doesNotMatch(localDocumentsHtml, /document-directory-context__actions/, "右侧目录路径区域不应保留目录操作");
-assert.match(localDocumentsHtml, /<th>文档<\/th><th>状态<\/th><th>知识库引用<\/th><th>大小<\/th><th>上传时间<\/th><th>操作<\/th>/, "文档列表应提供统一状态和知识库引用");
+assert.match(localDocumentsHtml, /<th>文档<\/th><th>状态<\/th><th>知识库引用<\/th><th>大小<\/th><th>更新时间<\/th><th>操作<\/th>/, "文档列表应提供统一状态和知识库引用");
 assert.doesNotMatch(localDocumentsHtml, /<th>[\s\S]*存储|<th>处理结果<\/th>|file-storage-(?:heading|status)/, "存储是后端资产语义，不应占用文档列表列");
 assert.match(localDocumentsHtml, /aria-label="筛选状态"/, "文档列表的状态筛选应使用统一状态口径");
 assert.doesNotMatch(localDocumentsHtml, /所属知识库|data-local-document-kb|供应商合规与合同库|KB-001/, "本地文档列表不得把文件绑定到某一个知识库");
@@ -93,16 +92,26 @@ assert.match(localDocumentsHtml, /data-local-document-preview="SCM-DOC-01"[^>]*>
 assert.doesNotMatch(localDocumentsHtml, /<div class="table-secondary">(?:SCM-DOC|DOC)-\d+/, "文档管理列表不应在文件名下方展示文档 ID");
 assert.doesNotMatch(localDocumentsHtml, /data-local-document-download|>下载<\/button>/, "文档列表不应提供原文件下载快捷操作");
 const localUploadHtml = pages.localDocuments.render({ name: "local-documents", id: "upload", query: { step: "upload" } }, state);
+assert.match(localUploadHtml, /accept="\.pdf,\.doc,\.docx,\.ppt,\.pptx,\.xls,\.xlsx,\.md,\.json,\.csv"/, "运营端文档上传应支持 PDF、Office、Markdown、JSON 与 CSV");
+assert.match(localUploadHtml, /支持 PDF、Word、PPT、Excel、Markdown、JSON 和 CSV，可多选/, "上传区域应展示当前支持的文件格式");
+assert.doesNotMatch(localUploadHtml, /\.png|\.jpe?g|\.webp|\.txt|图片、Word|Excel 和 TXT/, "运营端文档上传不应继续接受图片或 TXT");
 assert.match(localUploadHtml, /local-upload-stack[\s\S]*<details class="[^"]*\bupload-folder-picker\b[^"]*" data-upload-folder-picker>[\s\S]*upload-folder-picker__summary[\s\S]*目标位置[\s\S]*data-directory-tree="local-upload-target"[\s\S]*<\/details>[\s\S]*<label class="file-drop"/, "上传文档页应在上传区域上方使用可折叠的目标位置目录树");
 assert.doesNotMatch(localUploadHtml, /<details[^>]*data-upload-folder-picker[^>]*\sopen(?:\s|=|>)/, "目标位置目录树应默认收起");
 assert.match(localUploadHtml, /data-directory-node="FOLDER-UNCATEGORIZED"[^>]*class="[^"]*is-active|class="[^"]*is-active[^"]*"[^>]*data-directory-node="FOLDER-UNCATEGORIZED"/, "从根目录上传时应默认选择未分类");
 assert.doesNotMatch(localUploadHtml, /data-directory-item=/, "上传目标目录树应只展示文件夹层级");
 assert.match(localDocumentsHtml, /<time class="file-asset-date"[^>]*>\d{4}-\d{2}-\d{2} \d{2}:\d{2}<\/time>/, "文档管理的上传日期与时间应保持单行展示");
-assert.doesNotMatch(localDocumentsHtml, /<time class="file-asset-date"[^>]*><span>/, "上传时间不应再拆成上下两行");
+assert.doesNotMatch(localDocumentsHtml, /<time class="file-asset-date"[^>]*><span>/, "更新时间不应再拆成上下两行");
 assert.ok(localDocumentsHtml.indexOf("01_供应链管理基础理论手册.docx") < localDocumentsHtml.indexOf("海岳电子供应商框架合同.pdf"), "供应链演示文件应排在文档管理前 10 位");
 assert.match(localDocumentsHtml, /海岳电子供应商框架合同\.pdf[\s\S]*data-local-document-preview="DOC-001"[\s\S]*data-local-document-delete="DOC-001"/, "本地文档页应汇总本地原文件，并提供预览和删除闭环");
 assert.equal((localDocumentsHtml.match(/data-local-document-id="DOC-004"/g) || []).length, 1, "同一本地原文件即使进入多个知识库，列表也只能出现一行");
-assert.match(localDocumentsHtml, /当前目录 18 个文档/, "全部文档目录应按原文件去重，而不是按知识库处理实例计数");
+assert.match(localDocumentsHtml, /当前目录 19 个文档/, "全部文档目录应按原文件去重，而不是按知识库处理实例计数");
+assert.match(localDocumentsHtml, /解析失败演示文件\.pdf[\s\S]*data-local-document-preview="FILE-DEMO-FAILED-PARSE"/, "文档管理应展示一条稳定可见的解析失败演示文件");
+assert.match(localDocumentsHtml, /解析失败演示文件\.pdf[\s\S]*file-status-info__icon[\s\S]*阶段：解析[\s\S]*原因：MinerU 解析服务响应超时/, "文档管理列表状态旁应提供悬浮信息图标，并使用固定阶段/原因格式");
+assert.doesNotMatch(localDocumentsHtml, /file-status-info__trigger|data-local-file-status-info/, "失败信息图标不应做成可点击按钮");
+const failedDocumentDetailHtml = pages.localDocuments.render({ name: "local-documents", id: "FILE-DEMO-FAILED-PARSE" }, state);
+assert.match(failedDocumentDetailHtml, /文件状态<\/dt><dd data-local-file-status>[\s\S]*status--danger[\s\S]*file-status-info__icon/, "解析失败文件的状态旁应提供失败信息图标");
+assert.match(failedDocumentDetailHtml, /阶段：解析[\s\S]*原因：MinerU 解析服务响应超时/, "失败信息提示应使用固定阶段/原因格式");
+assert.match(fs.readFileSync(path.join(demoRoot, "src/ops/knowledge.js"), "utf8"), /覆盖更新会保留稳定文档 ID，并重新解析当前原文件；已引用该文件的知识库不会自动更新/, "文档中心同名冲突应采用覆盖更新语义，且不自动更新知识库引用");
 assert.match(localDocumentsHtml, /data-local-document-pagination[\s\S]*data-local-document-page="previous"[\s\S]*data-local-document-page-status[\s\S]*data-local-document-page="next"/, "文档管理页脚右侧应提供实际分页控件");
 assert.doesNotMatch(localDocumentsHtml, /原文件独立保存，各知识库按需引用|local-documents__scope/, "文档管理页脚不应重复展示公共池职责说明");
 assert.doesNotMatch(localDocumentsHtml, /data-local-document-join|data-local-documents-join-selected|加入知识库|添加到知识库|data-local-document-select|批量操作/, "文档管理不得提供单个或批量加入知识库入口");
@@ -176,7 +185,12 @@ assert.match(localPreviewKb1, /knowledge-preview-toolbar__result[\s\S]*知识库
 assert.match(localPreviewKb1, /<h1 class="page-header__title">海岳电子质量协议\.pdf<\/h1>/, "文档预览页标题应直接使用当前文件名");
 assert.doesNotMatch(localPreviewKb1, /data-local-preview-tab|>解析结果<\/button>|file-asset-parsed/, "文档预览不应向用户展示解析器中间结果");
 assert.match(localPreviewKb1, /<section class="file-asset-details" aria-label="文件信息">/, "文件信息应默认完整展示且不使用折叠标题");
-assert.match(localPreviewKb1, /<dt>文件 ID<\/dt>[\s\S]*<dt>上传时间<\/dt>[\s\S]*<dt>文件状态<\/dt>[\s\S]*<dt>文件路径<\/dt>/, "文件详情信息应展示文件 ID、上传时间、文件状态和文件路径");
+assert.match(localPreviewKb1, /<dt>文件 ID<\/dt>[\s\S]*<dt>更新时间<\/dt>[\s\S]*<dt>文件大小<\/dt>[\s\S]*<dt>文件状态<\/dt>[\s\S]*<dt>文件路径<\/dt>/, "文件详情信息应展示文件 ID、更新时间、文件大小、文件状态和文件路径");
+const localPreviewFromFolder = pages.localDocuments.render({ name: "local-documents", id: "DOC-004", query: { knowledgeBaseId: "KB-001", folder: "FOLDER-SUPPLIER" } }, state);
+assert.match(localPreviewFromFolder, /href="#\/local-documents\?folder=FOLDER-SUPPLIER"/, "从文件夹进入文件详情后返回应保留来源文件夹");
+assert.match(localPreviewFromFolder, /data-local-preview-kb-open="KB-001"[^>]*>[\s\S]*?前往知识库/, "文件详情页应能从当前知识库引用进入对应知识库");
+assert.match(localPreviewFromFolder, /data-local-preview-download[\s\S]*data-local-document-move="DOC-004"[\s\S]*data-local-document-delete-detail="DOC-004"[^>]*>[\s\S]*?删除<\/button>/, "文件详情页应直接提供下载、移动和删除操作");
+assert.doesNotMatch(localPreviewFromFolder, /data-local-document-menu/, "文件详情页不应仅为删除保留更多菜单");
 const localFilePathHtml = localPreviewKb1.match(/<dd class="file-asset-details__path">([\s\S]*?)<\/dd>/)?.[1] || "";
 assert.match(localFilePathHtml, /全部文档[\s\S]*供应商与合同[\s\S]*海岳电子质量协议\.pdf/, "文件路径应从根目录展示至当前文件名");
 assert.doesNotMatch(localFilePathHtml, /<button|data-directory-select|href=/, "文件路径应为只读展示，不提供跳转操作");
@@ -209,11 +223,15 @@ assert.equal((enterpriseConnectionsHtml.match(/data-enterprise-card/g) || []).le
 assert.doesNotMatch(enterpriseConnectionsHtml, /<table class="data-table data-access-table"|<th>连接名称<\/th>/, "数据库卡片页不应继续保留旧连接表格");
 assert.doesNotMatch(enterpriseConnectionsHtml, /<th>(?:授权范围|Schema|表\/视图)<\/th>/, "数据库连接列表不应提前展示导入阶段的 Schema 或资源授权");
 assert.doesNotMatch(enterpriseConnectionsHtml, /<th>启用状态<\/th>|data-enterprise-toggle|已启用|已停用/, "企业数据列表不应保留独立启用状态或开关");
-assert.match(enterpriseConnectionsHtml, /data-enterprise-row="CONNECTION-01"[\s\S]*enterprise-database-card__title" data-enterprise-edit="CONNECTION-01"[\s\S]*data-enterprise-test="CONNECTION-01"[\s\S]*data-enterprise-edit="CONNECTION-01"[\s\S]*data-enterprise-delete="CONNECTION-01"/, "数据库标题与编辑动作应进入同一编辑弹窗，并保留测试和删除动作");
-assert.match(enterpriseConnectionsHtml, /data-enterprise-test="CONNECTION-01"[^>]*>测试<\/button>[\s\S]*data-enterprise-edit="CONNECTION-01"[^>]*>配置<\/button>[\s\S]*data-enterprise-delete="CONNECTION-01"[^>]*>删除<\/button>/, "企业数据卡片操作应按测试、配置、删除显示");
+assert.match(enterpriseConnectionsHtml, /data-enterprise-row="CONNECTION-01"[\s\S]*enterprise-database-card__title" data-enterprise-edit="CONNECTION-01"[\s\S]*data-enterprise-sync="CONNECTION-01"[\s\S]*data-enterprise-edit="CONNECTION-01"[\s\S]*data-enterprise-delete="CONNECTION-01"/, "数据库标题与编辑动作应进入同一编辑弹窗，并保留立即同步和删除动作");
+assert.match(enterpriseConnectionsHtml, /data-enterprise-sync="CONNECTION-01"[^>]*>立即同步<\/button>[\s\S]*data-enterprise-edit="CONNECTION-01"[^>]*>配置<\/button>[\s\S]*data-enterprise-delete="CONNECTION-01"[^>]*>删除<\/button>/, "企业数据卡片操作应按立即同步、配置、删除显示");
+assert.doesNotMatch(enterpriseConnectionsHtml, /data-enterprise-test|最近测试/, "企业数据卡片不应保留外层测试连通性动作和最近测试时间");
 assert.doesNotMatch(enterpriseConnectionsHtml, /data-enterprise-detail/, "企业数据卡片不应保留独立详情入口");
-assert.match(enterpriseConnectionsHtml, /订单与库存数据库[\s\S]*连接正常/, "企业数据列表应回显黄金案例数据库及其连接状态");
-assert.match(enterpriseConnectionsHtml, /覆盖供应链订单、库存与履约数据[\s\S]*目标数据库[\s\S]*supply_chain[\s\S]*服务器[\s\S]*supply-db\.internal:5432/, "数据库卡片应同时回显业务描述、目标数据库与服务器连接信息");
+assert.match(enterpriseConnectionsHtml, /订单与库存数据库[\s\S]*已连接/, "企业数据列表应回显黄金案例数据库及其连接状态");
+assert.match(enterpriseConnectionsHtml, /订单与库存数据库[\s\S]*连接地址[\s\S]*supply-db\.internal:5432/, "数据库卡片应回显连接名称与服务器连接地址");
+assert.doesNotMatch(enterpriseConnectionsHtml, /目标数据库/, "目标数据库列表应只在编辑弹窗中通过勾选状态查看");
+assert.match(enterpriseConnectionsHtml, /同步策略[\s\S]*每天 · 全量读取/, "数据库卡片应回显默认同步频率与同步策略");
+assert.match(enterpriseConnectionsHtml, /最近同步[\s\S]*尚未更新/, "数据库卡片应回显快照时间与更新调度");
 assert.ok(["PostgreSQL", "MySQL", "SQL Server"].every((label) => enterpriseConnectionsHtml.includes(label)), "企业连接列表应回显 PostgreSQL、MySQL、SQL Server 三类数据库");
 const externalInformationHtml = pages.externalInformation.render({ name: "external-information", id: null, query: {} }, state);
 assert.match(externalInformationHtml, /page-header__title">外部信源[\s\S]*data-search-service-create[\s\S]*接入服务/, "外部信源页应在 PageHeader 提供接入入口");
@@ -222,6 +240,14 @@ assert.match(externalInformationHtml, /data-search-service-row="SEARCH-SERVICE-0
 assert.match(externalInformationHtml, /data-search-service-test="SEARCH-SERVICE-01"[^>]*>测试<\/button>[\s\S]*data-search-service-edit="SEARCH-SERVICE-01"[^>]*>配置<\/button>[\s\S]*data-search-service-delete="SEARCH-SERVICE-01"[^>]*>删除<\/button>/, "检索服务卡片操作应按测试、配置、删除显示");
 assert.match(externalInformationHtml, /OpenSearch[\s\S]*自定义接口/, "服务列表应覆盖 OpenSearch 与自定义接口");
 assert.doesNotMatch(externalInformationHtml, /添加信源|标签管理|批量停用|data-external-source/, "检索服务页不应继续暴露原始信源治理操作");
+const dataAccessSource = fs.readFileSync(path.join(demoRoot, "src/ops/data-access.js"), "utf8");
+const enterpriseEditorSource = dataAccessSource.slice(0, dataAccessSource.indexOf("function searchServiceDefinitions"));
+assert.match(dataAccessSource, /data-enterprise-database-dropdown[\s\S]*data-enterprise-database-option/, "企业接入弹窗应提供可多选的目标数据库下拉区域");
+assert.match(dataAccessSource, /测试连通性后可选择目标数据库/, "连通性测试通过前目标数据库选项应保持禁用");
+assert.ok(dataAccessSource.includes("测试连通性</button>"), "数据库草稿测试按钮应使用简化命名“测试连通性”");
+assert.doesNotMatch(dataAccessSource, /dom\.icon\((?:plug-zap|search-check), 15, "(?:测试连通性|自动测试)"\)/, "测试完成后不得把按钮文字误传成图标 class 导致文字消失");
+assert.doesNotMatch(enterpriseEditorSource, /上次测试通过|正在测试连通性…/, "数据库测试提示只保留成功或失败结果，不展示上次测试等中间提示");
+assert.doesNotMatch(dataAccessSource, /search-service-advanced|高级配置|结果字段映射/, "外部检索服务接入弹窗不应保留高级字段映射配置");
 assert.equal(actions.deleteKnowledgeBase("KB-001"), null, "正在提供检索的知识库不得直接删除");
 const disposableKnowledgeBase = actions.createKnowledgeBase({ name: "待删除演示库", purpose: "验证知识库编辑与删除闭环。", embeddingModelId: "MODEL-EMBEDDING-PRIMARY" });
 const disposableEmbeddingModelId = disposableKnowledgeBase.boundEmbeddingModelId;
@@ -362,8 +388,9 @@ assert.match(retrievalComposerHtml, /^<footer class="retrieval-composer"><textar
 assert.match(retrievalComposerHtml, />发送<\/button>/, "检索输入区主操作应命名为发送");
 assert.doesNotMatch(retrievalComposerHtml, /retrieval-composer__input-shell|retrieval-composer__send/, "检索输入区不应再嵌套输入壳或按钮定位容器");
 assert.match(retrievalWorkspaceHtml, /<div class="retrieval-chat__body" aria-live="polite">[\s\S]*retrieval-chat-empty[\s\S]*开始一次完整 RAG 测试[\s\S]*<\/div>/, "首次进入检索测试时主对话应展示明确的空状态");
-assert.match(retrievalWorkspaceHtml, /retrieval-chat__quality[\s\S]*retrieval-quality-dashboard is-retrieval-only[\s\S]*检索质量[\s\S]*返回切片数/, "知识库尚未运行时应默认展示检索质量");
-assert.match(retrievalWorkspaceHtml, /data-answer-quality hidden/, "回答生成默认关闭时不应展示回答质量");
+assert.match(retrievalWorkspaceHtml, /retrieval-chat__quality[\s\S]*retrieval-metrics-card[\s\S]*<strong>测试指标<\/strong>[\s\S]*<small>4 项<\/small>[\s\S]*data-metrics-collapse[^>]*aria-expanded="true"[\s\S]*检索质量[\s\S]*Recall@10/, "知识库尚未运行时也应在可折叠右上角指标卡中展示 4 项标准检索指标");
+assert.equal((retrievalWorkspaceHtml.match(/class="retrieval-metric-row"/g) || []).length, 4, "未生成回答时右上角测试指标卡应只展示实际可用的 4 项检索指标");
+assert.doesNotMatch(retrievalWorkspaceHtml, /retrieval-metric-group--secondary|retrieval-metric-group--tertiary/, "未开启或未生成回答时不应展示答案与性能占位指标");
 assert.doesNotMatch(retrievalWorkspaceHtml, /衡量证据是否找得全、排得准|基于生成回答与引用证据/, "质量分组标题不应显示右侧辅助说明");
 assert.doesNotMatch(retrievalWorkspaceHtml, /class="retrieval-message|class="evidence-item/, "首次进入时不应预先展示历史模拟问题或证据");
 assert.match(retrievalWorkspaceHtml, />海岳电子 Q3 交付风险是否已触发合同升级机制？<\/textarea>/, "预设问题应仅保留在底部输入框中");
@@ -396,13 +423,19 @@ assert.deepEqual(
   "回答生成快照应固化系统模型、温度、引用能力、证据数与模拟状态"
 );
 assert.ok(defaultRetrievalRun.generationSnapshot.generatedAt, "回答生成快照应记录生成时间");
-assert.ok(["faithfulness", "answerRelevance", "citationCoverage", "generationLatencyMs"].every((key) => Object.prototype.hasOwnProperty.call(defaultRetrievalRun.answerMetrics, key)), "普通检索测试应生成忠实度、答案相关性、引用覆盖率与生成时延指标");
+assert.deepEqual(defaultRetrievalRun.comparison.metrics, { recallAtK: 1, precisionAtK: 1, mrr: 1, ndcgAtK: 1 }, "检索质量应基于测试集标注计算 Recall、Precision、MRR 与 NDCG");
+assert.ok(defaultRetrievalRun.performanceMetrics && defaultRetrievalRun.performanceMetrics.sampleCount === 100 && Number.isFinite(defaultRetrievalRun.performanceMetrics.responseLatencyP99Ms), "回答链路应生成 100 次模拟请求的 P99 响应时延");
 assert.ok(defaultRetrievalRun.executionStages.includes("answer_generation") && defaultRetrievalRun.executionStages.includes("answer_evaluation"), "开启回答生成时执行阶段应包含生成与回答评测");
 const retrievalCompletedHtml = pages.retrievalTest.render({ name: "retrieval-test", id: null, query: { knowledgeBaseId: "KB-001", run: "1" } }, state);
 assert.match(retrievalCompletedHtml, /aria-label="生成回答"[\s\S]*class="retrieval-generated-answer"[\s\S]*aria-label="回答引用"[\s\S]*data-evidence-jump="1"/, "运行后应在检索证据之前展示生成回答及可定位引用");
-assert.match(retrievalCompletedHtml, /返回切片数<\/span><strong>3[\s\S]*有效证据数<\/span><strong>3[\s\S]*证据覆盖度<\/span><strong>100%[\s\S]*结果相关性<\/span><strong>100%/, "点击检索后应以四项运营指标解释模拟结果");
+assert.match(retrievalCompletedHtml, /retrieval-chat__quality[\s\S]*retrieval-metrics-card[\s\S]*<small>8 项<\/small>[\s\S]*检索质量[\s\S]*召回率[\s\S]*精确率[\s\S]*平均倒数排名[\s\S]*归一化折损累计增益[\s\S]*答案质量[\s\S]*忠实度[\s\S]*答案正确性[\s\S]*答案相关性[\s\S]*性能指标[\s\S]*响应时延/, "生成回答后 8 项实际指标应在同一个可折叠右上角信息卡内按三类逐行展示");
+assert.equal((retrievalCompletedHtml.match(/class="retrieval-metric-row"/g) || []).length, 8, "运行后右上角指标卡应保持 8 行结果");
+assert.doesNotMatch(retrievalCompletedHtml, /retrieval-quality-dashboard|retrieval-quality-row|data-answer-quality|data-performance-quality/, "旧版分组指标卡不应与新右上角指标卡同时渲染");
 assert.match(retrievalCompletedHtml, /海岳电子供应商框架合同/, "运行后应展示本库模拟证据");
-assert.match(retrievalCompletedHtml, /相关度<\/span><strong>0\.94<\/strong><small>重排分<\/small>[\s\S]*相关度<\/span><strong>0\.92<\/strong><small>重排分<\/small>[\s\S]*相关度<\/span><strong>0\.86<\/strong><small>重排分<\/small>/, "每条返回证据应展示本次用于排序和过滤的重排分");
+assert.match(retrievalCompletedHtml, /class="evidence-item__rank">#01<\/span><span class="evidence-item__document"[^>]*>海岳电子供应商框架合同\.pdf<\/span>[\s\S]*class="evidence-item__locator"[^>]*>P18 \/ 7\.2 交付升级机制<\/div>[\s\S]*class="evidence-item__excerpt"[^>]*>/, "召回证据应按序号+文件名、章节、正文三行展示");
+assert.match(retrievalCompletedHtml, /class="evidence-item__excerpt"[^>]*>[^<]+/i, "召回切片应直接完整展示内容");
+assert.doesNotMatch(retrievalCompletedHtml, /data-evidence-expand|evidence-item__expand/, "召回切片不应保留展开/收起控件");
+assert.doesNotMatch(retrievalCompletedHtml, /evidence-item__quality|evidence-source-item|evidence-source-divider/, "紧凑召回列表不应保留旧版评分状态区或来源分割线布局");
 assert.doesNotMatch(retrievalCompletedHtml, /retrieval-run-snapshot|本次检索配置|本次检索方式：|召回候选数：/, "运行结果不应重复展示侧栏已有的检索配置");
 const kb2RetrievalHtml = pages.retrievalTest.render({ name: "retrieval-test", id: null, query: { knowledgeBaseId: "KB-002" } }, state);
 assert.doesNotMatch(kb2RetrievalHtml, /海岳电子|Q3 交付风险/, "V2 检索测试应按知识库隔离问题与证据");
@@ -412,14 +445,15 @@ const kb2Run = actions.runRetrievalTest({ knowledgeBaseId: "KB-002", question: "
 const kb2CompletedHtml = pages.retrievalTest.render({ name: "retrieval-test", id: null, query: { knowledgeBaseId: "KB-002", run: "1" } }, state);
 assert.ok(kb2Run && kb2Run.knowledgeBaseId === "KB-002", "KB-002 应独立执行检索");
 assert.match(kb2CompletedHtml, /2026 年东盟原产地规则更新/, "KB-002 运行后应展示自身模拟证据");
-assert.match(kb2CompletedHtml, /返回切片数<\/span><strong>2[\s\S]*有效证据数<\/span><strong>2[\s\S]*证据覆盖度<\/span><strong>100%[\s\S]*结果相关性<\/span><strong>100%/, "KB-002 应基于自身证据独立计算运营指标");
+assert.match(kb2CompletedHtml, /召回率<\/span><small>Recall@10<\/small><strong>100\.0%[\s\S]*精确率<\/span><small>Precision@10<\/small><strong>100.0%[\s\S]*平均倒数排名<\/span><small>MRR<\/small><strong>1\.000[\s\S]*归一化折损累计增益<\/span><small>NDCG@10<\/small><strong>1\.000/, "KB-002 应基于自身测试集独立计算标准检索指标");
 
 assert.equal(state.knowledgeBases.some((item) => item.id === "KB-EVAL-SCIFACT"), false, "种子状态不应再包含预置评测知识库");
 assert.equal(state.documents.some((item) => String(item.id || "").startsWith("SF-DOC-")), false, "种子状态不应再包含预置评测语料");
 assert.equal(state.rag.retrievalTests.some((item) => String(item.id || "").includes("SCIFACT")), false, "检索测试不应再包含预置评测任务");
-assert.doesNotMatch(retrievalWorkspaceHtml, /预置评测题|Recall@|Precision@|MRR@|答案正确性/, "通用检索测试不应展示评测库专属控件或指标");
+assert.match(retrievalWorkspaceHtml, /召回率[\s\S]*精确率[\s\S]*平均倒数排名[\s\S]*归一化折损累计增益/, "通用检索测试应常显四项标准检索质量指标");
 assert.doesNotMatch(retrievalQuestionTag, /\breadonly\b/, "通用检索问题应始终允许编辑");
-assert.deepEqual(Object.keys(defaultRetrievalRun.answerMetrics).sort(), ["answerRelevance", "citationCoverage", "faithfulness", "generationLatencyMs"], "回答质量只应保留通用的四项指标");
+assert.deepEqual(Object.keys(defaultRetrievalRun.answerMetrics).sort(), ["answerCorrectness", "answerRelevance", "faithfulness"], "回答质量只应保留忠实度、答案正确性与答案相关性三项指标");
+assert.ok(defaultRetrievalRun.answerMetrics.faithfulness === 1 && defaultRetrievalRun.answerMetrics.answerCorrectness >= 0 && defaultRetrievalRun.answerMetrics.answerCorrectness <= 1 && defaultRetrievalRun.answerMetrics.answerRelevance > 0, "回答质量指标应可从证据、标准答案与检索结果确定性地计算");
 const invalidKnowledgeWorkspaceHtml = pages.retrievalTest.render({ name: "retrieval-test", id: null, query: { knowledgeBaseId: "DOES-NOT-EXIST" } }, state);
 const fallbackRetrievalTest = state.rag.retrievalTests[0];
 assert.equal(fallbackRetrievalTest.knowledgeBaseId, "KB-SCM-2024-V1", "供应链演示检索题应排在预置检索测试第一位");
@@ -686,7 +720,7 @@ assert.match(quickRunHtml, /aria-checked="false"[\s\S]*data-test-rerank-fields[\
 assert.doesNotMatch(quickRunHtml, /data-test-rerank-fields[^>]*hidden/, "运行后关闭 Rerank 时模型字段不应消失");
 assert.match(quickRunModelTag, /\bdisabled\b/, "运行后关闭 Rerank 时模型选择应不可操作");
 assert.doesNotMatch(quickRunModelTag, /\brequired\b|aria-required/, "运行后关闭 Rerank 时模型不应保留必填语义");
-assert.match(quickRunHtml, /相关度<\/span><strong>0\.91<\/strong><small>融合分<\/small>/, "快捷参数运行结果应展示本次真正用于排序和过滤的融合分");
+assert.match(quickRunHtml, /class="evidence-item__score" title="相似度：本次用于排序和过滤的融合分"><strong>0\.91<\/strong><small>相似度<\/small>/, "快捷参数运行结果应展示本次真正用于排序和过滤的融合分");
 assert.doesNotMatch(quickRunHtml, /retrieval-run-snapshot|本次检索配置|本次检索方式：|召回候选数：/, "快捷参数运行结果也不应重复展示配置快照");
 
 const retrievalOnlyRun = actions.runRetrievalTest({
@@ -706,8 +740,9 @@ assert.doesNotMatch(retrievalOnlyHtml, /aria-label="生成回答"|aria-label="�
 assert.match(retrievalOnlyHtml, /class="retrieval-message retrieval-message--result"[\s\S]*class="evidence-item"/, "只检索模式仍应展示检索证据");
 assert.match(retrievalOnlyHtml, /data-test-answer-toggle[^>]*aria-checked="false"|aria-checked="false"[^>]*data-test-answer-toggle/, "只检索模式运行后回答生成开关应回显关闭");
 assert.match(retrievalOnlyHtml, /data-test-answer-fields[^>]*aria-disabled="true"[\s\S]*data-test-answer-model[^>]*disabled/, "只检索模式运行后回答模型应常显但不可操作");
-assert.match(retrievalOnlyHtml, /data-answer-quality hidden/, "关闭回答生成后应隐藏回答质量板块");
-assert.match(retrievalOnlyHtml, /retrieval-quality-dashboard is-retrieval-only[\s\S]*检索质量/, "关闭回答生成后检索质量仍应保持展示");
+assert.match(retrievalOnlyHtml, /retrieval-chat__quality[\s\S]*retrieval-metrics-card[\s\S]*<small>4 项<\/small>[\s\S]*检索质量[\s\S]*Recall@10/, "关闭回答生成后右上角指标卡应只展示实际产生的检索指标");
+assert.equal((retrievalOnlyHtml.match(/class="retrieval-metric-row"/g) || []).length, 4, "关闭回答生成后不应展示答案与性能占位指标");
+assert.doesNotMatch(retrievalOnlyHtml, /retrieval-metric-group--secondary|retrieval-metric-group--tertiary/, "关闭回答生成后右上角指标卡不得保留无关分组");
 
 const knowledgeCreateHtml = pages.knowledge.render({ name: "knowledge", id: "new", query: {} }, state);
 assert.equal((knowledgeCreateHtml.match(/class="creation-step(?:\s|is-|\")/g) || []).length, 4, "定义页应只渲染一组四步进度");
@@ -760,8 +795,9 @@ assert.equal(actions.setKnowledgeBaseEnabled("KB-003", true), null, "检索所�
 const embeddingUnavailableDetailHtml = pages.knowledge.render({ name: "knowledge", id: "KB-001", query: { tab: "documents" } }, state);
 assert.match(embeddingUnavailableDetailHtml, /向量模型连接不可用[\s\S]*前往模型管理/, "知识库详情应基于真实绑定模型状态显示错误和处置入口");
 const detailTestAction = embeddingUnavailableDetailHtml.match(/<button[^>]*data-test-kb="KB-001"[^>]*>/)?.[0];
-assert.ok(detailTestAction, "知识库详情应始终提供检索测试入口");
-assert.doesNotMatch(detailTestAction, /disabled/, "详情页测试入口不应受对外检索状态限制");
+assert.ok(detailTestAction, "知识库详情应始终保留检索测试入口位置");
+assert.match(detailTestAction, /disabled/, "向量模型连接不可用时检索测试应禁用");
+assert.match(detailTestAction, /title="向量模型连接不可用"/, "检索测试禁用原因应指向向量模型连接状态");
 actions.testRagModelConnection("embedding", primaryEmbedding.id);
 assert.equal(primaryEmbedding.connectionStatus, "available", "向量模型恢复连接后新文件处理与检索可继续");
 
@@ -777,28 +813,44 @@ assert.match(knowledgeInfoMatch[0], /知识处理与检索状态[\s\S]*文档解
 assert.match(seedKnowledgeDetailHtml, /<th>文件<\/th>[\s\S]*<th>来源<\/th>[\s\S]*<th>文件状态<\/th>[\s\S]*<th>切片数<\/th>[\s\S]*<th>更新时间<\/th>[\s\S]*<th>操作<\/th>/, "文件列表应包含来源、单一生命周期、切片数、更新时间与必要操作列");
 assert.match(seedKnowledgeDetailHtml, /data-document-preview="DOC-001"[\s\S]*?<td>文档管理<\/td>/, "文件列表应回显每个文件的真实导入来源");
 assert.doesNotMatch(seedKnowledgeDetailHtml, /当前修订|有效等级|<th>页数<\/th>|<th>处理状态<\/th>|<th>检索状态<\/th>/, "文件列表不得展示版本、文件等级、页数或双状态");
-assert.match(seedKnowledgeDetailHtml, /data-document-preview="DOC-001"[\s\S]*data-document-delete="DOC-001"/, "文件列表应至少提供预览与删除操作");
-assert.match(seedKnowledgeDetailHtml, /data-document-preview="DOC-001"[^>]*>详情<\/button>[\s\S]*data-document-delete="DOC-001"/, "知识库文件列表的行操作应使用详情命名");
+assert.match(seedKnowledgeDetailHtml, /data-document-preview="DOC-001"[^>]*>详情<\/button>[\s\S]*data-document-reprocess="DOC-001"[^>]*aria-label="重新处理此文件"[^>]*>重新处理<\/button>[\s\S]*data-document-delete="DOC-001"[^>]*>删除<\/button>/, "知识库文件行操作应按详情、重新处理、删除排列，并保留完整无障碍语义");
+assert.match(seedKnowledgeDetailHtml, /data-document-reprocess="DOC-004"[^>]*title="文件正在处理中"[^>]*disabled/, "处理中的文件应禁用重新处理以避免并发任务");
 assert.doesNotMatch(seedKnowledgeDetailHtml, /data-document-preview="DOC-001"[^>]*>[^<]+<\/button><div class="table-secondary">/, "知识库文件列表文件名下方不应再保留 ID 或占位分类副标题");
+assert.match(seedKnowledgeDetailHtml, /knowledge-content-header__tools[\s\S]*placeholder="搜索文件"[\s\S]*data-kb-document-search/, "知识库文件页签应提供文件名搜索入口");
+assert.match(seedKnowledgeDetailHtml, /data-kb-document-row data-kb-document-name="海岳电子供应商框架合同\.pdf"/, "文件行应携带文件名索引供搜索匹配");
+assert.match(seedKnowledgeDetailHtml, /data-kb-delete-detail="KB-001"[^>]*title="请先关闭检索再删除"[^>]*disabled/, "启用检索的知识库详情页应禁用删除并提示先关闭检索");
+assert.equal((seedKnowledgeDetailHtml.match(/data-kb-document-row/g) || []).length, 5, "文件行应带分页定位标记，供溢出时按页显示");
 assert.match(seedKnowledgeDetailHtml, /data-document-preview="DOC-001"[^>]*>海岳电子供应商框架合同\.pdf<\/[^>]+>/, "文件名称本身应可点击进入预览");
+const emptyKnowledgeBase = actions.createKnowledgeBase({ name: "空状态验证库", purpose: "验证空知识库详情状态。", embeddingModelId: "MODEL-EMBEDDING-PRIMARY" });
+const emptyKnowledgeDetailHtml = pages.knowledge.render({ name: "knowledge", id: emptyKnowledgeBase.id, query: { tab: "documents" } }, state);
+assert.match(emptyKnowledgeDetailHtml, /文档解析<\/span><span class="knowledge-pipeline__value is-neutral">待导入/, "空知识库解析阶段应显示待导入而非正常");
+assert.match(emptyKnowledgeDetailHtml, /索引<\/span><span class="knowledge-pipeline__value is-neutral">待构建/, "空知识库索引阶段应显示待构建而非正常");
+assert.doesNotMatch(emptyKnowledgeDetailHtml, /<thead>/, "空知识库文件列表不应展示表头");
+assert.doesNotMatch(emptyKnowledgeDetailHtml, /data-kb-document-search/, "空知识库文件列表不应展示搜索框");
+assert.doesNotMatch(emptyKnowledgeDetailHtml, /knowledge-files__footer/, "空知识库文件列表不应展示分页footer");
+assert.match(emptyKnowledgeDetailHtml, /暂无文件/, "空知识库文件列表应仅保留空状态说明");
+assert.match(emptyKnowledgeDetailHtml, /id="knowledge-documents-panel"[^>]*><div class="empty-state">[\s\S]*?暂无文件/, "空知识库文件列表应只保留空状态说明");
+actions.deleteKnowledgeBase(emptyKnowledgeBase.id);
 assert.match(seedKnowledgeDetailHtml, /role="tablist"[\s\S]*data-knowledge-content-tab="documents"[^>]*>文件<\/[\s\S]*data-knowledge-content-tab="chunks"[^>]*>切片<\//, "知识库详情应保留文件和切片两个页签");
 assert.match(seedKnowledgeDetailHtml, /data-knowledge-content-tab="documents"[^>]*aria-selected="true"|aria-selected="true"[^>]*data-knowledge-content-tab="documents"/, "知识库详情默认应选中文件页签");
 assert.doesNotMatch(seedKnowledgeDetailHtml, /knowledge-chunk-(?:quick|all|group)|data-quick-chunk-document-select|data-chunk-full-preview|>全部文件</, "文件页签不应保留全库切片快览入口");
 
 const defaultChunksHtml = pages.knowledge.render({ name: "knowledge", id: "KB-001", query: { tab: "chunks" } }, state);
 assert.match(defaultChunksHtml, /data-knowledge-content-tab="chunks"[^>]*aria-selected="true"|aria-selected="true"[^>]*data-knowledge-content-tab="chunks"/, "切片页签应准确表达选中状态");
-assert.match(defaultChunksHtml, /preview-workspace[\s\S]*data-preview-document-select="KB-001"/, "切片页签应直接复用单文件原文／切片双栏对照");
+assert.match(defaultChunksHtml, /data-preview-document-select="KB-001"[\s\S]*preview-workspace/, "切片页签应将源文档切换提升到页签行，并复用单文件原文／切片双栏对照");
 assert.match(defaultChunksHtml, /<option value="DOC-001" selected>/, "未指定 document 时，切片页签应默认选中当前知识库首个文件");
-assert.match(defaultChunksHtml, /全部切片（\d+）[\s\S]*data-chunk-preview-card=/, "切片页签应显示当前单文件的真实切片卡片");
+assert.match(defaultChunksHtml, /knowledge-content-header__tools[\s\S]*data-preview-document-select="KB-001"[\s\S]*data-chunk-add=/, "切片页签工具应右对齐提供源文档切换和新增切片入口");
+assert.doesNotMatch(defaultChunksHtml, /全部切片（\d+）|knowledge-chunk-count/, "切片页签不应展示“全部切片”标题");
+assert.match(defaultChunksHtml, /data-chunk-preview-card=/, "切片页签应显示当前单文件的真实切片卡片");
 assert.doesNotMatch(defaultChunksHtml, /data-preview-origin|from=chunks|>全部文件<|knowledge-chunk-(?:quick|all|group)|data-quick-chunk-document-select|data-chunk-full-preview/, "切片页签不得汇总多文件切片或保留历史快览标记");
 
 const requestedChunksHtml = pages.knowledge.render({ name: "knowledge", id: "KB-001", query: { tab: "chunks", document: "DOC-001" } }, state);
-assert.match(requestedChunksHtml, /preview-workspace[\s\S]*<option value="DOC-001" selected>/, "切片页签应按 document 参数选中指定文件并显示对照预览");
+assert.match(requestedChunksHtml, /<option value="DOC-001" selected>[\s\S]*preview-workspace/, "切片页签应按 document 参数选中指定文件并显示对照预览");
 assert.doesNotMatch(requestedChunksHtml, />全部文件<|knowledge-chunk-(?:quick|all|group)|data-quick-chunk-document-select|data-chunk-full-preview/, "指定文件后仍不得回到全库聚合切片视图");
 
 const legacyPreviewHtml = pages.knowledge.render({ name: "knowledge", id: "KB-001", query: { preview: "DOC-001" } }, state);
 assert.match(legacyPreviewHtml, /data-knowledge-content-tab="chunks"[^>]*aria-selected="true"|aria-selected="true"[^>]*data-knowledge-content-tab="chunks"/, "历史 preview 地址应兼容渲染切片页签");
-assert.match(legacyPreviewHtml, /preview-workspace[\s\S]*<option value="DOC-001" selected>/, "历史 preview 地址应复用同一单文件对照视图");
+assert.match(legacyPreviewHtml, /<option value="DOC-001" selected>[\s\S]*preview-workspace/, "历史 preview 地址应复用同一单文件对照视图");
 const legacyImportsRouteHtml = pages.knowledge.render({ name: "knowledge", id: "KB-001", query: { tab: "imports" } }, state);
 assert.doesNotMatch(legacyImportsRouteHtml, /导入记录|data-import-continue/, "历史 tab=imports 地址应回到文件详情，不恢复导入记录 UI");
 assert.match(legacyImportsRouteHtml, /data-document-preview=/, "历史 tab=imports 地址应兼容显示当前文件列表");
@@ -833,6 +885,9 @@ assert.equal(Object.prototype.hasOwnProperty.call(createdKnowledgeBase, "current
 const knowledgeDetailHtml = pages.knowledge.render({ name: "knowledge", id: createdKnowledgeBase.id, query: { tab: "documents" } }, state);
 assert.match(knowledgeDetailHtml, new RegExp(`data-test-kb="${createdKnowledgeBase.id}"`), "知识库详情页头应提供并带入当前对象的检索测试快捷入口");
 assert.match(knowledgeDetailHtml, new RegExp(`data-kb-edit="${createdKnowledgeBase.id}"`), "知识库详情页头应提供与列表一致的编辑基础信息入口");
+assert.match(knowledgeDetailHtml, new RegExp(`data-import-kb="${createdKnowledgeBase.id}"[\\s\\S]*data-test-kb="${createdKnowledgeBase.id}"[^>]*title="完成索引构建后可检索测试"[^>]*disabled[\\s\\S]*data-kb-edit="${createdKnowledgeBase.id}"`), "知识库详情页头动作应按导入、测试、编辑排序，且未建索引时禁用检索测试");
+assert.match(knowledgeDetailHtml, new RegExp(`data-kb-delete-detail="${createdKnowledgeBase.id}"`), "知识库详情页应提供删除入口");
+assert.doesNotMatch(knowledgeDetailHtml, new RegExp(`data-kb-delete-detail="${createdKnowledgeBase.id}"[^>]*disabled`), "已关闭检索的知识库在详情页应允许删除");
 
 const uploadHtml = pages.knowledge.render({ name: "knowledge", id: createdKnowledgeBase.id, query: { onboarding: "1", step: "upload" } }, state);
 assert.match(uploadHtml, /local-upload-stack[\s\S]*<details class="[^"]*\bupload-folder-picker\b[^"]*" data-upload-folder-picker>[\s\S]*目标位置[\s\S]*data-directory-tree="local-upload-target"[\s\S]*<label class="file-drop"/, "知识库上传应复用文档管理的可折叠目标目录选择器");
@@ -845,15 +900,20 @@ assert.doesNotMatch(uploadHtml, /data-import-upload-mode|>上传文件<\/button>
 assert.doesNotMatch(uploadHtml, /import-resource-list__header|data-import-resource-title/, "资料列表不应重复当前来源页签标题");
 assert.match(uploadHtml, /data-import-source-browser[\s\S]*data-import-local-directory[\s\S]*data-import-local-directory-list[\s\S]*data-import-enterprise-directory[\s\S]*data-import-enterprise-directory-list[\s\S]*class="table-wrap"/, "知识库选文件应提供文档管理目录和独立企业数据目录");
 assert.doesNotMatch(uploadHtml, /enterprise-source-directory__heading|data-import-enterprise-location|enterprise-source-location|<span>文件目录<\/span>/, "企业数据目录不应重复展示左右标题栏");
-assert.match(uploadHtml, /<colgroup>[\s\S]*import-resource-table__col-name[\s\S]*import-resource-table__col-size[\s\S]*import-resource-table__col-status[\s\S]*<th>名称<\/th>[\s\S]*<th>大小<\/th>[\s\S]*<th class="import-resource-table__status">状态<\/th>[\s\S]*<th>更新时间<\/th>[\s\S]*import-resource-table__action-heading/, "文档管理与企业数据应共用固定列宽的逐行资料表，企业数据页签隐藏状态列");
+assert.match(uploadHtml, /<colgroup>[\s\S]*import-resource-table__col-name[\s\S]*import-resource-table__col-size[\s\S]*<th>名称<\/th>[\s\S]*<th>大小<\/th>[\s\S]*<th>更新时间<\/th>[\s\S]*import-resource-table__action-heading/, "文档管理与企业数据应共用固定列宽的逐行资料表，资料列表不展示后台解析状态");
+assert.doesNotMatch(uploadHtml, /import-resource-table__col-status|import-resource-table__status|<th>状态<\/th>/, "知识库选择资料时不应展示后台解析状态列");
 assert.doesNotMatch(uploadHtml, /import-resource-table__col-source|<th>来源<\/th>|<th>操作<\/th>|<td>文档管理<\/td>/, "来源已由 Tab 区分，资料列表不应再显示来源列或操作表头");
 assert.match(uploadHtml, /data-upload-cancel[\s\S]*data-upload-start/, "导入步骤底部只保留取消和导入动作");
 const enterpriseSnapshotChoices = actions.listEnterpriseSourceObjects();
 assert.ok(enterpriseSnapshotChoices.length && enterpriseSnapshotChoices.every((item) => Number.isFinite(item.fileSizeBytes) && /(?:KB|MB)$/.test(item.fileSizeLabel)), "企业数据应按可导入文件快照提供统一文件大小");
-assert.ok(enterpriseSnapshotChoices.every((item) => item.directoryId === `ENT-DIR-${item.connectionId}` && item.directoryPath.includes("/") && /\.csv$/.test(item.fileName)), "每个企业数据快照应归入独立业务目录并保留文件名");
-assert.equal(new Set(enterpriseSnapshotChoices.map((item) => item.directoryId)).size, state.enterpriseConnections.length, "企业数据文件目录应覆盖所有已接入连接");
+assert.ok(enterpriseSnapshotChoices.every((item) => item.directoryId.startsWith("ENT-SCH-") && item.databaseDirectoryId.startsWith("ENT-DB-") && item.directoryPath.split("/").length === 2 && /\.csv$/.test(item.fileName)), "每个企业数据快照应归入数据库 / Schema 目录并保留文件名");
+assert.equal(new Set(enterpriseSnapshotChoices.map((item) => item.databaseDirectoryId)).size, state.enterpriseConnections.length, "企业数据文件目录应覆盖所有已接入连接的数据库");
+assert.ok(new Set(enterpriseSnapshotChoices.map((item) => item.directoryId)).size > state.enterpriseConnections.length, "企业数据目录应继续下沉到 Schema 层级");
+assert.ok(enterpriseSnapshotChoices.every((item) => ["table", "view"].includes(item.resourceType) && item.resourceName), "企业数据快照应明确到表 / 视图资源");
 
 const parseHtml = pages.knowledge.render({ name: "knowledge", id: createdKnowledgeBase.id, query: { onboarding: "1", step: "parse" } }, state);
+assert.match(parseHtml, /page-header__title">新建知识库[\s\S]*定义知识库[\s\S]*导入文件[\s\S]*文档解析[\s\S]*文档处理/, "新建知识库进入解析步后应保持完整四步流程");
+assert.doesNotMatch(parseHtml, /creation-steps--existing-import/, "新建知识库不应切换成已有库导入的三步流程");
 assert.doesNotMatch(parseHtml, /name="parse-effort"|解析精细度/, "MinerU 解析模式应由识别内容自动派生，不再要求用户选择精细度");
 assert.doesNotMatch(parseHtml, /creation-section-intro"><h2>/, "第 3 步正文不应重复步骤条中的“文档解析策略”标题");
 assert.match(parseHtml, /id="parse-text-content" type="checkbox" checked disabled[\s\S]*id="parse-layout-structure" type="checkbox" checked disabled[\s\S]*id="parse-table" type="checkbox" checked disabled/, "文本内容、版面结构与表格解析必须固定开启且不可取消");
@@ -877,6 +937,8 @@ assert.deepEqual(activeParseBackBatches.map((batch) => batch.id), [parseBackResu
 actions.cancelImportProcessing(parseBackResumedBatch.id);
 
 const processingHtml = pages.knowledge.render({ name: "knowledge", id: createdKnowledgeBase.id, query: { onboarding: "1", step: "processing" } }, state);
+assert.match(processingHtml, /page-header__title">新建知识库[\s\S]*定义知识库[\s\S]*文档处理/, "新建知识库进入处理步后应保持完整四步流程");
+assert.doesNotMatch(processingHtml, /creation-steps--existing-import/, "新建知识库处理步不应切换成已有库导入的三步流程");
 assert.doesNotMatch(processingHtml, /creation-section-intro"><h2>/, "第 4 步正文不应重复步骤条中的“文档处理策略”标题");
 const renderedProcessingFamilies = Array.from(processingHtml.matchAll(/<input\b(?=[^>]*\bname="processing-family")(?=[^>]*\bvalue="([^"]+)")[^>]*>/g), (match) => match[1]);
 const renderedCustomMethods = Array.from(processingHtml.matchAll(/<input\b(?=[^>]*\bname="processing-method")(?=[^>]*\bvalue="([^"]+)")[^>]*>/g), (match) => match[1]);
@@ -1350,11 +1412,16 @@ assert.equal(actions.deleteKnowledgeBase(parameterIsolationKnowledgeBase.id), pa
 const existingImportUploadHtml = pages.knowledge.render({ name: "knowledge", id: "KB-001", query: { onboarding: "1", step: "upload", flow: "import" } }, state);
 const existingImportParseHtml = pages.knowledge.render({ name: "knowledge", id: "KB-001", query: { onboarding: "1", step: "parse", flow: "import" } }, state);
 const existingImportProcessingHtml = pages.knowledge.render({ name: "knowledge", id: "KB-001", query: { onboarding: "1", step: "processing", flow: "import" } }, state);
-assert.match(existingImportUploadHtml, /page-header__title">导入文件[\s\S]*creation-steps[\s\S]*data-existing-import="true"/, "已有知识库导入应从完整四步流程的文件上传步骤进入");
+assert.match(existingImportUploadHtml, /creation-steps--existing-import/, "已有知识库导入应跳过定义知识库步骤，使用三步流程");
+assert.doesNotMatch(existingImportUploadHtml, /定义知识库/, "已有知识库导入不应再展示定义知识库步骤");
+assert.match(existingImportUploadHtml, /data-existing-import="true"/, "已有知识库导入应保留已有库导入语义");
 assert.match(existingImportParseHtml, /page-header__title">导入文件[\s\S]*parse-method-summary[\s\S]*parse-visual-understanding/, "已有知识库导入应完整保留文档解析编辑步骤");
+assert.match(existingImportParseHtml, /creation-steps--existing-import[\s\S]*导入文件[\s\S]*文档解析[\s\S]*文档处理/, "已有知识库导入解析步应保持定制三步流程");
+assert.doesNotMatch(existingImportParseHtml, /定义知识库/, "已有知识库导入解析步不应串回新建流程步骤");
 assert.match(existingImportParseHtml, /data-parse-back/, "普通已有知识库导入的解析页应允许返回资料选择");
 assert.doesNotMatch(existingImportParseHtml, /parse-return-images|parse-addon-title|附加输出|保留原图/, "已有知识库导入同样不应暴露原图保存选项");
-assert.match(existingImportProcessingHtml, /page-header__title">导入文件[\s\S]*name="processing-family"[\s\S]*data-processing-method-list[\s\S]*data-processing-param="maxChars"[\s\S]*data-existing-import="true"/, "已有知识库导入应完整保留 family/method 选择和本次参数编辑");
+assert.match(existingImportProcessingHtml, /page-header__title">导入文件[\s\S]*creation-steps--existing-import[\s\S]*name="processing-family"[\s\S]*data-processing-method-list[\s\S]*data-processing-param="maxChars"[\s\S]*data-existing-import="true"/, "已有知识库导入处理步应保持定制三步流程并完整保留参数编辑");
+assert.doesNotMatch(existingImportProcessingHtml, /定义知识库/, "已有知识库导入处理步不应串回新建流程步骤");
 const reprocessSourceDocument = state.documents.find((item) => item.knowledgeBaseId === "KB-SCM-2024-V1" && item.fileVersionId);
 assert.ok(reprocessSourceDocument, "重新处理交互测试需要一个已在知识库中的文件");
 const reprocessParseBatch = actions.startKnowledgeImport("KB-SCM-2024-V1", {
@@ -1367,6 +1434,9 @@ assert.ok(reprocessParseBatch && reprocessParseBatch.reprocess, "重新处理入
 const reprocessParseHtml = pages.knowledge.render({ name: "knowledge", id: "KB-SCM-2024-V1", query: { onboarding: "1", step: "parse", batch: reprocessParseBatch.id, flow: "import" } }, state);
 assert.match(reprocessParseHtml, /data-onboarding-cancel[\s\S]*data-parse-next/, "重新处理解析页应保留取消和下一步操作");
 assert.doesNotMatch(reprocessParseHtml, /data-parse-back|>上一步<\/button>/, "重新处理直接从解析开始，不应提供返回资料选择的上一步操作");
+assert.match(reprocessParseHtml, /page-header__title">重新处理文件/, "重新处理解析页标题应改为重新处理文件");
+assert.match(reprocessParseHtml, /creation-steps--reprocess/, "重新处理步骤条应自适应盛满容器宽度");
+assert.doesNotMatch(reprocessParseHtml, /定义知识库|导入文件<\/strong>/, "重新处理步骤条不应展示前置知识库定义或导入步骤");
 assert.ok(actions.cancelImportProcessing(reprocessParseBatch.id), "重新处理解析页测试后应清理待处理批次");
 assert.equal(actions.setKnowledgeBaseOnboardingConfig(createdKnowledgeBase.id, { mineruParseConfig: { effort: "flash", parseMethod: "auto" } }), null, "动作层应拒绝非官方 MinerU effort 值");
 assert.equal(createdKnowledgeBase.mineruParseConfig.effort, "medium", "无效解析配置不得污染知识库状态");
@@ -1736,6 +1806,7 @@ const testedEnterpriseDraft = actions.testEnterpriseConnectionDraft({
 });
 assert.equal(testedEnterpriseDraft.passed, true, "实例连接字段有效时应显式测试成功");
 assert.deepEqual(testedEnterpriseDraft.databases, ["supply_chain", "procurement_contract", "contract_analytics"], "连接成功后应返回可选目标数据库，且不自动选中");
+assert.equal(testedEnterpriseDraft.message, "连接正常访问到 3 个数据库", "连通性通知应直接说明访问到的数据库数量");
 const validEnterprisePayload = {
   name: "合同分析测试连接",
   description: "用于合同履约、付款和风险分析。",
@@ -1751,7 +1822,7 @@ const validEnterprisePayload = {
   timeoutSeconds: 12,
 };
 const enterpriseCountBeforeRejectedSaves = state.enterpriseConnections.length;
-assert.equal(actions.saveEnterpriseConnection({ ...validEnterprisePayload, tested: false }), null, "未显式测试成功不得保存企业连接");
+assert.equal(actions.saveEnterpriseConnection({ ...validEnterprisePayload, host: "offline.internal" }), null, "隐式预检失败的企业连接不得保存");
 assert.equal(actions.saveEnterpriseConnection({ ...validEnterprisePayload, databaseName: "not_authorized" }), null, "不在测试返回目录中的数据库不得接入");
 ["name", "databaseEngine", "host", "port", "databaseName", "username", "password"].forEach((field) => {
   const missingFieldPayload = { ...validEnterprisePayload };
@@ -1760,15 +1831,15 @@ assert.equal(actions.saveEnterpriseConnection({ ...validEnterprisePayload, datab
 });
 assert.equal(state.enterpriseConnections.length, enterpriseCountBeforeRejectedSaves, "被拒绝的保存不得产生半成品连接");
 
-const disposableEnterpriseConnection = actions.saveEnterpriseConnection(validEnterprisePayload);
-assert.ok(disposableEnterpriseConnection, "显式测试成功后应可接入目标数据库");
+const disposableEnterpriseConnection = actions.saveEnterpriseConnection({ ...validEnterprisePayload, tested: false });
+assert.ok(disposableEnterpriseConnection, "携带连通性测试返回的目标库时应可接入数据库");
 assert.equal(Object.prototype.hasOwnProperty.call(disposableEnterpriseConnection, "enabled"), false, "新数据库连接不应创建独立启用状态");
 assert.equal(typeof actions.setEnterpriseConnectionEnabled, "undefined", "企业数据动作层不应保留启停动作");
 assert.equal(disposableEnterpriseConnection.status, "available", "保存的企业连接应保留最近测试成功状态");
 assert.equal(disposableEnterpriseConnection.connectionType, "database", "企业数据库连接应写入兼容类型 database");
 assert.equal(disposableEnterpriseConnection.databaseEngine, "postgresql", "企业连接应保存数据库引擎");
 assert.equal(disposableEnterpriseConnection.name, "合同分析测试连接", "企业数据库应保存平台内的数据库名称");
-assert.equal(disposableEnterpriseConnection.description, "用于合同履约、付款和风险分析。", "企业数据库应保存用户填写的数据库描述");
+assert.doesNotMatch(fs.readFileSync(path.join(demoRoot, "src/ops/data-access.js"), "utf8"), /数据库描述|enterprise-description/, "连接表单不应展示数据库描述选填项");
 assert.equal(disposableEnterpriseConnection.databaseName, "contract_analytics", "企业连接应保存目标数据库名称");
 assert.equal(disposableEnterpriseConnection.username, "contract_ro", "企业连接应保存数据库用户名");
 assert.equal(disposableEnterpriseConnection.passwordConfigured, true, "企业连接只应保存密码已配置状态");
@@ -1789,9 +1860,45 @@ assert.equal(actions.testEnterpriseConnection(disposableEnterpriseConnection.id)
 const failedEnterpriseConnection = actions.testEnterpriseConnection(disposableEnterpriseConnection.id, { simulateFailure: true });
 assert.equal(failedEnterpriseConnection.status, "unavailable", "已登记连接复测失败后应更新为连接失败");
 assert.equal(failedEnterpriseConnection.statusLabel, "连接失败", "连接失败应由唯一连接状态直接表达");
+const disposableEnterpriseResource = state.enterpriseResources.find((resource) => resource.connectionId === disposableEnterpriseConnection.id);
+assert.ok(disposableEnterpriseResource && disposableEnterpriseResource.stableObjectKey, "保存企业连接时应生成持久化企业资源");
 assert.equal(actions.deleteEnterpriseConnection(disposableEnterpriseConnection.id), disposableEnterpriseConnection, "非保护数据库连接无需先停用即可删除");
 assert.equal(state.enterpriseConnections.includes(disposableEnterpriseConnection), false, "删除后企业连接应从列表移除");
-assert.ok(state.configurationRecords.some((item) => item.objectId === disposableEnterpriseConnection.id && item.action === "deleted"), "删除企业连接应写入内部配置记录");
+assert.equal(state.enterpriseResources.includes(disposableEnterpriseResource), false, "彻底删除连接时应同步移除企业数据快照资源");
+assert.equal(actions.listEnterpriseSourceObjects().some((source) => source.id === disposableEnterpriseResource.id), false, "删除连接后企业资源不得继续出现在导入选择器");
+const recreatedEnterpriseConnection = actions.saveEnterpriseConnection({ ...validEnterprisePayload, name: "重建合同分析连接", password: enterprisePlainPassword, tested: true });
+const recreatedEnterpriseResource = state.enterpriseResources.find((resource) => resource.connectionId === recreatedEnterpriseConnection.id);
+assert.notEqual(recreatedEnterpriseResource, disposableEnterpriseResource, "彻底删除后重建应创建新的资源实例");
+assert.equal(recreatedEnterpriseResource.stableObjectKey, disposableEnterpriseResource.stableObjectKey, "同一业务库仍应使用稳定业务 key");
+assert.equal(actions.deleteEnterpriseConnection(recreatedEnterpriseConnection.id), recreatedEnterpriseConnection, "重建连接清理应可删除");
+assert.ok(
+  state.configurationRecords.some((item) => item.objectId === disposableEnterpriseConnection.id && item.action === "deleted") &&
+    state.configurationRecords.some((item) => item.objectId === recreatedEnterpriseConnection.id && item.action === "deleted"),
+  "删除企业连接应写入内部配置记录"
+);
+
+const multiDatabaseConnection = actions.saveEnterpriseConnection({
+  ...validEnterprisePayload,
+  name: "多目标数据库验证连接",
+  databaseNames: ["contract_analytics", "procurement_contract"],
+  updatePolicy: { updateFrequency: "hourly", updateStrategy: "incremental_snapshot" },
+  tested: true,
+});
+assert.ok(multiDatabaseConnection, "同一企业连接应支持保存多个目标数据库");
+assert.deepEqual(multiDatabaseConnection.databaseNames, ["contract_analytics", "procurement_contract"], "连接应保存完整目标数据库列表");
+assert.equal(multiDatabaseConnection.databaseName, "contract_analytics", "单值 databaseName 应保留首个目标库用于兼容旧状态");
+assert.deepEqual(multiDatabaseConnection.updatePolicy, { updateFrequency: "hourly", updateStrategy: "incremental_snapshot" }, "连接应保存同步频率与同步策略");
+const multiDatabaseResources = state.enterpriseResources.filter((resource) => resource.connectionId === multiDatabaseConnection.id);
+assert.equal(multiDatabaseResources.length, 6, "每个目标数据库下的表 / 视图都应生成独立企业数据快照资源");
+assert.equal(actions.listEnterpriseSourceObjects().filter((source) => source.connectionId === multiDatabaseConnection.id).length, 6, "知识库导入选择器应列出同一连接下多个数据库的表 / 视图快照");
+const refreshedMultiDatabaseConnection = actions.refreshEnterpriseConnection(multiDatabaseConnection.id);
+assert.equal(refreshedMultiDatabaseConnection, multiDatabaseConnection, "可用企业连接应支持手动触发企业数据同步");
+assert.ok(refreshedMultiDatabaseConnection.lastSyncAt, "企业数据同步应写入最近同步时间");
+assert.ok(new Date(refreshedMultiDatabaseConnection.nextSyncAt).getTime() - new Date(refreshedMultiDatabaseConnection.lastSyncAt).getTime() === 3600000, "每小时策略应写入一小时后的下次更新时间");
+assert.ok(multiDatabaseResources.every((resource) => resource.snapshotAt === refreshedMultiDatabaseConnection.lastSyncAt), "所有目标数据库资源都应同步刷新");
+assert.ok(multiDatabaseResources.every((resource) => resource.content.includes("增量记录,")), "增量读取策略应写入可识别的增量记录");
+assert.ok(state.configurationRecords.some((item) => item.objectId === multiDatabaseConnection.id && item.action === "refreshed"), "企业数据同步应写入内部配置记录");
+assert.equal(actions.deleteEnterpriseConnection(multiDatabaseConnection.id), multiDatabaseConnection, "多目标数据库连接应可删除");
 
 assert.equal(Array.isArray(state.externalInformation.services), true, "外部信息应以检索服务实例列表管理");
 assert.equal(state.externalInformation.services.length, 3, "种子应提供三类检索服务实例");
@@ -1821,9 +1928,8 @@ assert.equal(actions.testExternalSearchServiceDraft({ ...validSearchServicePaylo
 const testedSearchServiceDraft = actions.testExternalSearchServiceDraft(validSearchServicePayload);
 assert.equal(testedSearchServiceDraft.passed, true, "系统无需用户填写测试问题即可自动测试有效配置");
 assert.equal(testedSearchServiceDraft.resultCount, 3, "测试应返回可预览的标准结果数量");
-assert.equal(actions.saveExternalSearchService({ ...validSearchServicePayload, tested: false }), null, "未经显式测试不得保存检索服务");
-const disposableSearchService = actions.saveExternalSearchService({ ...validSearchServicePayload, tested: true });
-assert.ok(disposableSearchService, "测试通过后应可接入检索服务");
+const disposableSearchService = actions.saveExternalSearchService({ ...validSearchServicePayload, tested: false });
+assert.ok(disposableSearchService, "Demo 流程中必填字段完整时可不先点自动测试直接接入");
 assert.equal(disposableSearchService.serviceType, "elasticsearch", "服务实例应保存接入类型");
 assert.equal(disposableSearchService.indexName, "contract-news", "搜索引擎连接应保存索引或别名");
 assert.equal(disposableSearchService.status, "available", "新接入服务应保存最近测试成功状态");
@@ -1834,6 +1940,11 @@ assert.equal(Object.prototype.hasOwnProperty.call(disposableSearchService, "cred
 const editedSearchService = actions.saveExternalSearchService({ ...validSearchServicePayload, id: disposableSearchService.id, name: "已编辑检索服务", credential: "", credentialConfigured: true, tested: true });
 assert.equal(editedSearchService, disposableSearchService, "编辑时留空凭证应沿用已配置状态");
 assert.equal(editedSearchService.name, "已编辑检索服务", "服务名称应可编辑");
+const noAuthSearchService = actions.saveExternalSearchService({ ...validSearchServicePayload, name: "临时无鉴权检索服务", authType: "none", credential: "", tested: false });
+assert.ok(noAuthSearchService, "无鉴权服务应在必填字段完整时保存");
+assert.equal(noAuthSearchService.credentialConfigured, false, "无鉴权服务不得标记为已配置凭证");
+assert.equal(actions.saveExternalSearchService({ ...validSearchServicePayload, id: noAuthSearchService.id, authType: "api_key", credential: "", tested: false }), null, "无鉴权切换为 API Key 时必须重新填写凭证");
+assert.equal(actions.deleteExternalSearchService(noAuthSearchService.id), noAuthSearchService, "无鉴权验证服务应可清理");
 assert.equal(actions.saveExternalSearchService({ ...validSearchServicePayload, name: "全球贸易资讯检索", tested: true }), null, "服务名称不应与已有实例重复");
 assert.equal(actions.testExternalSearchService(disposableSearchService.id).status, "available", "已接入服务应支持无副作用复测");
 assert.equal(actions.testExternalSearchService(disposableSearchService.id, { simulateFailure: true }).status, "unavailable", "复测失败后应更新连接状态");
@@ -1841,14 +1952,6 @@ assert.equal(disposableSearchService.statusLabel, "检索失败", "失败状态�
 assert.equal(actions.deleteExternalSearchService(disposableSearchService.id), disposableSearchService, "检索服务应可确认删除");
 assert.equal(state.externalInformation.services.includes(disposableSearchService), false, "删除后服务实例应从列表移除");
 assert.ok(state.configurationRecords.some((item) => item.objectId === disposableSearchService.id && item.action === "deleted"), "删除检索服务应写入内部配置记录");
-
-const currentVersionBeforeRestore = kb.currentKnowledgeVersionId;
-const historical = state.knowledgeVersions.find((item) => item.knowledgeBaseId === kb.id && item.status === "historical");
-const restoreDraft = actions.rollbackKnowledgeVersion(kb.id, historical.id);
-assert.equal(kb.currentKnowledgeVersionId, currentVersionBeforeRestore, "创建内部索引回退不能直接覆盖当前检索指针");
-assert.equal(restoreDraft.status, "pending_validation", "回退索引仍需验证");
-assert.equal(actions.validateKnowledgeVersion(kb.id, currentVersionBeforeRestore), null, "当前索引不能重复走待生效验证");
-assert.equal(actions.rollbackKnowledgeVersion(kb.id, currentVersionBeforeRestore), null, "当前索引不能被当作回退来源");
 
 store.reset();
 const resetState = store.getState();
@@ -1859,8 +1962,6 @@ assert.equal(removedFailedItem.status, "removed", "运营人员可关闭不再�
 assert.equal(removedFailureBatch.processingCount, 0, "关闭失败项后其余处理中文件应自动完成");
 assert.ok(removedFailureBatch.resultingKnowledgeVersionId, "关闭失败项不得让其余成功文件卡在候选索引");
 assert.equal(removedFailureKb.documentCounts.searchable, removedFailureKb.documentCounts.total, "已移除失败文件不计入总数，其余文件应全部可检索");
-const restoredFromRecord = actions.createRollbackDraft("CR-008");
-assert.equal(restoredFromRecord.basedOnVersionId, "KV-20260814-01", "内部留痕回退应使用变更前的索引快照，而非当前结果");
 const retrievalSettingsBeforeTest = JSON.stringify(resetState.rag.retrievalSettings.operator);
 const retrievalTestResult = actions.runRetrievalTest({ knowledgeBaseId: "KB-002", question: "验证左右工作区只更新测试结果" });
 assert.equal(retrievalTestResult.question, "验证左右工作区只更新测试结果", "检索测试动作应更新测试问题和结果状态");
@@ -1898,13 +1999,12 @@ const addedChunkRecord = resetState.configurationRecords.find((item) => item.obj
 assert.match(addedChunkRecord.impact, /当前知识库[\s\S]*其他知识库保持不变/, "新增切片留痕必须明确当前知识库的修改范围");
 const chunkPreviewHtml = pages.knowledge.render({ name: "knowledge", id: "KB-001", query: { tab: "chunks", document: resetPreviewDocument.id } }, resetState);
 assert.match(chunkPreviewHtml, /data-knowledge-content-tab="chunks"[^>]*aria-selected="true"|aria-selected="true"[^>]*data-knowledge-content-tab="chunks"/, "切片编辑闭环应位于知识库切片页签");
-assert.match(chunkPreviewHtml, /preview-workspace[\s\S]*data-preview-document-select="KB-001"[\s\S]*<option value="DOC-001" selected>/, "切片页签应复用通用双栏组件并保留当前文件");
+assert.match(chunkPreviewHtml, /knowledge-content-header__tools[\s\S]*data-preview-document-select="KB-001"[\s\S]*<option value="DOC-001" selected>[\s\S]*preview-workspace/, "切片页签应复用通用双栏组件并保留当前文件");
 assert.doesNotMatch(chunkPreviewHtml, /data-preview-document-download|下载原文件/, "知识库切片页签不应提供原文件下载");
 assert.doesNotMatch(chunkPreviewHtml, /preview-workspace__pane--source"><header|源文档<\/h2>|status--(?:success|info|neutral|danger)|代表切片|chunk-preview-list__summary/, "文件预览不应重复源文档栏头、文件状态或代表切片汇总");
 const renderedChunkCardCount = (chunkPreviewHtml.match(/data-chunk-preview-card=/g) || []).length;
-const allChunksTitle = chunkPreviewHtml.match(/全部切片（(\d+)）/);
-assert.ok(allChunksTitle, "文件预览右栏标题应使用“全部切片（N）”");
-assert.equal(Number(allChunksTitle[1]), renderedChunkCardCount, "全部切片标题中的数量必须等于真实渲染卡片数");
+assert.match(chunkPreviewHtml, /knowledge-content-header__tools[\s\S]*data-chunk-add/, "切片页签工具栏应保留新增切片入口");
+assert.doesNotMatch(chunkPreviewHtml, /全部切片（\d+）|knowledge-chunk-count/, "切片页签不应再展示“全部切片”标题");
 assert.match(chunkPreviewHtml, /data-chunk-expand[^>]*aria-label="展开切片 [^"]+"[^>]*aria-expanded="false"[^>]*aria-controls="[^"]+"/, "切片展开图标应表达默认收起状态并关联受控正文");
 const metadataTriggerCount = (chunkPreviewHtml.match(/data-chunk-metadata-trigger/g) || []).length;
 assert.equal(metadataTriggerCount, renderedChunkCardCount, "两个预览入口复用的每张切片卡片都应提供信息入口");
@@ -1913,9 +2013,11 @@ assert.equal(editTriggerCount, renderedChunkCardCount, "可编辑知识库中的
 assert.doesNotMatch(chunkPreviewHtml, /data-chunk-edit="[^"]+"[^>]*>编辑<\/button>/, "共享切片卡片不应在底部重复展示文字编辑按钮");
 assert.match(chunkPreviewHtml, /data-chunk-metadata-trigger[^>]*aria-haspopup="dialog"[^>]*aria-controls="chunk-metadata-[^"]+"/, "切片信息入口应通过 aria-controls 关联非模态浮层");
 assert.doesNotMatch(chunkPreviewHtml, /chunk-metadata-popover__group[\s\S]*?<h3>|>识别信息<|>来源定位<|>检索治理</, "切片信息应平铺完整列出，不再拆分小标题分组");
-assert.match(chunkPreviewHtml, /chunk-metadata-popover__groups"><dl>[\s\S]*Chunk ID[\s\S]*章节路径[\s\S]*下一片/, "切片信息应在一列中完整列出识别与定位字段");
+assert.match(chunkPreviewHtml, /chunk-metadata-popover__groups"><dl>[\s\S]*Chunk ID[\s\S]*内容类型[\s\S]*章节路径/, "切片信息应在一列中完整列出识别、内容类型与定位字段");
 const metadataPopoverHtml = chunkPreviewHtml.slice(chunkPreviewHtml.indexOf("chunk-metadata-popover\""), chunkPreviewHtml.indexOf("</section>", chunkPreviewHtml.indexOf("data-chunk-copy-payload")));
-assert.doesNotMatch(metadataPopoverHtml, /技术信息|知识库 ID|切片集 ID|向量记录 ID|tokensEst/, "切片信息不应再展示内部 ID 链、知识库 ID 或系统元数据");
+assert.doesNotMatch(metadataPopoverHtml, /技术信息|切片集 ID|向量记录 ID|tokensEst|解析结果 ID|文件版本 ID|上一片|下一片|更新时间/, "切片信息不应再展示内部 ID 链、系统元数据、上下片导航或更新时间");
+assert.match(metadataPopoverHtml, /Chunk ID[\s\S]*内容类型[\s\S]*文件名[\s\S]*海岳电子供应商框架合同\.pdf[\s\S]*文档 ID[\s\S]*DOC-001[\s\S]*知识库 ID[\s\S]*KB-001[\s\S]*章节路径[\s\S]*页码/, "切片信息应按识别、归属、定位的逻辑顺序独立可用");
+assert.equal((metadataPopoverHtml.match(/chunk-metadata-popover__divider/g) || []).length, 2, "切片信息应在识别、归属、定位三组之间展示分割线");
 assert.match(chunkPreviewHtml, /chunk-metadata-popover__header[\s\S]*data-chunk-copy-all[^>]*aria-label="复制全部信息"/, "切片信息标题栏应提供图标化的复制全部信息按钮");
 assert.doesNotMatch(chunkPreviewHtml, /data-chunk-copy-id/, "切片信息不再提供字段级复制按钮");
 assert.doesNotMatch(chunkPreviewHtml, /chunk-metadata-popover__footer/, "切片信息不应保留独立底部操作栏");
